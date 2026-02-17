@@ -1,0 +1,111 @@
+### Test Status Endpoints
+
+# Test 1: Get available status transitions for a user
+GET {{baseUrl}}/admin/user/1/status-transitions
+Authorization: Bearer {{adminToken}}
+
+###
+
+# Test 2: Update user status to ACTIVE
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "ACTIVE"
+}
+
+###
+
+# Test 3: Update user status to REJECT with note
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "REJECT",
+  "statusNote": "Documents incomplete - please provide additional verification"
+}
+
+###
+
+# Test 4: Update user status to INACTIVE with note
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "INACTIVE",
+  "statusNote": "Account temporarily suspended due to policy violation"
+}
+
+###
+
+# Test 4.5: Update user status to WAITING_FOR_SUPER_ADMIN
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "WAITING_FOR_SUPER_ADMIN",
+  "statusNote": "Escalated to super admin for final review"
+}
+
+###
+
+# Test 5: Test invalid transition (ACTIVE to WAITING)
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "WAITING"
+}
+
+###
+
+# Test 6: Test missing required note for REJECT
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "status": "REJECT"
+}
+
+###
+
+# Test 7: Bulk status update
+PATCH {{baseUrl}}/admin/bulk-update-user-status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userIds": [1, 2, 3],
+  "status": "ACTIVE",
+  "statusNote": "Bulk approval for verified accounts"
+}
+
+###
+
+# Test 8: Update trade role
+PATCH {{baseUrl}}/admin/updateOneUser
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "tradeRole": "COMPANY"
+}
+
+###
+
+# Variables (set these in your environment)
+# baseUrl: http://localhost:3000
+# adminToken: your_admin_jwt_token_here

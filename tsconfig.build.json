@@ -1,0 +1,11 @@
+// tsconfig.build.json — Production build TypeScript configuration.
+//
+// @intent   Extends the root tsconfig.json but excludes test files and output
+//           directories from the compilation, producing a clean production build.
+// @notes
+//   - Excludes: node_modules, test directory, dist output, and all .spec.ts test files.
+//   - Used by `nest build` (see package.json scripts).
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+}
