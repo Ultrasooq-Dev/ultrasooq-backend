@@ -36,3 +36,13 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 .env*nul
+
+# Database backups
+*.dump
+*_backup.sql
+backup_*.sql
+aws_backup.sql
+
+# Backup files
+*.backup
+*.backup2

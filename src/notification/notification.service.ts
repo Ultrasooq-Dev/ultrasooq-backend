@@ -23,7 +23,6 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 const sgMail = require('@sendgrid/mail');
-// sgMail.setApiKey("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");
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 

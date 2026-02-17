@@ -88,10 +88,12 @@ export class UserService {
    */
   async sendEmailFrombackend(req: any) {
     try {
+      const { randomInt } = require('crypto');
+      let otp = randomInt(1000, 10000);
       let data = {
         email: req.body.email,
         name: req.body.name,
-        otp: 12345,
+        otp: otp,
       };
       this.notificationService.mailService(data);
 
@@ -102,8 +104,8 @@ export class UserService {
       };
     } catch (error) {
       return {
-        status: true,
-        message: 'error in register',
+        status: false,
+        message: 'error in sending email',
         error: getErrorMessage(error),
       };
     }
@@ -176,7 +178,8 @@ export class UserService {
         let email = createUserDto.email;
         let cc = createUserDto.cc;
         let phoneNumber = createUserDto.phoneNumber;
-        let otp = Math.floor(1000 + Math.random() * 9000);
+        const { randomInt } = require('crypto');
+        let otp = randomInt(1000, 10000);
         let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000); // 5 minutes
         const salt = await genSalt(10);
         const password = await hash(createUserDto.password, salt);
@@ -526,7 +529,8 @@ export class UserService {
         };
       }
 
-      let otp = Math.floor(1000 + Math.random() * 9000);
+      const { randomInt } = require('crypto');
+      let otp = randomInt(1000, 10000);
       let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000); // 5 minutes
 
       // Update OTP in Master Account
@@ -699,13 +703,16 @@ export class UserService {
       let authToken = await this.authService.login(userAuth);
       const restokenData = authToken;
 
+      // Exclude sensitive fields from response
+      const { password: _pw, otp: _otp, otpValidTime: _otpTime, resetPassword: _rp, ...safeUser } = activeUser as any;
+
       return {
         status: true,
         message: 'Login Successfully',
         accessToken: restokenData.accessToken,
         refreshToken: restokenData.refreshToken,
         data: {
-          ...activeUser,
+          ...safeUser,
           // Include personal info from Master Account
           email: masterAccount.email,
           firstName: masterAccount.firstName,
