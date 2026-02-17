@@ -146,7 +146,7 @@ async function bootstrap() {
 
   // Global API prefix — all routes get /api/v1/ except health checks and docs
   app.setGlobalPrefix('api/v1', {
-    exclude: ['health', 'health/ready', 'health/live', 'api-docs', 'api-docs-json'],
+    exclude: ['health', 'health/ready', 'health/live', 'health/system', 'api-docs', 'api-docs-json'],
   });
 
   // Swagger API Documentation Setup
