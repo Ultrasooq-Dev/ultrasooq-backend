@@ -25,10 +25,10 @@ export const CACHE_KEYS = {
 
 /** Cache TTL values in seconds */
 export const CACHE_TTL = {
-  CATEGORY_TREE: 3600,      // 1 hour
-  CATEGORY_ALL: 3600,       // 1 hour
-  CATEGORY_MENU: 3600,      // 1 hour
-  CATEGORY_LEVEL_ONE: 3600, // 1 hour
+  CATEGORY_TREE: 300,       // 5 minutes
+  CATEGORY_ALL: 300,        // 5 minutes
+  CATEGORY_MENU: 300,       // 5 minutes
+  CATEGORY_LEVEL_ONE: 300,  // 5 minutes
   CATEGORY_SPECS: 1800,     // 30 minutes
   PRODUCT_DETAIL: 300,      // 5 minutes
   PRODUCT_LIST: 300,        // 5 minutes
@@ -360,9 +360,26 @@ export class CacheService implements OnModuleInit {
           `Cache INVALIDATE_PREFIX: deleted ${matchingKeys.length} key(s) matching "${prefix}*"`,
         );
       } else {
+        // Fallback: delete known category keys individually when store.keys() is unavailable
         this.logger.warn(
-          `Cache INVALIDATE_PREFIX: underlying store does not support keys() — cannot invalidate by prefix "${prefix}"`,
+          `Cache INVALIDATE_PREFIX: store.keys() unavailable — using fallback for "${prefix}"`,
         );
+        if (prefix === 'categories:') {
+          const knownKeys = [
+            CACHE_KEYS.CATEGORY_TREE,
+            CACHE_KEYS.CATEGORY_LEVEL_ONE,
+            // Delete common paginated keys
+            ...Array.from({ length: 10 }, (_, i) => CACHE_KEYS.CATEGORY_ALL(i + 1, 10)),
+            ...Array.from({ length: 10 }, (_, i) => CACHE_KEYS.CATEGORY_ALL(i + 1, 20)),
+            ...Array.from({ length: 10 }, (_, i) => CACHE_KEYS.CATEGORY_ALL(i + 1, 50)),
+            // Delete common menu keys (root category IDs 1-10)
+            ...Array.from({ length: 10 }, (_, i) => CACHE_KEYS.CATEGORY_MENU(i + 1)),
+          ];
+          await Promise.all(knownKeys.map((k) => this.cache.del(k)));
+          this.logger.log(
+            `Cache INVALIDATE_PREFIX: fallback deleted ${knownKeys.length} known category keys`,
+          );
+        }
       }
     } catch (error) {
       this.logger.warn(`Cache INVALIDATE_PREFIX error for "${prefix}": ${error}`);
