@@ -19,7 +19,7 @@
  *  - Brand name "Puremoon" is hardcoded in templates.
  *  - SendGrid API key was previously hardcoded but now uses env var.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 const sgMail = require('@sendgrid/mail');
@@ -28,6 +28,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 @Injectable()
 export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
   private server: any; // Socket.io server instance
 
   constructor(private readonly prisma: PrismaService) {}
@@ -110,8 +111,10 @@ export class NotificationService {
     sgMail
       .send(mailOptions)
       .then(() => {
+        this.logger.log('Email sent successfully');
       })
       .catch((error) => {
+        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       });
   }
 
@@ -191,8 +194,10 @@ export class NotificationService {
     sgMail
       .send(mailOptions)
       .then(() => {
+        this.logger.log('Email sent successfully');
       })
       .catch((error) => {
+        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       });
   }
 
@@ -273,8 +278,10 @@ export class NotificationService {
     sgMail
       .send(mailOptions)
       .then(() => {
+        this.logger.log('Email sent successfully');
       })
       .catch((error) => {
+        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       });
   }
 
@@ -352,8 +359,10 @@ export class NotificationService {
     sgMail
       .send(mailOptions)
       .then(() => {
+        this.logger.log('Email sent successfully');
       })
       .catch((error) => {
+        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       });
   }
 
@@ -437,8 +446,10 @@ export class NotificationService {
     sgMail
       .send(mailOptions)
       .then(() => {
+        this.logger.log('Email sent successfully');
       })
       .catch((error) => {
+        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
       });
   }
 

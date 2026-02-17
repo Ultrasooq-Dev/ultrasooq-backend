@@ -433,7 +433,7 @@ export class UserService {
       }
 
       // Check if OTP matches (OTP is stored in MasterAccount)
-      if (otp != masterAccount.otp) {
+      if (otp !== masterAccount.otp) {
         return {
           status: false,
           message: 'Invalid OTP',
@@ -1501,7 +1501,7 @@ export class UserService {
       };
     } catch (error) {
       return {
-        status: true,
+        status: false,
         message: 'error in findAll',
         error: getErrorMessage(error),
       };
@@ -1575,7 +1575,7 @@ export class UserService {
       };
     } catch (error) {
       return {
-        status: true,
+        status: false,
         message: 'error in findUnique',
         error: getErrorMessage(error),
       };
@@ -1803,7 +1803,7 @@ export class UserService {
           data: [],
         };
       }
-      if (otp != userDetail.otp) {
+      if (otp !== userDetail.otp) {
         return {
           status: false,
           message: 'Invalid OTP',
@@ -2719,7 +2719,7 @@ export class UserService {
           data: [],
         };
       }
-      if (otp != userDetail.otp) {
+      if (otp !== userDetail.otp) {
         return {
           status: false,
           message: 'Invalid OTP',
