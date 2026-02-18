@@ -528,7 +528,7 @@ export class SpecificationService {
   }
 
   /**
-   * Auto-categorize a product based on its name, description, and tags.
+   * Auto-categorize a product based on its tags first, then fallback to keyword matching.
    */
   async autoCategorize(productId: number) {
     const product = await this.prisma.product.findUnique({
@@ -539,18 +539,44 @@ export class SpecificationService {
     });
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
 
+    // 1. Try tag-based matching first (primary strategy)
+    const tagIds = (product.productTags as any[])
+      .map((pt: any) => pt.productTagsTag?.id)
+      .filter(Boolean);
+
+    if (tagIds.length > 0) {
+      const tagMatches = await this.matchCategoriesByTags(tagIds);
+      if (tagMatches.length > 0) {
+        for (const match of tagMatches.slice(0, 5)) {
+          try {
+            await this.prisma.productCategoryMap.create({
+              data: {
+                productId,
+                categoryId: match.categoryId,
+                isPrimary: false,
+                source: 'tag',
+              },
+            });
+          } catch {
+            // Skip if already mapped
+          }
+        }
+        return tagMatches;
+      }
+    }
+
+    // 2. Fallback to keyword-based matching
     const text = [
       product.productName,
       product.description,
       product.shortDescription,
-      ...(product.productTags as any[]).map((pt: any) => pt.productTagsTag?.name).filter(Boolean),
+      ...(product.productTags as any[]).map((pt: any) => pt.productTagsTag?.tagName).filter(Boolean),
     ].join(' ');
 
     const matches = await this.matchCategories(text);
 
     if (matches.length > 0) {
-      // Add matched categories with source='keyword'
-      for (const match of matches.slice(0, 5)) { // top 5 matches
+      for (const match of matches.slice(0, 5)) {
         try {
           await this.prisma.productCategoryMap.create({
             data: {
@@ -567,5 +593,322 @@ export class SpecificationService {
     }
 
     return matches;
+  }
+
+  // ══════════════════════════════════════════════
+  // CATEGORY TAGS — Tags as universal connectors
+  // ══════════════════════════════════════════════
+
+  /**
+   * Add tags to a category.
+   */
+  async addCategoryTags(categoryId: number, tagIds: number[]) {
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (!category) throw new NotFoundException(`Category ${categoryId} not found`);
+
+    const results = [];
+    for (const tagId of tagIds) {
+      try {
+        const ct = await this.prisma.categoryTag.create({
+          data: { categoryId, tagId },
+          include: { tag: { select: { id: true, tagName: true } } },
+        });
+        results.push(ct);
+      } catch (error) {
+        this.logger.warn(`Skipping duplicate tag ${tagId} for category ${categoryId}`);
+      }
+    }
+
+    await this.cacheService.del(CACHE_KEYS.CATEGORY_TAGS(categoryId));
+    return results;
+  }
+
+  /**
+   * Get tags for a category (cached).
+   */
+  async getCategoryTags(categoryId: number) {
+    return this.cacheService.getOrSet(
+      CACHE_KEYS.CATEGORY_TAGS(categoryId),
+      async () => {
+        return this.prisma.categoryTag.findMany({
+          where: { categoryId, status: 'ACTIVE', deletedAt: null },
+          include: { tag: { select: { id: true, tagName: true } } },
+          orderBy: { createdAt: 'asc' },
+        });
+      },
+      CACHE_TTL.CATEGORY_TAGS,
+    );
+  }
+
+  /**
+   * Remove a tag from a category.
+   */
+  async removeCategoryTag(categoryId: number, tagId: number) {
+    await this.prisma.categoryTag.deleteMany({
+      where: { categoryId, tagId },
+    });
+    await this.cacheService.del(CACHE_KEYS.CATEGORY_TAGS(categoryId));
+    return { message: 'Tag removed from category' };
+  }
+
+  /**
+   * Replace all tags for a category.
+   */
+  async setCategoryTags(categoryId: number, tagIds: number[]) {
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (!category) throw new NotFoundException(`Category ${categoryId} not found`);
+
+    // Remove existing tags
+    await this.prisma.categoryTag.deleteMany({ where: { categoryId } });
+
+    // Create new tags
+    if (tagIds.length > 0) {
+      await this.prisma.categoryTag.createMany({
+        data: tagIds.map((tagId) => ({ categoryId, tagId })),
+        skipDuplicates: true,
+      });
+    }
+
+    await this.cacheService.del(CACHE_KEYS.CATEGORY_TAGS(categoryId));
+
+    return this.getCategoryTags(categoryId);
+  }
+
+  // ══════════════════════════════════════════════
+  // TAG CRUD — Enhanced tag management
+  // ══════════════════════════════════════════════
+
+  /**
+   * List tags with pagination.
+   */
+  async listTags(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+    const [tags, total] = await Promise.all([
+      this.prisma.tags.findMany({
+        where: { status: 'ACTIVE', deletedAt: null },
+        orderBy: { tagName: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.tags.count({
+        where: { status: 'ACTIVE', deletedAt: null },
+      }),
+    ]);
+
+    return {
+      data: tags,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Search tags by name.
+   */
+  async searchTags(query: string, limit: number = 20) {
+    return this.prisma.tags.findMany({
+      where: {
+        tagName: { contains: query, mode: 'insensitive' },
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      orderBy: { tagName: 'asc' },
+      take: limit,
+    });
+  }
+
+  /**
+   * Get a tag with usage info.
+   */
+  async getTagById(tagId: number) {
+    const tag = await this.prisma.tags.findUnique({
+      where: { id: tagId },
+      include: {
+        categoryTags: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          include: { category: { select: { id: true, name: true, parentId: true } } },
+        },
+        tagProductTags: {
+          where: { status: 'ACTIVE' },
+          select: { id: true, productId: true },
+          take: 10,
+        },
+        serviceTags: {
+          select: { id: true, serviceId: true },
+          take: 10,
+        },
+        userBranchBusinessType: {
+          select: { id: true, userBranchId: true },
+          take: 10,
+        },
+      },
+    });
+    if (!tag) throw new NotFoundException(`Tag ${tagId} not found`);
+    return tag;
+  }
+
+  /**
+   * Update a tag's name.
+   */
+  async updateTag(tagId: number, data: { tagName: string }) {
+    const tag = await this.prisma.tags.findUnique({ where: { id: tagId } });
+    if (!tag) throw new NotFoundException(`Tag ${tagId} not found`);
+
+    return this.prisma.tags.update({
+      where: { id: tagId },
+      data: { tagName: data.tagName },
+    });
+  }
+
+  /**
+   * Soft-delete a tag.
+   */
+  async deleteTag(tagId: number) {
+    const tag = await this.prisma.tags.findUnique({ where: { id: tagId } });
+    if (!tag) throw new NotFoundException(`Tag ${tagId} not found`);
+
+    await this.prisma.tags.update({
+      where: { id: tagId },
+      data: { status: 'DELETE', deletedAt: new Date() },
+    });
+
+    return { message: 'Tag deleted successfully' };
+  }
+
+  // ══════════════════════════════════════════════
+  // TAG-BASED AUTO-CATEGORIZATION
+  // ══════════════════════════════════════════════
+
+  /**
+   * Match tag IDs to categories via CategoryTag.
+   * Returns categories sorted by number of shared tags (most relevant first).
+   */
+  async matchCategoriesByTags(tagIds: number[]): Promise<{ categoryId: number; categoryName: string; matchedTagIds: number[]; matchCount: number }[]> {
+    if (tagIds.length === 0) return [];
+
+    const matches = await this.prisma.categoryTag.findMany({
+      where: {
+        tagId: { in: tagIds },
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+      },
+    });
+
+    // Group by category
+    const categoryMap = new Map<number, { categoryId: number; categoryName: string; matchedTagIds: number[]; matchCount: number }>();
+    for (const match of matches) {
+      const existing = categoryMap.get(match.categoryId);
+      if (existing) {
+        existing.matchedTagIds.push(match.tagId);
+        existing.matchCount++;
+      } else {
+        categoryMap.set(match.categoryId, {
+          categoryId: match.categoryId,
+          categoryName: match.category.name,
+          matchedTagIds: [match.tagId],
+          matchCount: 1,
+        });
+      }
+    }
+
+    return Array.from(categoryMap.values()).sort((a, b) => b.matchCount - a.matchCount);
+  }
+
+  // ══════════════════════════════════════════════
+  // SERVICE CATEGORIES — Multi-category for services
+  // ══════════════════════════════════════════════
+
+  /**
+   * Set categories for a service (replaces existing).
+   */
+  async setServiceCategories(serviceId: number, categoryIds: number[], primaryCategoryId?: number) {
+    const service = await this.prisma.service.findUnique({ where: { id: serviceId } });
+    if (!service) throw new NotFoundException(`Service ${serviceId} not found`);
+
+    // Remove existing mappings
+    await this.prisma.serviceCategoryMap.deleteMany({ where: { serviceId } });
+
+    // Create new mappings
+    const primary = primaryCategoryId || categoryIds[0];
+    if (categoryIds.length > 0) {
+      await this.prisma.serviceCategoryMap.createMany({
+        data: categoryIds.map((catId) => ({
+          serviceId,
+          categoryId: catId,
+          isPrimary: catId === primary,
+          source: 'manual',
+        })),
+      });
+    }
+
+    // Update Service.categoryId to primary for backward compat
+    if (primary) {
+      await this.prisma.service.update({
+        where: { id: serviceId },
+        data: { categoryId: primary },
+      });
+    }
+
+    return this.getServiceCategories(serviceId);
+  }
+
+  /**
+   * Get all categories for a service.
+   */
+  async getServiceCategories(serviceId: number) {
+    return this.prisma.serviceCategoryMap.findMany({
+      where: { serviceId, status: 'ACTIVE', deletedAt: null },
+      include: {
+        category: { select: { id: true, name: true, parentId: true, icon: true } },
+      },
+      orderBy: { isPrimary: 'desc' },
+    });
+  }
+
+  /**
+   * Auto-categorize a service based on its tags.
+   */
+  async autoCategorizeService(serviceId: number) {
+    const service = await this.prisma.service.findUnique({
+      where: { id: serviceId },
+      include: {
+        serviceTags: { include: { tag: true } },
+      },
+    });
+    if (!service) throw new NotFoundException(`Service ${serviceId} not found`);
+
+    const tagIds = (service.serviceTags as any[])
+      .map((st: any) => st.tag?.id)
+      .filter(Boolean);
+
+    if (tagIds.length === 0) return [];
+
+    const tagMatches = await this.matchCategoriesByTags(tagIds);
+
+    if (tagMatches.length > 0) {
+      for (const match of tagMatches.slice(0, 5)) {
+        try {
+          await this.prisma.serviceCategoryMap.create({
+            data: {
+              serviceId,
+              categoryId: match.categoryId,
+              isPrimary: false,
+              source: 'tag',
+            },
+          });
+        } catch {
+          // Skip if already mapped
+        }
+      }
+    }
+
+    return tagMatches;
   }
 }

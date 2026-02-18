@@ -19,6 +19,7 @@ export const CACHE_KEYS = {
   PRODUCT_DETAIL: (productId: number) => `product:${productId}`,
   PRODUCT_LIST_CATEGORY: (categoryId: string, page: number) => `products:cat:${categoryId}:page:${page}`,
   FILTER_VALUES: (catId: number) => `filters:${catId}`,
+  CATEGORY_TAGS: (catId: number) => `categories:${catId}:tags`,
   FEES: (countryId: number) => `fees:${countryId}`,
   SEARCH_RESULTS: (hash: string) => `search:${hash}`,
 } as const;
@@ -33,6 +34,7 @@ export const CACHE_TTL = {
   PRODUCT_DETAIL: 300,      // 5 minutes
   PRODUCT_LIST: 300,        // 5 minutes
   FILTER_VALUES: 900,       // 15 minutes
+  CATEGORY_TAGS: 900,       // 15 minutes
   FEES: 3600,               // 1 hour
   SEARCH_RESULTS: 600,      // 10 minutes
 } as const;

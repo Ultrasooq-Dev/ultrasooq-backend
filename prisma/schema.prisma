@@ -513,6 +513,7 @@ model Tags {
   userBranchBusinessType   UserBranchBusinessType[]
   userBranchTags           UserBranchTags[]
   userProfileBusinessTypes UserProfileBusinessType[]
+  categoryTags             CategoryTag[]
 }
 
 // Category — Hierarchical product/service classification with both parent-child and menu navigation trees.
@@ -568,6 +569,8 @@ model Category {
   specTemplates                    SpecTemplate[]
   categoryKeywords                 CategoryKeyword[]
   productCategoryMaps              ProductCategoryMap[]
+  categoryTags                     CategoryTag[]
+  serviceCategoryMaps              ServiceCategoryMap[]    @relation("ServiceCategoryMaps")
 
   @@index([parentId])
   @@index([menuId])
@@ -2599,6 +2602,7 @@ model Service {
   serviceFeatures      ServiceFeature[]
   images               ServiceImage[]
   serviceTags          ServiceTag[]
+  serviceCategories    ServiceCategoryMap[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -3299,6 +3303,49 @@ model CategoryKeyword {
   @@index([keyword])
   @@index([categoryId])
   @@map("category_keyword")
+}
+
+// CategoryTag — Links Tags to Categories, replacing the keyword-based auto-mapping system.
+// Tags become the universal connector: shared tags link products, services, and business types to categories.
+// When a product/service has tags that match a category's tags, it auto-maps to that category.
+model CategoryTag {
+  id          Int       @id @default(autoincrement())
+  categoryId  Int
+  tagId       Int
+  status      Status    @default(ACTIVE)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  tag         Tags      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, tagId])
+  @@index([categoryId])
+  @@index([tagId])
+  @@map("category_tag")
+}
+
+// ServiceCategoryMap — Multi-category mapping for services (mirrors ProductCategoryMap for products).
+// Allows services to belong to multiple categories with a primary designation and source tracking.
+model ServiceCategoryMap {
+  id          Int       @id @default(autoincrement())
+  serviceId   Int
+  categoryId  Int
+  isPrimary   Boolean   @default(false)
+  source      String?   // "manual" | "tag" | "ai"
+  status      Status    @default(ACTIVE)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  service     Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  category    Category  @relation("ServiceCategoryMaps", fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, categoryId])
+  @@index([serviceId])
+  @@index([categoryId])
+  @@map("service_category_map")
 }
 
 // ══════════════════════════════════════════════════════════════

@@ -144,4 +144,104 @@ export class SpecificationController {
   autoCategorize(@Param('productId', ParseIntPipe) productId: number) {
     return this.specService.autoCategorize(productId);
   }
+
+  // ── Category Tags (Tags as Universal Connector) ──
+
+  @Post('category-tags/:categoryId')
+  addCategoryTags(
+    @Param('categoryId', ParseIntPipe) categoryId: number,
+    @Body() body: { tagIds: number[] },
+  ) {
+    return this.specService.addCategoryTags(categoryId, body.tagIds);
+  }
+
+  @Get('category-tags/:categoryId')
+  getCategoryTags(@Param('categoryId', ParseIntPipe) categoryId: number) {
+    return this.specService.getCategoryTags(categoryId);
+  }
+
+  @Delete('category-tags/:categoryId/:tagId')
+  removeCategoryTag(
+    @Param('categoryId', ParseIntPipe) categoryId: number,
+    @Param('tagId', ParseIntPipe) tagId: number,
+  ) {
+    return this.specService.removeCategoryTag(categoryId, tagId);
+  }
+
+  @Post('category-tags/:categoryId/set')
+  @HttpCode(HttpStatus.OK)
+  setCategoryTags(
+    @Param('categoryId', ParseIntPipe) categoryId: number,
+    @Body() body: { tagIds: number[] },
+  ) {
+    return this.specService.setCategoryTags(categoryId, body.tagIds);
+  }
+
+  // ── Tag Management (Enhanced CRUD) ──
+
+  @Get('tags')
+  listTags(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.specService.listTags(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Get('tags/search')
+  searchTags(
+    @Query('q') q: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.specService.searchTags(q || '', limit ? parseInt(limit, 10) : 20);
+  }
+
+  @Get('tags/:tagId')
+  getTagById(@Param('tagId', ParseIntPipe) tagId: number) {
+    return this.specService.getTagById(tagId);
+  }
+
+  @Patch('tags/:tagId')
+  updateTag(
+    @Param('tagId', ParseIntPipe) tagId: number,
+    @Body() body: { tagName: string },
+  ) {
+    return this.specService.updateTag(tagId, body);
+  }
+
+  @Delete('tags/:tagId')
+  deleteTag(@Param('tagId', ParseIntPipe) tagId: number) {
+    return this.specService.deleteTag(tagId);
+  }
+
+  // ── Tag-Based Matching ──
+
+  @Post('match-categories-by-tags')
+  @HttpCode(HttpStatus.OK)
+  matchCategoriesByTags(@Body() body: { tagIds: number[] }) {
+    return this.specService.matchCategoriesByTags(body.tagIds);
+  }
+
+  // ── Service Categories (Multi-Category) ──
+
+  @Post('service-categories/:serviceId')
+  setServiceCategories(
+    @Param('serviceId', ParseIntPipe) serviceId: number,
+    @Body() body: { categoryIds: number[]; primaryCategoryId?: number },
+  ) {
+    return this.specService.setServiceCategories(serviceId, body.categoryIds, body.primaryCategoryId);
+  }
+
+  @Get('service-categories/:serviceId')
+  getServiceCategories(@Param('serviceId', ParseIntPipe) serviceId: number) {
+    return this.specService.getServiceCategories(serviceId);
+  }
+
+  @Post('auto-categorize-service/:serviceId')
+  @HttpCode(HttpStatus.OK)
+  autoCategorizeService(@Param('serviceId', ParseIntPipe) serviceId: number) {
+    return this.specService.autoCategorizeService(serviceId);
+  }
 }
