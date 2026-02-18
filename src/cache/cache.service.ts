@@ -142,6 +142,11 @@ export class CacheService implements OnModuleInit {
     await this.invalidateByPrefix('products:cat:');
   }
 
+  // ── Search Results ──
+  async invalidateSearchResults(): Promise<void> {
+    await this.invalidateByPrefix('search:');
+  }
+
   // ── Spec Templates ──
   async getSpecTemplates<T>(categoryId: number): Promise<T | null> {
     return this.get<T>(CACHE_KEYS.CATEGORY_SPECS(categoryId));

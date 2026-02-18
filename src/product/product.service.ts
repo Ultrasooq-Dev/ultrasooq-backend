@@ -43,7 +43,7 @@
  *   - Many methods accept `any`-typed payloads; validation is partially handled by DTOs
  *     at the controller layer and partially by inline checks.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { AuthService } from 'src/auth/auth.service';
 
@@ -109,6 +109,8 @@ import { getErrorMessage } from 'src/common/utils/get-error-message';
  */
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
+
   constructor(
     private readonly authService: AuthService,
 
@@ -5324,9 +5326,163 @@ export class ProductService {
 
     userType: any,
   ) {
+    // Use smart search when a search term is provided (FTS + relevance ranking)
+    if (term?.length > 2) {
+      return this.productSearchService.smartSearch({
+        page,
+        limit,
+        term,
+        sort,
+        brandIds,
+        priceMin,
+        priceMax,
+        categoryIds,
+        ratingMin: req?.query?.ratingMin ? parseFloat(req.query.ratingMin) : undefined,
+        hasDiscount: req?.query?.hasDiscount === 'true',
+        userId,
+        userType,
+        isOwner: req?.query?.isOwner,
+      });
+    }
+    // Fallback to original category browsing (preserves cache behavior)
     return this.productSearchService.getAllProduct(page, limit, req, term, sort, brandIds, priceMin, priceMax, userId, categoryIds, userType);
   }
 
+  /**
+   * @method getSearchSuggestions
+   * @description Returns autocomplete suggestions for search.
+   */
+  async getSearchSuggestions(term: string, userId?: number, deviceId?: string) {
+    return this.productSearchService.getSearchSuggestions(term, userId, deviceId);
+  }
+
+  /**
+   * @method aiSearch
+   * @description AI-powered natural language search. Parses the user's query using
+   *   OpenRouter LLM to extract structured filters (category, price range, sort, specs),
+   *   then feeds the parsed output into smartSearch for FTS-ranked results.
+   *
+   * @example "red leather bag under 50 dollars" =>
+   *   { searchTerm: "leather bag", priceRange: { max: 50 }, specFilters: { color: "red" } }
+   */
+  async aiSearch(params: {
+    query: string;
+    page?: number;
+    limit?: number;
+    userId?: number;
+    userType?: string;
+  }) {
+    try {
+      const { query, page = 1, limit = 20, userId, userType } = params;
+
+      if (!query || query.trim().length < 2) {
+        return {
+          status: false,
+          message: 'Query is too short',
+        };
+      }
+
+      // 1. Get available spec filters for AI context
+      const specTemplates = await this.prisma.specTemplate.findMany({
+        where: { status: 'ACTIVE', isFilterable: true, deletedAt: null },
+        select: { key: true, name: true, dataType: true, options: true },
+        take: 50,
+      });
+
+      const availableFilters = specTemplates.map((t) => ({
+        key: t.key,
+        name: t.name,
+        dataType: t.dataType,
+        options: Array.isArray(t.options) ? (t.options as string[]).slice(0, 10) : undefined,
+      }));
+
+      // 2. Parse natural language query with AI
+      const parsed = await this.openRouterService.parseSearchQuery(query, availableFilters);
+
+      // 3. Get tag-based semantic expansion for broader matching
+      const expandedTerms = await this.productSearchService.getTagExpansion(parsed.searchTerm);
+
+      // 4. Build the search term: original + expanded terms
+      const finalSearchTerm = expandedTerms.length > 0
+        ? `${parsed.searchTerm} ${expandedTerms.join(' ')}`
+        : parsed.searchTerm;
+
+      // 5. Feed parsed output into smartSearch
+      const resolvedCategoryIds = parsed.categoryHint
+        ? await this.resolveCategoryHint(parsed.categoryHint)
+        : undefined;
+
+      const searchResult: any = await this.productSearchService.smartSearch({
+        page,
+        limit,
+        term: finalSearchTerm,
+        sort: parsed.sortBy || 'relevance',
+        priceMin: parsed.priceRange?.min,
+        priceMax: parsed.priceRange?.max,
+        categoryIds: resolvedCategoryIds,
+        userId,
+        userType,
+      });
+
+      // 6. Apply personalization boost if userId is available
+      if (userId && searchResult?.status && searchResult?.data?.length > 0) {
+        await this.productSearchService.applyPersonalizationBoost(
+          searchResult.data,
+          userId,
+        );
+      }
+
+      // 7. Return results with parsed query metadata
+      return {
+        ...searchResult,
+        parsedQuery: {
+          originalQuery: query,
+          searchTerm: parsed.searchTerm,
+          categoryHint: parsed.categoryHint,
+          specFilters: parsed.specFilters,
+          priceRange: parsed.priceRange,
+          sortBy: parsed.sortBy,
+          expandedTerms,
+        },
+      };
+    } catch (error) {
+      this.logger.error('aiSearch error:', getErrorMessage(error));
+      // Fallback to regular smart search with the raw query
+      return this.productSearchService.smartSearch({
+        page: params.page || 1,
+        limit: params.limit || 20,
+        term: params.query,
+        sort: 'relevance',
+        userId: params.userId,
+        userType: params.userType,
+      });
+    }
+  }
+
+  /**
+   * @method resolveCategoryHint
+   * @description Resolves a category name hint from AI into category IDs.
+   */
+  private async resolveCategoryHint(categoryHint: string): Promise<string | undefined> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        where: {
+          status: 'ACTIVE',
+          deletedAt: null,
+          name: { contains: categoryHint, mode: 'insensitive' },
+        },
+        select: { id: true },
+        take: 5,
+      });
+
+      if (categories.length > 0) {
+        return categories.map((c) => c.id).join(',');
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   /**
    * @method getAllProductByUserBusinessCategory

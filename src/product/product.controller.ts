@@ -998,6 +998,51 @@ export class ProductController {
   }
 
   /**
+   * @method getSearchSuggestions
+   * @description Returns autocomplete suggestions for the search bar.
+   *   Includes product name matches, category matches, popular searches,
+   *   and user's recent searches.
+   *
+   * @usage `GET /product/search/suggestions?term=iph&userId=1&deviceId=abc`
+   */
+  @Get('/searchSuggestions')
+  getSearchSuggestions(
+    @Query('term') term: string,
+    @Query('userId') userId: any,
+    @Query('deviceId') deviceId: string,
+  ) {
+    return this.productService.getSearchSuggestions(
+      term,
+      userId ? parseInt(userId) : undefined,
+      deviceId,
+    );
+  }
+
+  /**
+   * @method aiSearch
+   * @description AI-powered natural language search. Parses query using LLM to extract
+   *   structured filters, expands via tag semantics, and returns ranked results.
+   *
+   * @usage `GET /product/search/ai?q=red+leather+bag+under+50&page=1&limit=20`
+   */
+  @Get('/search/ai')
+  aiSearch(
+    @Query('q') query: string,
+    @Query('page') page: any,
+    @Query('limit') limit: any,
+    @Query('userId') userId: any,
+    @Query('userType') userType: string,
+  ) {
+    return this.productService.aiSearch({
+      query,
+      page: page ? parseInt(page) : 1,
+      limit: limit ? parseInt(limit) : 20,
+      userId: userId ? parseInt(userId) : undefined,
+      userType,
+    });
+  }
+
+  /**
    * @method getAllProductByUserBusinessCategory
    * @description Retrieves products matching the authenticated user's business category.
    *

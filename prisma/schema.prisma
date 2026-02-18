@@ -879,6 +879,8 @@ model Product {
   dropshipSettings                Json?
   // Scrap product markup (for admin bulk add from scrap)
   scrapMarkup                      Decimal?                  @db.Decimal(10, 2)
+  // Full-text search vector (managed by DB trigger, not Prisma)
+  search_vector                    Unsupported("tsvector")?
   cart                            Cart[]
   cartProductServices             CartProductService[]
   product_customizeProduct        CustomizeProduct[]
