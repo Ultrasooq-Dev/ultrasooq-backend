@@ -100,19 +100,34 @@ export class SpecificationService {
 
   /**
    * Get all spec templates for a category (cached).
+   * Parent categories inherit specs from all descendant categories (bottom-up aggregation).
+   * Each template includes `inherited: boolean` and `sourceCategory` info.
    */
   async getTemplatesByCategory(categoryId: number) {
     return this.cacheService.getOrSet(
       CACHE_KEYS.CATEGORY_SPECS(categoryId),
       async () => {
-        return this.prisma.specTemplate.findMany({
+        // Get all descendant category IDs (parent inherits child specs)
+        const allCategoryIds = await this.getAllDescendantCategoryIds(categoryId);
+
+        const templates = await this.prisma.specTemplate.findMany({
           where: {
-            categoryId,
+            categoryId: { in: allCategoryIds },
             status: 'ACTIVE',
             deletedAt: null,
           },
+          include: {
+            category: { select: { id: true, name: true } },
+          },
           orderBy: [{ groupName: 'asc' }, { sortOrder: 'asc' }],
         });
+
+        // Add inherited flag: true if the template belongs to a descendant, not this category
+        return templates.map((t) => ({
+          ...t,
+          inherited: t.categoryId !== categoryId,
+          sourceCategory: t.category,
+        }));
       },
       CACHE_TTL.CATEGORY_SPECS,
     );

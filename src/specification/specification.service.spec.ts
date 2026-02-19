@@ -172,20 +172,43 @@ describe('SpecificationService', () => {
   });
 
   describe('getTemplatesByCategory()', () => {
-    it('should use cache getOrSet for fetching templates', async () => {
+    it('should use cache getOrSet and mark own templates as not inherited', async () => {
       const mockTemplates = [
-        { id: 1, name: 'Screen Size', key: 'screen_size', dataType: 'NUMBER' },
-        { id: 2, name: 'RAM', key: 'ram', dataType: 'SELECT' },
+        { id: 1, name: 'Screen Size', key: 'screen_size', dataType: 'NUMBER', categoryId: 1, category: { id: 1, name: 'Smartphones' } },
+        { id: 2, name: 'RAM', key: 'ram', dataType: 'SELECT', categoryId: 1, category: { id: 1, name: 'Smartphones' } },
       ];
 
-      // The getOrSet mock should call the factory function and return its result
       cacheService.getOrSet.mockImplementation(async (_key, factory) => factory());
+      prisma.category.findMany.mockResolvedValue([]); // leaf, no children
       prisma.specTemplate.findMany.mockResolvedValue(mockTemplates);
 
       const result = await service.getTemplatesByCategory(1);
 
       expect(cacheService.getOrSet).toHaveBeenCalledTimes(1);
-      expect(result).toEqual(mockTemplates);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({ inherited: false, sourceCategory: { id: 1, name: 'Smartphones' } });
+      expect(result[1]).toMatchObject({ inherited: false });
+    });
+
+    it('should mark child-category templates as inherited for parent categories', async () => {
+      const mockTemplates = [
+        { id: 1, name: 'Screen Size', key: 'screen_size', dataType: 'NUMBER', categoryId: 10, category: { id: 10, name: 'Smartphones' } },
+        { id: 2, name: 'Material', key: 'material', dataType: 'SELECT', categoryId: 11, category: { id: 11, name: 'Phone Cases' } },
+      ];
+
+      cacheService.getOrSet.mockImplementation(async (_key, factory) => factory());
+      // Parent category 5 has children 10 and 11
+      prisma.category.findMany
+        .mockResolvedValueOnce([{ id: 10 }, { id: 11 }])  // children of 5
+        .mockResolvedValueOnce([])  // children of 10 (leaf)
+        .mockResolvedValueOnce([]); // children of 11 (leaf)
+      prisma.specTemplate.findMany.mockResolvedValue(mockTemplates);
+
+      const result = await service.getTemplatesByCategory(5);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toMatchObject({ inherited: true, sourceCategory: { id: 10, name: 'Smartphones' } });
+      expect(result[1]).toMatchObject({ inherited: true, sourceCategory: { id: 11, name: 'Phone Cases' } });
     });
   });
 
