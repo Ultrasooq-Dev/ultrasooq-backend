@@ -10,6 +10,7 @@ import { NotFoundException } from '@nestjs/common';
 const mockPrismaService = {
   category: {
     findUnique: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]), // No children by default (leaf category)
   },
   specTemplate: {
     create: jest.fn(),
@@ -53,8 +54,10 @@ const mockPrismaService = {
   },
   service: {
     findUnique: jest.fn(),
+    update: jest.fn(),
   },
   serviceCategoryMap: {
+    create: jest.fn(),
     deleteMany: jest.fn(),
     createMany: jest.fn(),
     findMany: jest.fn(),
@@ -669,6 +672,422 @@ describe('SpecificationService', () => {
 
       expect(result).toEqual([]);
       expect(prisma.categoryTag.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ===========================================================================
+  // CATEGORY KEYWORDS
+  // ===========================================================================
+  describe('addCategoryKeywords()', () => {
+    it('should add keywords to a category', async () => {
+      prisma.category.findUnique.mockResolvedValue({ id: 1, name: 'Smartphones' });
+      prisma.categoryKeyword.create
+        .mockResolvedValueOnce({ id: 1, categoryId: 1, keyword: 'smartphone' })
+        .mockResolvedValueOnce({ id: 2, categoryId: 1, keyword: 'mobile' });
+
+      const result = await service.addCategoryKeywords(1, ['Smartphone', 'Mobile']);
+
+      expect(result).toHaveLength(2);
+      expect(prisma.categoryKeyword.create).toHaveBeenCalledTimes(2);
+      // Verify keywords are lowercased + trimmed
+      expect(prisma.categoryKeyword.create).toHaveBeenCalledWith({
+        data: { categoryId: 1, keyword: 'smartphone' },
+      });
+    });
+
+    it('should skip duplicate keywords gracefully', async () => {
+      prisma.category.findUnique.mockResolvedValue({ id: 1, name: 'Smartphones' });
+      prisma.categoryKeyword.create
+        .mockResolvedValueOnce({ id: 1, categoryId: 1, keyword: 'phone' })
+        .mockRejectedValueOnce(new Error('Unique constraint'));
+
+      const result = await service.addCategoryKeywords(1, ['phone', 'phone-dupe']);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].keyword).toBe('phone');
+    });
+
+    it('should throw NotFoundException if category not found', async () => {
+      prisma.category.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.addCategoryKeywords(999, ['keyword']),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getCategoryKeywords()', () => {
+    it('should return keywords ordered alphabetically', async () => {
+      const mockKeywords = [
+        { id: 1, categoryId: 1, keyword: 'android' },
+        { id: 2, categoryId: 1, keyword: 'mobile' },
+        { id: 3, categoryId: 1, keyword: 'smartphone' },
+      ];
+      prisma.categoryKeyword.findMany.mockResolvedValue(mockKeywords);
+
+      const result = await service.getCategoryKeywords(1);
+
+      expect(result).toEqual(mockKeywords);
+      expect(prisma.categoryKeyword.findMany).toHaveBeenCalledWith({
+        where: { categoryId: 1, status: 'ACTIVE', deletedAt: null },
+        orderBy: { keyword: 'asc' },
+      });
+    });
+  });
+
+  // ===========================================================================
+  // MATCH CATEGORIES (Keyword-Based)
+  // ===========================================================================
+  describe('matchCategories()', () => {
+    it('should split text into words and match against keywords', async () => {
+      prisma.categoryKeyword.findMany.mockResolvedValue([
+        { categoryId: 1, keyword: 'samsung', category: { id: 1, name: 'Smartphones' } },
+        { categoryId: 1, keyword: 'phone', category: { id: 1, name: 'Smartphones' } },
+        { categoryId: 2, keyword: 'samsung', category: { id: 2, name: 'Tablets' } },
+      ]);
+
+      const result = await service.matchCategories('Samsung Galaxy Phone 5G');
+
+      expect(result).toHaveLength(2);
+      // Smartphones should be first (2 matches: samsung, phone)
+      expect(result[0].categoryId).toBe(1);
+      expect(result[0].matchedKeywords).toHaveLength(2);
+      expect(result[0].matchedKeywords).toContain('samsung');
+      expect(result[0].matchedKeywords).toContain('phone');
+      // Tablets should be second (1 match: samsung)
+      expect(result[1].categoryId).toBe(2);
+      expect(result[1].matchedKeywords).toHaveLength(1);
+    });
+
+    it('should return empty array for short words (<=2 chars)', async () => {
+      const result = await service.matchCategories('a b');
+
+      expect(result).toEqual([]);
+      expect(prisma.categoryKeyword.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should split on various delimiters', async () => {
+      prisma.categoryKeyword.findMany.mockResolvedValue([
+        { categoryId: 1, keyword: 'laptop', category: { id: 1, name: 'Laptops' } },
+      ]);
+
+      await service.matchCategories('gaming-laptop/ultrabook.pro');
+
+      // Should have searched with words: gaming, laptop, ultrabook, pro
+      expect(prisma.categoryKeyword.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            keyword: { in: expect.arrayContaining(['gaming', 'laptop', 'ultrabook', 'pro']) },
+          }),
+        }),
+      );
+    });
+
+    it('should return empty for empty string', async () => {
+      const result = await service.matchCategories('');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ===========================================================================
+  // PRODUCT CATEGORIES (Multi-Category)
+  // ===========================================================================
+  describe('setProductCategories()', () => {
+    it('should replace all product categories and update primary', async () => {
+      prisma.product.findUnique.mockResolvedValue({ id: 1, productName: 'Test' });
+      prisma.productCategoryMap.deleteMany.mockResolvedValue({ count: 2 });
+      prisma.productCategoryMap.createMany.mockResolvedValue({ count: 3 });
+      prisma.product.update.mockResolvedValue({ id: 1, categoryId: 10 });
+      prisma.productCategoryMap.findMany.mockResolvedValue([
+        { productId: 1, categoryId: 10, isPrimary: true },
+        { productId: 1, categoryId: 20, isPrimary: false },
+        { productId: 1, categoryId: 30, isPrimary: false },
+      ]);
+      cacheService.invalidateProduct.mockResolvedValue(undefined);
+      cacheService.del.mockResolvedValue(undefined);
+
+      const result = await service.setProductCategories(1, [10, 20, 30], 10);
+
+      expect(prisma.productCategoryMap.deleteMany).toHaveBeenCalledWith({
+        where: { productId: 1 },
+      });
+      expect(prisma.productCategoryMap.createMany).toHaveBeenCalledWith({
+        data: [
+          { productId: 1, categoryId: 10, isPrimary: true, source: 'manual' },
+          { productId: 1, categoryId: 20, isPrimary: false, source: 'manual' },
+          { productId: 1, categoryId: 30, isPrimary: false, source: 'manual' },
+        ],
+      });
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { categoryId: 10 },
+      });
+      expect(cacheService.invalidateProduct).toHaveBeenCalledWith(1);
+    });
+
+    it('should use first categoryId as primary when not specified', async () => {
+      prisma.product.findUnique.mockResolvedValue({ id: 1, productName: 'Test' });
+      prisma.productCategoryMap.deleteMany.mockResolvedValue({ count: 0 });
+      prisma.productCategoryMap.createMany.mockResolvedValue({ count: 2 });
+      prisma.product.update.mockResolvedValue({ id: 1, categoryId: 10 });
+      prisma.productCategoryMap.findMany.mockResolvedValue([]);
+      cacheService.invalidateProduct.mockResolvedValue(undefined);
+      cacheService.del.mockResolvedValue(undefined);
+
+      await service.setProductCategories(1, [10, 20]);
+
+      // First category (10) should be primary
+      expect(prisma.productCategoryMap.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({ categoryId: 10, isPrimary: true }),
+          expect.objectContaining({ categoryId: 20, isPrimary: false }),
+        ]),
+      });
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { categoryId: 10 },
+      });
+    });
+
+    it('should throw NotFoundException when product not found', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.setProductCategories(999, [10]),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getProductCategories()', () => {
+    it('should return categories for a product with category details', async () => {
+      const mockMaps = [
+        { productId: 1, categoryId: 10, isPrimary: true, category: { id: 10, name: 'Smartphones', parentId: 5, icon: null } },
+        { productId: 1, categoryId: 20, isPrimary: false, category: { id: 20, name: 'Phone Cases', parentId: 5, icon: null } },
+      ];
+      prisma.productCategoryMap.findMany.mockResolvedValue(mockMaps);
+
+      const result = await service.getProductCategories(1);
+
+      expect(result).toEqual(mockMaps);
+      expect(prisma.productCategoryMap.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { productId: 1, status: 'ACTIVE', deletedAt: null },
+          include: expect.objectContaining({
+            category: expect.any(Object),
+          }),
+          orderBy: { isPrimary: 'desc' },
+        }),
+      );
+    });
+  });
+
+  // ===========================================================================
+  // AUTO-CATEGORIZE (Product)
+  // ===========================================================================
+  describe('autoCategorize()', () => {
+    it('should use tag-based matching as primary strategy', async () => {
+      prisma.product.findUnique.mockResolvedValue({
+        id: 1,
+        productName: 'Samsung Galaxy S24',
+        description: 'A smartphone',
+        shortDescription: '',
+        productTags: [
+          { productTagsTag: { id: 10, tagName: 'smartphone' } },
+          { productTagsTag: { id: 11, tagName: '5g' } },
+        ],
+      });
+
+      // Mock matchCategoriesByTags result (called internally)
+      prisma.categoryTag.findMany.mockResolvedValue([
+        { categoryId: 1, tagId: 10, category: { id: 1, name: 'Smartphones' } },
+        { categoryId: 1, tagId: 11, category: { id: 1, name: 'Smartphones' } },
+      ]);
+
+      prisma.productCategoryMap.create.mockResolvedValue({});
+
+      const result = await service.autoCategorize(1);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].categoryId).toBe(1);
+      expect((result[0] as any).matchCount).toBe(2);
+    });
+
+    it('should fall back to keyword matching when no tags', async () => {
+      prisma.product.findUnique.mockResolvedValue({
+        id: 1,
+        productName: 'Samsung Galaxy Phone',
+        description: 'A mobile phone',
+        shortDescription: '',
+        productTags: [], // No tags
+      });
+
+      // Mock keyword matching
+      prisma.categoryKeyword.findMany.mockResolvedValue([
+        { categoryId: 1, keyword: 'samsung', category: { id: 1, name: 'Smartphones' } },
+        { categoryId: 1, keyword: 'phone', category: { id: 1, name: 'Smartphones' } },
+      ]);
+
+      prisma.productCategoryMap.create.mockResolvedValue({});
+
+      const result = await service.autoCategorize(1);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].categoryId).toBe(1);
+      expect((result[0] as any).matchedKeywords).toContain('samsung');
+    });
+
+    it('should fall back to keywords when tags match zero categories', async () => {
+      prisma.product.findUnique.mockResolvedValue({
+        id: 1,
+        productName: 'Special Widget',
+        description: 'A widget gadget',
+        shortDescription: '',
+        productTags: [
+          { productTagsTag: { id: 99, tagName: 'unmatched-tag' } },
+        ],
+      });
+
+      // Tags match no categories
+      prisma.categoryTag.findMany.mockResolvedValue([]);
+
+      // Keyword matching finds something
+      prisma.categoryKeyword.findMany.mockResolvedValue([
+        { categoryId: 5, keyword: 'widget', category: { id: 5, name: 'Widgets' } },
+      ]);
+      prisma.productCategoryMap.create.mockResolvedValue({});
+
+      const result = await service.autoCategorize(1);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].categoryName).toBe('Widgets');
+    });
+
+    it('should throw NotFoundException when product not found', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
+
+      await expect(service.autoCategorize(999)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ===========================================================================
+  // SERVICE CATEGORIES (Multi-Category)
+  // ===========================================================================
+  describe('setServiceCategories()', () => {
+    it('should replace all service categories and update primary', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 5, serviceName: 'Repair' });
+      prisma.serviceCategoryMap.deleteMany.mockResolvedValue({ count: 1 });
+      prisma.serviceCategoryMap.createMany.mockResolvedValue({ count: 2 });
+      prisma.service.update.mockResolvedValue({ id: 5, categoryId: 10 });
+      prisma.serviceCategoryMap.findMany.mockResolvedValue([
+        { serviceId: 5, categoryId: 10, isPrimary: true },
+        { serviceId: 5, categoryId: 20, isPrimary: false },
+      ]);
+
+      const result = await service.setServiceCategories(5, [10, 20], 10);
+
+      expect(prisma.serviceCategoryMap.deleteMany).toHaveBeenCalledWith({
+        where: { serviceId: 5 },
+      });
+      expect(prisma.serviceCategoryMap.createMany).toHaveBeenCalledWith({
+        data: [
+          { serviceId: 5, categoryId: 10, isPrimary: true, source: 'manual' },
+          { serviceId: 5, categoryId: 20, isPrimary: false, source: 'manual' },
+        ],
+      });
+      expect(prisma.service.update).toHaveBeenCalledWith({
+        where: { id: 5 },
+        data: { categoryId: 10 },
+      });
+    });
+
+    it('should handle empty categoryIds', async () => {
+      prisma.service.findUnique.mockResolvedValue({ id: 5, serviceName: 'Repair' });
+      prisma.serviceCategoryMap.deleteMany.mockResolvedValue({ count: 0 });
+      prisma.serviceCategoryMap.findMany.mockResolvedValue([]);
+
+      const result = await service.setServiceCategories(5, []);
+
+      expect(prisma.serviceCategoryMap.deleteMany).toHaveBeenCalled();
+      expect(prisma.serviceCategoryMap.createMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when service not found', async () => {
+      prisma.service.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.setServiceCategories(999, [10]),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getServiceCategories()', () => {
+    it('should return categories for a service with details', async () => {
+      const mockMaps = [
+        { serviceId: 5, categoryId: 10, isPrimary: true, category: { id: 10, name: 'Repair', parentId: 1, icon: null } },
+      ];
+      prisma.serviceCategoryMap.findMany.mockResolvedValue(mockMaps);
+
+      const result = await service.getServiceCategories(5);
+
+      expect(result).toEqual(mockMaps);
+      expect(prisma.serviceCategoryMap.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { serviceId: 5, status: 'ACTIVE', deletedAt: null },
+          include: expect.objectContaining({
+            category: expect.any(Object),
+          }),
+          orderBy: { isPrimary: 'desc' },
+        }),
+      );
+    });
+  });
+
+  // ===========================================================================
+  // AUTO-CATEGORIZE SERVICE
+  // ===========================================================================
+  describe('autoCategorizeService()', () => {
+    it('should use tag-based matching for service', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        id: 5,
+        serviceName: 'Phone Repair',
+        serviceTags: [
+          { tag: { id: 10, tagName: 'smartphone' } },
+          { tag: { id: 11, tagName: 'repair' } },
+        ],
+      });
+
+      prisma.categoryTag.findMany.mockResolvedValue([
+        { categoryId: 1, tagId: 10, category: { id: 1, name: 'Phone Services' } },
+        { categoryId: 1, tagId: 11, category: { id: 1, name: 'Phone Services' } },
+      ]);
+
+      prisma.serviceCategoryMap.create.mockResolvedValue({});
+
+      const result = await service.autoCategorizeService(5);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].categoryId).toBe(1);
+      expect(result[0].matchCount).toBe(2);
+    });
+
+    it('should return empty when service has no tags', async () => {
+      prisma.service.findUnique.mockResolvedValue({
+        id: 5,
+        serviceName: 'Basic Service',
+        serviceTags: [],
+      });
+
+      const result = await service.autoCategorizeService(5);
+
+      expect(result).toEqual([]);
+      expect(prisma.categoryTag.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when service not found', async () => {
+      prisma.service.findUnique.mockResolvedValue(null);
+
+      await expect(service.autoCategorizeService(999)).rejects.toThrow(NotFoundException);
     });
   });
 });

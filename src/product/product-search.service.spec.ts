@@ -3,6 +3,7 @@ import { ProductSearchService } from './product-search.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HelperService } from '../helper/helper.service';
 import { CacheService, CACHE_KEYS } from '../cache/cache.service';
+import { SpecificationService } from '../specification/specification.service';
 
 // ─────────────────────────────────────────────────────────
 // Mock PrismaService
@@ -30,6 +31,20 @@ const mockCacheService = {
   getOrSet: jest.fn(),
 };
 
+const mockSpecificationService = {
+  getFilters: jest.fn().mockResolvedValue({ filters: [] }),
+  getCategoryTags: jest.fn().mockResolvedValue([]),
+  getTemplatesByCategory: jest.fn().mockResolvedValue([]),
+  getTemplatesForCategories: jest.fn().mockResolvedValue({}),
+  createTemplate: jest.fn(),
+  bulkCreateTemplates: jest.fn(),
+  updateTemplate: jest.fn(),
+  deleteTemplate: jest.fn(),
+  setSpecValues: jest.fn(),
+  getSpecValues: jest.fn(),
+  updateSpecValue: jest.fn(),
+};
+
 describe('ProductSearchService', () => {
   let service: ProductSearchService;
   let prisma: typeof mockPrismaService;
@@ -42,6 +57,7 @@ describe('ProductSearchService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: HelperService, useValue: mockHelperService },
         { provide: CacheService, useValue: mockCacheService },
+        { provide: SpecificationService, useValue: mockSpecificationService },
       ],
     }).compile();
 

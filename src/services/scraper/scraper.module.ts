@@ -18,6 +18,7 @@ import { ProductMediaService } from 'src/product/product-media.service';
 import { ProductRfqService } from 'src/product/product-rfq.service';
 import { ProductBuyGroupService } from 'src/product/product-buygroup.service';
 import { ProductFactoryService } from 'src/product/product-factory.service';
+import { SpecificationService } from 'src/specification/specification.service';
 
 /**
  * Module for web scraping services
@@ -44,6 +45,7 @@ import { ProductFactoryService } from 'src/product/product-factory.service';
         ProductRfqService,
         ProductBuyGroupService,
         ProductFactoryService,
+        SpecificationService,
     ],
     exports: [ScraperService],
 })

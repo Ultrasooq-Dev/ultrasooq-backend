@@ -57,6 +57,7 @@ import { ProductMediaService } from './product-media.service';
 import { ProductRfqService } from './product-rfq.service';
 import { ProductBuyGroupService } from './product-buygroup.service';
 import { ProductFactoryService } from './product-factory.service';
+import { SpecificationService } from '../specification/specification.service';
 
 /**
  * @class ProductModule
@@ -91,6 +92,7 @@ import { ProductFactoryService } from './product-factory.service';
     S3service,
     HelperService,
     OpenRouterService,
+    SpecificationService,
   ]
 })
 export class ProductModule {}

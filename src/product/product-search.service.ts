@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { HelperService } from 'src/helper/helper.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 import { CacheService, CACHE_KEYS, CACHE_TTL } from '../cache/cache.service';
+import { SpecificationService } from '../specification/specification.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class ProductSearchService {
     private readonly prisma: PrismaService,
     private readonly helperService: HelperService,
     private readonly cacheService: CacheService,
+    private readonly specificationService: SpecificationService,
   ) {}
 
   /**
@@ -249,11 +251,48 @@ export class ProductSearchService {
         }
       });
 
+      // ── Build spec-based filters for the category ──
+      let filters: any[] = [];
+      let categoryTags: any[] = [];
+      if (categoryIds) {
+        try {
+          const catIdArr = categoryIds.split(',').map((id: string) => parseInt(id.trim())).filter(Boolean);
+          // Get spec filters for all requested categories
+          const allFilters: any[] = [];
+          const allTags: any[] = [];
+          for (const catId of catIdArr) {
+            const filterResult = await this.specificationService.getFilters(catId);
+            if (filterResult?.filters) {
+              allFilters.push(...filterResult.filters);
+            }
+            try {
+              const tags = await this.specificationService.getCategoryTags(catId);
+              if (tags?.length) {
+                allTags.push(...tags.map((ct: any) => ct.tag || ct));
+              }
+            } catch {
+              // ignore tag fetch errors
+            }
+          }
+          filters = allFilters;
+          // Deduplicate tags by id
+          const tagMap = new Map();
+          for (const t of allTags) {
+            if (t?.id && !tagMap.has(t.id)) tagMap.set(t.id, t);
+          }
+          categoryTags = Array.from(tagMap.values());
+        } catch (e) {
+          this.logger.warn('Failed to load spec filters: ' + getErrorMessage(e));
+        }
+      }
+
       const result = {
         status: true,
         message: 'Fetch Successfully',
         data: productDetailList,
         totalCount: productDetailListCount,
+        filters,
+        categoryTags,
       };
 
       // Cache simple category-based browsing results for 5 minutes
@@ -763,11 +802,46 @@ export class ProductSearchService {
         }
       });
 
+      // ── Build spec-based filters for the category ──
+      let filters: any[] = [];
+      let categoryTags: any[] = [];
+      if (categoryIds) {
+        try {
+          const catIdArr = categoryIds.split(',').map((id: string) => parseInt(id.trim())).filter(Boolean);
+          const allFilters: any[] = [];
+          const allTags: any[] = [];
+          for (const catId of catIdArr) {
+            const filterResult = await this.specificationService.getFilters(catId);
+            if (filterResult?.filters) {
+              allFilters.push(...filterResult.filters);
+            }
+            try {
+              const tags = await this.specificationService.getCategoryTags(catId);
+              if (tags?.length) {
+                allTags.push(...tags.map((ct: any) => ct.tag || ct));
+              }
+            } catch {
+              // ignore tag fetch errors
+            }
+          }
+          filters = allFilters;
+          const tagMap = new Map();
+          for (const t of allTags) {
+            if (t?.id && !tagMap.has(t.id)) tagMap.set(t.id, t);
+          }
+          categoryTags = Array.from(tagMap.values());
+        } catch (e) {
+          this.logger.warn('Failed to load spec filters: ' + getErrorMessage(e));
+        }
+      }
+
       const result = {
         status: true,
         message: 'Fetch Successfully',
         data: products,
         totalCount,
+        filters,
+        categoryTags,
       };
 
       // Cache search results

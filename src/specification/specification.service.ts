@@ -290,11 +290,31 @@ export class SpecificationService {
     );
   }
 
+  /**
+   * Recursively collect all descendant category IDs (including the given one).
+   * If the category has children, walk down the tree; otherwise return just this ID.
+   */
+  private async getAllDescendantCategoryIds(categoryId: number): Promise<number[]> {
+    const ids: number[] = [categoryId];
+    const children = await this.prisma.category.findMany({
+      where: { parentId: categoryId, deletedAt: null },
+      select: { id: true },
+    });
+    for (const child of children) {
+      const descendantIds = await this.getAllDescendantCategoryIds(child.id);
+      ids.push(...descendantIds);
+    }
+    return ids;
+  }
+
   private async buildFilters(categoryId: number) {
-    // Get all filterable templates for this category
+    // Get all descendant category IDs (parent inherits child specs)
+    const allCategoryIds = await this.getAllDescendantCategoryIds(categoryId);
+
+    // Get all filterable templates for this category and all its descendants
     const templates = await this.prisma.specTemplate.findMany({
       where: {
-        categoryId,
+        categoryId: { in: allCategoryIds },
         isFilterable: true,
         status: 'ACTIVE',
         deletedAt: null,
@@ -302,22 +322,46 @@ export class SpecificationService {
       orderBy: [{ groupName: 'asc' }, { sortOrder: 'asc' }],
     });
 
+    // Deduplicate templates by key — same spec key across child categories should be merged
+    const templatesByKey = new Map<string, typeof templates>();
+    for (const t of templates) {
+      if (!templatesByKey.has(t.key)) {
+        templatesByKey.set(t.key, []);
+      }
+      templatesByKey.get(t.key)!.push(t);
+    }
+
     const filters = [];
 
-    for (const template of templates) {
+    // Iterate deduplicated keys — each key may map to multiple template IDs across child categories
+    for (const [key, keyTemplates] of templatesByKey) {
+      // Use the first template for metadata (name, dataType, unit, groupName)
+      const representative = keyTemplates[0];
+      const templateIds = keyTemplates.map((t) => t.id);
+
+      // Merge SELECT options from all templates with the same key
+      const mergedOptions = new Set<string>();
+      for (const t of keyTemplates) {
+        if (t.options && Array.isArray(t.options)) {
+          for (const opt of t.options as string[]) {
+            mergedOptions.add(opt);
+          }
+        }
+      }
+
       const filter: any = {
-        key: template.key,
-        name: template.name,
-        dataType: template.dataType,
-        unit: template.unit,
-        groupName: template.groupName,
+        key: representative.key,
+        name: representative.name,
+        dataType: representative.dataType,
+        unit: representative.unit,
+        groupName: representative.groupName,
       };
 
-      if (template.dataType === 'NUMBER') {
-        // Get min/max range for numeric specs
+      if (representative.dataType === 'NUMBER') {
+        // Get min/max range across all template IDs with this key
         const agg = await this.prisma.productSpecValue.aggregate({
           where: {
-            specTemplateId: template.id,
+            specTemplateId: { in: templateIds },
             status: 'ACTIVE',
             numericValue: { not: null },
           },
@@ -330,29 +374,34 @@ export class SpecificationService {
           max: agg._max.numericValue ? Number(agg._max.numericValue) : 0,
         };
         filter.count = agg._count;
-      } else if (template.dataType === 'SELECT' || template.dataType === 'MULTI_SELECT') {
-        // Get distinct values with counts
+      } else if (representative.dataType === 'SELECT' || representative.dataType === 'MULTI_SELECT') {
+        // Get distinct values with counts across all template IDs
         const values = await this.prisma.productSpecValue.groupBy({
           by: ['value'],
           where: {
-            specTemplateId: template.id,
+            specTemplateId: { in: templateIds },
             status: 'ACTIVE',
             value: { not: null },
           },
           _count: true,
           orderBy: { _count: { value: 'desc' } },
-          take: 50, // limit to top 50 values
+          take: 50,
         });
-        filter.options = values.map((v) => v.value);
+        // Combine DB values with template-defined options
+        const allOptions = new Set<string>(mergedOptions);
+        for (const v of values) {
+          if (v.value) allOptions.add(v.value);
+        }
+        filter.options = Array.from(allOptions);
         filter.counts = {};
         for (const v of values) {
           if (v.value) filter.counts[v.value] = v._count;
         }
-      } else if (template.dataType === 'BOOLEAN') {
+      } else if (representative.dataType === 'BOOLEAN') {
         const values = await this.prisma.productSpecValue.groupBy({
           by: ['value'],
           where: {
-            specTemplateId: template.id,
+            specTemplateId: { in: templateIds },
             status: 'ACTIVE',
           },
           _count: true,
@@ -363,11 +412,11 @@ export class SpecificationService {
           if (v.value) filter.counts[v.value] = v._count;
         }
       } else {
-        // TEXT — get top values
+        // TEXT — get top values across all template IDs
         const values = await this.prisma.productSpecValue.groupBy({
           by: ['value'],
           where: {
-            specTemplateId: template.id,
+            specTemplateId: { in: templateIds },
             status: 'ACTIVE',
             value: { not: null },
           },
@@ -630,10 +679,21 @@ export class SpecificationService {
     return this.cacheService.getOrSet(
       CACHE_KEYS.CATEGORY_TAGS(categoryId),
       async () => {
-        return this.prisma.categoryTag.findMany({
-          where: { categoryId, status: 'ACTIVE', deletedAt: null },
+        // Get tags from this category AND all descendant categories
+        const allCategoryIds = await this.getAllDescendantCategoryIds(categoryId);
+        const categoryTags = await this.prisma.categoryTag.findMany({
+          where: { categoryId: { in: allCategoryIds }, status: 'ACTIVE', deletedAt: null },
           include: { tag: { select: { id: true, tagName: true } } },
           orderBy: { createdAt: 'asc' },
+        });
+        // Deduplicate by tag ID
+        const seen = new Set<number>();
+        return categoryTags.filter((ct) => {
+          if (ct.tag && !seen.has(ct.tag.id)) {
+            seen.add(ct.tag.id);
+            return true;
+          }
+          return false;
         });
       },
       CACHE_TTL.CATEGORY_TAGS,
