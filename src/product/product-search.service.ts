@@ -296,6 +296,7 @@ export class ProductSearchService {
     userId?: number;
     userType?: string;
     isOwner?: string;
+    specFilters?: Record<string, string[]>;
   }) {
     try {
       const {
@@ -311,6 +312,7 @@ export class ProductSearchService {
         hasDiscount,
         userId,
         isOwner,
+        specFilters,
       } = params;
 
       const pageNum = parseInt(String(page)) || 1;
@@ -324,7 +326,7 @@ export class ProductSearchService {
 
       // ── Cache check ──
       const cacheHash = crypto.createHash('md5')
-        .update(JSON.stringify({ searchTerm, sort, brandIds, priceMin, priceMax, categoryIds, ratingMin, hasDiscount, pageNum, pageSize }))
+        .update(JSON.stringify({ searchTerm, sort, brandIds, priceMin, priceMax, categoryIds, ratingMin, hasDiscount, specFilters, pageNum, pageSize }))
         .digest('hex');
       const cacheKey = CACHE_KEYS.SEARCH_RESULTS(cacheHash);
       const cached = await this.cacheService.get(cacheKey);
@@ -407,6 +409,57 @@ export class ProductSearchService {
         AND pp."isCustomProduct" = 'false'
         AND pp."sellType" = 'NORMALSELL'
       )`);
+
+      // Spec filters — filter by product specification values
+      if (specFilters && typeof specFilters === 'object') {
+        for (const [specKey, specValues] of Object.entries(specFilters)) {
+          if (!specValues || !Array.isArray(specValues) || specValues.length === 0) continue;
+
+          // Check if this is a numeric range filter (e.g., ["100", "500"] means min-max)
+          // Convention: if specKey ends with "_min" or "_max", treat as range
+          if (specKey.endsWith('_min') || specKey.endsWith('_max')) {
+            const baseKey = specKey.replace(/_min$|_max$/, '');
+            const numVal = parseFloat(specValues[0]);
+            if (isNaN(numVal)) continue;
+
+            sqlParams.push(baseKey);
+            sqlParams.push(numVal);
+            if (specKey.endsWith('_min')) {
+              whereClauses.push(`EXISTS (
+                SELECT 1 FROM product_spec_value psv
+                JOIN spec_template st ON psv."specTemplateId" = st.id
+                WHERE psv."productId" = p.id
+                AND st.key = $${paramIndex}
+                AND psv."numericValue" >= $${paramIndex + 1}
+                AND psv.status = 'ACTIVE'
+              )`);
+            } else {
+              whereClauses.push(`EXISTS (
+                SELECT 1 FROM product_spec_value psv
+                JOIN spec_template st ON psv."specTemplateId" = st.id
+                WHERE psv."productId" = p.id
+                AND st.key = $${paramIndex}
+                AND psv."numericValue" <= $${paramIndex + 1}
+                AND psv.status = 'ACTIVE'
+              )`);
+            }
+            paramIndex += 2;
+          } else {
+            // Exact value match (SELECT, MULTI_SELECT, TEXT, BOOLEAN)
+            sqlParams.push(specKey);
+            sqlParams.push(specValues);
+            whereClauses.push(`EXISTS (
+              SELECT 1 FROM product_spec_value psv
+              JOIN spec_template st ON psv."specTemplateId" = st.id
+              WHERE psv."productId" = p.id
+              AND st.key = $${paramIndex}
+              AND psv.value = ANY($${paramIndex + 1}::text[])
+              AND psv.status = 'ACTIVE'
+            )`);
+            paramIndex += 2;
+          }
+        }
+      }
 
       const whereSQL = whereClauses.join(' AND ');
 

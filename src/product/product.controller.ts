@@ -981,7 +981,18 @@ export class ProductController {
     @Query('userId') userId: any,
     @Query('categoryIds') categoryIds: any,
     @Query('userType') userType: any,
+    @Query('specFilters') specFilters: any,
   ) {
+    // Parse specFilters from JSON string if provided
+    let parsedSpecFilters: Record<string, string[]> | undefined;
+    if (specFilters) {
+      try {
+        parsedSpecFilters = typeof specFilters === 'string' ? JSON.parse(specFilters) : specFilters;
+      } catch (e) {
+        // Ignore invalid JSON
+      }
+    }
+
     return this.productService.getAllProduct(
       page,
       limit,
@@ -994,6 +1005,7 @@ export class ProductController {
       userId,
       categoryIds,
       userType,
+      parsedSpecFilters,
     );
   }
 

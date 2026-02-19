@@ -5325,6 +5325,8 @@ export class ProductService {
     categoryIds: any,
 
     userType: any,
+
+    specFilters?: Record<string, string[]>,
   ) {
     // Use smart search when a search term is provided (FTS + relevance ranking)
     if (term?.length > 2) {
@@ -5342,6 +5344,7 @@ export class ProductService {
         userId,
         userType,
         isOwner: req?.query?.isOwner,
+        specFilters,
       });
     }
     // Fallback to original category browsing (preserves cache behavior)
@@ -5412,6 +5415,19 @@ export class ProductService {
         ? await this.resolveCategoryHint(parsed.categoryHint)
         : undefined;
 
+      // Convert AI-parsed spec filters to the format smartSearch expects
+      let aiSpecFilters: Record<string, string[]> | undefined;
+      if (parsed.specFilters && typeof parsed.specFilters === 'object') {
+        aiSpecFilters = {};
+        for (const [key, val] of Object.entries(parsed.specFilters)) {
+          if (Array.isArray(val)) {
+            aiSpecFilters[key] = val.map(String);
+          } else if (val !== undefined && val !== null) {
+            aiSpecFilters[key] = [String(val)];
+          }
+        }
+      }
+
       const searchResult: any = await this.productSearchService.smartSearch({
         page,
         limit,
@@ -5422,6 +5438,7 @@ export class ProductService {
         categoryIds: resolvedCategoryIds,
         userId,
         userType,
+        specFilters: aiSpecFilters,
       });
 
       // 6. Apply personalization boost if userId is available
