@@ -1,0 +1,51 @@
+# ── Builder stage ──────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# System deps for native modules (bcrypt, etc.) and Chromium
+RUN apk add --no-cache libc6-compat python3 make g++
+
+# Copy package files and .npmrc (shamefully-hoist=true for flat node_modules)
+COPY package.json pnpm-lock.yaml .npmrc ./
+
+# Install pnpm and ALL dependencies (including devDependencies for building)
+RUN npm install -g pnpm && \
+    NODE_ENV=development pnpm install --frozen-lockfile
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client and build
+RUN npx prisma generate && npx nest build
+
+# Verify build output exists
+RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
+    (echo "BUILD FAILED: dist/src/main.js not found" && find dist -name "*.js" 2>/dev/null | head -10 && exit 1)
+
+# Prune dev dependencies — keep only production deps
+RUN pnpm prune --prod
+
+# ── Runner stage ──────────────────────────────────────────────
+FROM node:22-alpine AS runner
+
+WORKDIR /app
+
+# Chromium and runtime deps for Puppeteer
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production
+
+# Copy production node_modules, built code, and Prisma files
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.npmrc ./.npmrc
+
+EXPOSE 3000
+
+# Run migrations then start the server
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
