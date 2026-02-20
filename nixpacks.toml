@@ -1,13 +1,6 @@
 [phases.setup]
 aptPkgs = ["chromium", "libnss3", "libfreetype6", "libharfbuzz0b", "ca-certificates", "fonts-freefont-ttf"]
 
-[phases.build]
-cmds = [
-  "npx prisma generate",
-  "npx tsc -p tsconfig.build.json",
-  "test -f dist/src/main.js && echo 'BUILD OK' || (echo 'BUILD FAILED' && exit 1)"
-]
-
 [variables]
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
 PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
