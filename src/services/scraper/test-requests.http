@@ -1,0 +1,115 @@
+### Scraper Service - API Test Requests
+### Use with REST Client extension in VS Code or similar tools
+
+# Note: Make sure your NestJS server is running on port 3000
+# Run: npm run start:dev
+
+@baseUrl = http://localhost:3000
+
+###############################################
+# 1. Check if scraper providers are registered
+###############################################
+GET {{baseUrl}}/scraper/providers
+Content-Type: application/json
+
+###############################################
+# 2. Check if a URL can be scraped
+###############################################
+GET {{baseUrl}}/scraper/check?url=https://www.amazon.in/dp/B0CX59SMJ9
+Content-Type: application/json
+
+###############################################
+# 3. Scrape a product from Amazon.in
+###############################################
+GET {{baseUrl}}/scraper/product?url=https://www.amazon.in/dp/B0CX59SMJ9
+Content-Type: application/json
+
+###############################################
+# 4. Scrape search results
+###############################################
+GET {{baseUrl}}/scraper/search?url=https://www.amazon.in/s?k=laptop
+Content-Type: application/json
+
+###############################################
+# 5. Preview product before saving
+###############################################
+POST {{baseUrl}}/scraper/preview
+Content-Type: application/json
+
+{
+  "url": "https://www.amazon.in/dp/B0CX59SMJ9",
+  "userId": 1,
+  "categoryId": 123,
+  "brandId": 456
+}
+
+###############################################
+# 6. Scrape product list from search URL
+###############################################
+POST {{baseUrl}}/scraper/list
+Content-Type: application/json
+
+{
+  "url": "https://www.amazon.in/s?k=ddr4+32gb&i=electronics&crid=3DWWI5D7QDKS3&sprefix=%2Celectronics%2C332&ref=nb_sb_ss_recent_2_0_recent"
+}
+
+###############################################
+# 7. Scrape and auto-list product (requires auth)
+###############################################
+POST {{baseUrl}}/scraper/list-product
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+{
+  "url": "https://amzn.in/d/61zYF5m",
+  "categoryId": 1,
+  "autolist": true,
+  "brandId": 1,
+  "placeOfOriginId": 1
+}
+
+###############################################
+# 8. Scrape product without auto-listing (no auth needed)
+###############################################
+POST {{baseUrl}}/scraper/list-product
+Content-Type: application/json
+
+{
+  "url": "https://amzn.in/d/61zYF5m",
+  "categoryId": 1,
+  "autolist": false
+}
+
+###############################################
+# Test with different Amazon.in products
+###############################################
+
+### Laptop Example
+GET {{baseUrl}}/scraper/product?url=https://www.amazon.in/dp/B0CX59SMJ9
+
+### Mobile Phone Example
+GET {{baseUrl}}/scraper/product?url=https://www.amazon.in/dp/B0D8KFXQ9P
+
+### Headphones Example
+GET {{baseUrl}}/scraper/product?url=https://www.amazon.in/dp/B09JB8KPNB
+
+###############################################
+# Error Test Cases
+###############################################
+
+### Invalid URL
+GET {{baseUrl}}/scraper/product?url=invalid-url
+
+### Unsupported Platform
+GET {{baseUrl}}/scraper/product?url=https://www.ebay.com/itm/123
+
+### Missing URL Parameter
+GET {{baseUrl}}/scraper/product
+
+###############################################
+# Notes:
+# - Replace product IDs (after /dp/) with actual Amazon.in products
+# - Make sure your server is running before testing
+# - Check console logs for detailed scraping information
+# - Products are scraped in real-time, so it may take a few seconds
+###############################################

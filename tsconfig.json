@@ -1,0 +1,48 @@
+// tsconfig.json — Root TypeScript configuration for the Ultrasooq NestJS backend.
+//
+// @intent   Configures the TypeScript compiler for a NestJS project using
+//           CommonJS modules, decorator metadata, and ES2021 target.
+// @notes
+//   - "module": "commonjs"                — NestJS requires CommonJS module output.
+//   - "declaration": true                 — Generates .d.ts declaration files for library consumers.
+//   - "removeComments": true              — Strips comments from compiled JS output.
+//   - "emitDecoratorMetadata": true       — Required by NestJS dependency injection (reflects param types).
+//   - "experimentalDecorators": true      — Required for NestJS decorators (@Module, @Injectable, etc.).
+//   - "allowSyntheticDefaultImports"      — Allows `import x from 'y'` for CJS modules without default export.
+//   - "target": "ES2021"                  — Targets Node.js 16+ runtime features.
+//   - "sourceMap": true                   — Generates .map files for debugging.
+//   - "outDir": "./dist"                  — Compiled output directory.
+//   - "baseUrl": "./"                     — Enables absolute imports from project root (e.g., 'src/auth/...').
+//   - "incremental": true                 — Speeds up subsequent builds by caching previous compilation info.
+//   - "skipLibCheck": true                — Skips type checking of .d.ts files for faster builds.
+//   - "strictNullChecks": true            — [B11] Enforces null/undefined checks for type safety.
+//   - "noImplicitAny": false              — Allows implicit `any` types (too many violations to enable now).
+//   - "strictBindCallApply": true         — [B11] Enforces strict checking of bind/call/apply signatures.
+//   - "strictFunctionTypes": true         — [B11] Enforces strict function type compatibility checks.
+//   - "strictPropertyInitialization": false — Kept off; NestJS DI (@Inject) requires uninitialized properties.
+//   - "forceConsistentCasingInFileNames"  — Disabled; allows case-insensitive file references.
+//   - "noFallthroughCasesInSwitch"        — Disabled; allows switch fallthrough without break.
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "strictFunctionTypes": false,
+    "noEmitOnError": false,
+    "strictPropertyInitialization": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false
+  }
+}

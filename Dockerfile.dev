@@ -1,0 +1,38 @@
+# Development Dockerfile with hot-reloading
+FROM node:18-alpine AS development
+
+# Set the working directory
+WORKDIR /app
+
+# Install minimal system dependencies for Puppeteer
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont
+
+# Tell Puppeteer to use the installed Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install pnpm and all dependencies (including dev dependencies)
+RUN npm install -g pnpm && \
+    pnpm install && \
+    pnpm add puppeteer
+
+# Copy source code
+COPY . .
+
+# Copy development environment file
+COPY .env.dev .env
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Expose the port and debug port
+EXPOSE 3000 9229
+
+# Set environment to development
+ENV NODE_ENV=development
+
+# Start the application in development mode
+CMD ["npm", "run", "start:dev"]
