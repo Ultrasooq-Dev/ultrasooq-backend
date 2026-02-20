@@ -9,17 +9,16 @@ RUN apk add --no-cache libc6-compat chromium nss freetype harfbuzz ca-certificat
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Install pnpm and dependencies
+# Install pnpm and ALL dependencies (including devDependencies needed for build)
 COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+RUN npm install -g pnpm && NODE_ENV=development pnpm install --frozen-lockfile
 
 # Copy source and build
 COPY . .
 RUN npx prisma generate && npm run build
 
-# Debug: check build output
-RUN ls -la dist/ 2>/dev/null || echo "dist/ not found" && \
-    find . -name "main.js" -not -path "*/node_modules/*" 2>/dev/null | head -10
+# Verify build output exists
+RUN test -f dist/main.js || (echo "ERROR: dist/main.js not found after build" && exit 1)
 
 # --- Production image ---
 FROM node:18-alpine AS runner
