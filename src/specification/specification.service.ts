@@ -45,7 +45,7 @@ export class SpecificationService {
         key: dto.key,
         dataType: dto.dataType as any || 'TEXT',
         unit: dto.unit,
-        options: dto.options ? dto.options : undefined,
+        options: dto.options ? dto.options.join(',') : undefined,
         isRequired: dto.isRequired ?? false,
         isFilterable: dto.isFilterable ?? true,
         sortOrder: dto.sortOrder ?? 0,
@@ -57,7 +57,7 @@ export class SpecificationService {
     await this.cacheService.del(CACHE_KEYS.CATEGORY_SPECS(dto.categoryId));
     await this.cacheService.del(CACHE_KEYS.FILTER_VALUES(dto.categoryId));
 
-    return template;
+    return { ...template, options: template.options ? template.options.split(',') : null };
   }
 
   /**
@@ -79,14 +79,14 @@ export class SpecificationService {
             key: tmpl.key,
             dataType: (tmpl.dataType as any) || 'TEXT',
             unit: tmpl.unit,
-            options: tmpl.options ? tmpl.options : undefined,
+            options: tmpl.options ? tmpl.options.join(',') : undefined,
             isRequired: tmpl.isRequired ?? false,
             isFilterable: tmpl.isFilterable ?? true,
             sortOrder: tmpl.sortOrder ?? 0,
             groupName: tmpl.groupName,
           },
         });
-        results.push(template);
+        results.push({ ...template, options: template.options ? template.options.split(',') : null });
       } catch (error) {
         this.logger.warn(`Skipping duplicate template ${tmpl.key} for category ${dto.categoryId}`);
       }
@@ -125,6 +125,7 @@ export class SpecificationService {
         // Add inherited flag: true if the template belongs to a descendant, not this category
         return templates.map((t) => ({
           ...t,
+          options: t.options ? t.options.split(',') : null,
           inherited: t.categoryId !== categoryId,
           sourceCategory: t.category,
         }));
@@ -151,7 +152,7 @@ export class SpecificationService {
     const grouped: Record<number, any[]> = {};
     for (const t of templates) {
       if (!grouped[t.categoryId]) grouped[t.categoryId] = [];
-      grouped[t.categoryId].push(t);
+      grouped[t.categoryId].push({ ...t, options: t.options ? t.options.split(',') : null });
     }
     return grouped;
   }
@@ -167,14 +168,14 @@ export class SpecificationService {
       where: { id },
       data: {
         ...dto,
-        options: dto.options ? dto.options : undefined,
+        options: dto.options ? dto.options.join(',') : undefined,
       },
     });
 
     await this.cacheService.del(CACHE_KEYS.CATEGORY_SPECS(template.categoryId));
     await this.cacheService.del(CACHE_KEYS.FILTER_VALUES(template.categoryId));
 
-    return updated;
+    return { ...updated, options: updated.options ? updated.options.split(',') : null };
   }
 
   /**
@@ -357,9 +358,9 @@ export class SpecificationService {
       // Merge SELECT options from all templates with the same key
       const mergedOptions = new Set<string>();
       for (const t of keyTemplates) {
-        if (t.options && Array.isArray(t.options)) {
-          for (const opt of t.options as string[]) {
-            mergedOptions.add(opt);
+        if (t.options && typeof t.options === 'string') {
+          for (const opt of t.options.split(',')) {
+            if (opt.trim()) mergedOptions.add(opt.trim());
           }
         }
       }

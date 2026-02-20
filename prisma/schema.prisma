@@ -3378,7 +3378,7 @@ model SpecTemplate {
   key           String       // "screen_size", "ram", "weight"
   dataType      SpecDataType @default(TEXT)
   unit          String?      // "inches", "GB", "kg"
-  options       Json?        // for SELECT/MULTI_SELECT: ["64GB","128GB","256GB"]
+  options       String?      // for SELECT/MULTI_SELECT: comma-separated e.g. "64GB,128GB,256GB"
   isRequired    Boolean      @default(false)
   isFilterable  Boolean      @default(true)
   sortOrder     Int          @default(0)
