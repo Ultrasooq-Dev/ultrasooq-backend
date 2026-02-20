@@ -1,0 +1,9 @@
+[phases.setup]
+aptPkgs = ["chromium", "libnss3", "libfreetype6", "libharfbuzz0b", "ca-certificates", "fonts-freefont-ttf"]
+
+[variables]
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
+
+[start]
+cmd = "pnpm start:prod"
