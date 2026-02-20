@@ -4,6 +4,7 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
+    "builder": "tsc",
     "deleteOutDir": true
   }
 }
