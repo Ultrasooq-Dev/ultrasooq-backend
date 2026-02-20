@@ -1,9 +1,6 @@
 [phases.setup]
 aptPkgs = ["chromium", "libnss3", "libfreetype6", "libharfbuzz0b", "ca-certificates", "fonts-freefont-ttf"]
 
-[phases.install]
-cmds = ["npm install -g pnpm", "NODE_ENV=development pnpm install --frozen-lockfile"]
-
 [phases.build]
 cmds = [
   "npx prisma generate",
