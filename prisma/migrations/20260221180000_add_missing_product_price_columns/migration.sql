@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "ProductPrice" ADD COLUMN IF NOT EXISTS "askForSell" TEXT;
+ALTER TABLE "ProductPrice" ADD COLUMN IF NOT EXISTS "hideAllSelected" BOOLEAN;
+ALTER TABLE "ProductPrice" ADD COLUMN IF NOT EXISTS "enableChat" BOOLEAN;
