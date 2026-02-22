@@ -53,6 +53,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { MulterFile } from './types';
 import { ProductService } from './product.service';
 import { S3service } from 'src/user/s3.service';
+import { SpecificationService } from 'src/specification/specification.service';
 import { Throttle } from '@nestjs/throttler';
 import { SuperAdminAuthGuard } from 'src/guards/SuperAdminAuthGuard';
 import { AuthGuard } from 'src/guards/AuthGuard';
@@ -88,6 +89,7 @@ export class ProductController {
   constructor(
     private readonly productService: ProductService,
     private readonly s3service: S3service,
+    private readonly specificationService: SpecificationService,
   ) {}
 
   /**
@@ -2371,6 +2373,7 @@ export class ProductController {
   /***
    *  DELETE ALL PRODUCT ONLY USED BY BACKEND MANUALLY
    */
+  @UseGuards(SuperAdminAuthGuard)
   @Post('/deleteProductFromBackend')
   deleteProductFromBackend(@Request() req, @Body() payload: any) {
     return this.productService.deleteProductFromBackend(req);
@@ -3106,6 +3109,42 @@ export class ProductController {
       return {
         status: false,
         message: error.message || 'Failed to generate product details',
+      };
+    }
+  }
+
+  /**
+   * AI-powered product categorization from product name.
+   * Analyzes the product name to find matching tags and categories.
+   */
+  @UseGuards(AuthGuard)
+  @Post('/ai-categorize')
+  async aiCategorize(
+    @Body() body: { productName: string },
+  ) {
+    try {
+      if (!body.productName || body.productName.trim().length < 2) {
+        return {
+          status: false,
+          message: 'Product name must be at least 2 characters',
+          data: { suggestedTags: [], suggestedCategories: [] },
+        };
+      }
+
+      const result = await this.specificationService.aiCategorizeFromName(
+        body.productName.trim(),
+      );
+
+      return {
+        status: true,
+        message: 'AI categorization completed',
+        data: result,
+      };
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error.message || 'AI categorization failed',
+        data: { suggestedTags: [], suggestedCategories: [] },
       };
     }
   }

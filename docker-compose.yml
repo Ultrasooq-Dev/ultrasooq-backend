@@ -51,7 +51,7 @@ services:
       - "${APP_PORT:-3000}:3000"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ultrasooq}?schema=public
+      LOCAL_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ultrasooq}?schema=public
       REDIS_URL: redis://redis:6379
     volumes:
       - ./uploads:/app/uploads

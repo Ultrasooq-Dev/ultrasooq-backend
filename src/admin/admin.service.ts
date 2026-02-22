@@ -130,11 +130,12 @@ export class AdminService {
 
         let authToken = await this.authService.login(userAuth);
         const restokenData = authToken;
+        const { password: _, ...safeUser } = user;
         return {
           status: true,
           message: 'Login Successfully',
           accessToken: restokenData.accessToken,
-          data: user,
+          data: safeUser,
         };
       } else {
         return {
@@ -189,10 +190,11 @@ export class AdminService {
         };
       }
 
+      const { password: _, ...safeUserDetail } = userDetail;
       return {
         status: true,
         message: 'Fetch Successfully',
-        data: userDetail,
+        data: safeUserDetail,
       };
     } catch (error) {
       return {

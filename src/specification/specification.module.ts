@@ -7,10 +7,12 @@
  * @routes /specification/*
  */
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { SpecificationController } from './specification.controller';
 import { SpecificationService } from './specification.service';
 
 @Module({
+  imports: [AuthModule],
   controllers: [SpecificationController],
   providers: [SpecificationService],
   exports: [SpecificationService],

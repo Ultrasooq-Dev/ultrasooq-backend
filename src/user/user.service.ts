@@ -276,7 +276,6 @@ export class UserService {
         return {
           status: true,
           message: 'Register Successfully',
-          otp: otp,
         };
       } else {
         // Social login (Google/Facebook)
@@ -554,7 +553,6 @@ export class UserService {
       return {
         status: true,
         message: 'Resend OTP Successfully',
-        otp: otp,
       };
     } catch (error) {
       return {
@@ -1754,8 +1752,6 @@ export class UserService {
         return {
           status: true,
           message: 'A verification OTP was sent to your email.',
-          // data: link,
-          otp: otp,
         };
       } else if (userDetail && userDetail.status == 'INACTIVE') {
         return {
@@ -2683,7 +2679,6 @@ export class UserService {
       return {
         status: true,
         message: 'An OTP was sent to your email.',
-        otp: otp,
       };
     } catch (error) {
       return {

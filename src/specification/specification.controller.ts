@@ -35,13 +35,16 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { SpecificationService } from './specification.service';
 import { CreateSpecTemplateDto, UpdateSpecTemplateDto, BulkCreateSpecTemplateDto } from './dto/create-spec-template.dto';
 import { CreateSpecValuesDto, UpdateSpecValueDto } from './dto/create-spec-value.dto';
 import { ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from 'src/guards/AuthGuard';
 
 @ApiTags('specifications')
+@UseGuards(AuthGuard)
 @Controller('specification')
 export class SpecificationController {
   constructor(private readonly specService: SpecificationService) {}

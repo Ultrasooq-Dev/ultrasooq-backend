@@ -1713,6 +1713,7 @@ export class PaymentService {
         // Verify response integrity
         const isValid = this.verifyAmwalPayResponseHash(responseData, data.responseCode);
         if (!isValid) {
+          throw new Error('AmwalPay response hash verification failed — possible webhook forgery');
         }
 
         // Determine if payment was successful
@@ -1827,10 +1828,10 @@ export class PaymentService {
       }
 
       // Verify response integrity by calculating hash
-      // (Optional but recommended - see documentation)
       const isValid = this.verifyAmwalPayResponseHash(responseData, data.responseCode);
-      
+
       if (!isValid) {
+        throw new Error('AmwalPay response hash verification failed — possible webhook forgery');
       }
 
       // Determine if payment was successful

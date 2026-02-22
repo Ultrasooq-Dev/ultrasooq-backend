@@ -58,7 +58,7 @@ services:
       - "${DEBUG_PORT:-9229}:9229"
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ultrasooq_dev}?schema=public
+      LOCAL_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ultrasooq_dev}?schema=public
       REDIS_URL: redis://redis:6379
     volumes:
       - .:/app

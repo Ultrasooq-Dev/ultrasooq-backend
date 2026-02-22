@@ -533,14 +533,13 @@ export class CategoryService {
       let ID = parseInt(categoryId)
 
       let whereCondition: any = {
-        // OR: [
-        //   { categoryId: ID },
-        //   { categoryLocation: { contains: String(ID), mode: "insensitive" } }
-        // ],
-        categoryLocation: {
-          contains: categoryId,
-          mode: 'insensitive'
-        },
+        OR: [
+          { categoryId: ID },
+          { categoryLocation: { contains: `/${ID}/` } },
+          { categoryLocation: { startsWith: `${ID}/` } },
+          { categoryLocation: { endsWith: `/${ID}` } },
+          { categoryLocation: { equals: String(ID) } },
+        ],
       }
 
       let categoryUsedInProduct = await this.prisma.product.findMany({

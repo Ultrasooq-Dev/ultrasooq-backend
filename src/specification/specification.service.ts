@@ -45,7 +45,7 @@ export class SpecificationService {
         key: dto.key,
         dataType: dto.dataType as any || 'TEXT',
         unit: dto.unit,
-        options: dto.options ? dto.options : undefined,
+        options: dto.options ? dto.options.join(',') : undefined,
         isRequired: dto.isRequired ?? false,
         isFilterable: dto.isFilterable ?? true,
         sortOrder: dto.sortOrder ?? 0,
@@ -57,7 +57,7 @@ export class SpecificationService {
     await this.cacheService.del(CACHE_KEYS.CATEGORY_SPECS(dto.categoryId));
     await this.cacheService.del(CACHE_KEYS.FILTER_VALUES(dto.categoryId));
 
-    return template;
+    return { ...template, options: template.options ? template.options.split(',') : null };
   }
 
   /**
@@ -79,14 +79,14 @@ export class SpecificationService {
             key: tmpl.key,
             dataType: (tmpl.dataType as any) || 'TEXT',
             unit: tmpl.unit,
-            options: tmpl.options ? tmpl.options : undefined,
+            options: tmpl.options ? tmpl.options.join(',') : undefined,
             isRequired: tmpl.isRequired ?? false,
             isFilterable: tmpl.isFilterable ?? true,
             sortOrder: tmpl.sortOrder ?? 0,
             groupName: tmpl.groupName,
           },
         });
-        results.push(template);
+        results.push({ ...template, options: template.options ? template.options.split(',') : null });
       } catch (error) {
         this.logger.warn(`Skipping duplicate template ${tmpl.key} for category ${dto.categoryId}`);
       }
@@ -125,6 +125,7 @@ export class SpecificationService {
         // Add inherited flag: true if the template belongs to a descendant, not this category
         return templates.map((t) => ({
           ...t,
+          options: t.options ? t.options.split(',') : null,
           inherited: t.categoryId !== categoryId,
           sourceCategory: t.category,
         }));
@@ -151,7 +152,7 @@ export class SpecificationService {
     const grouped: Record<number, any[]> = {};
     for (const t of templates) {
       if (!grouped[t.categoryId]) grouped[t.categoryId] = [];
-      grouped[t.categoryId].push(t);
+      grouped[t.categoryId].push({ ...t, options: t.options ? t.options.split(',') : null });
     }
     return grouped;
   }
@@ -167,14 +168,14 @@ export class SpecificationService {
       where: { id },
       data: {
         ...dto,
-        options: dto.options ? dto.options : undefined,
+        options: dto.options ? dto.options.join(',') : undefined,
       },
     });
 
     await this.cacheService.del(CACHE_KEYS.CATEGORY_SPECS(template.categoryId));
     await this.cacheService.del(CACHE_KEYS.FILTER_VALUES(template.categoryId));
 
-    return updated;
+    return { ...updated, options: updated.options ? updated.options.split(',') : null };
   }
 
   /**
@@ -357,9 +358,9 @@ export class SpecificationService {
       // Merge SELECT options from all templates with the same key
       const mergedOptions = new Set<string>();
       for (const t of keyTemplates) {
-        if (t.options && Array.isArray(t.options)) {
-          for (const opt of t.options as string[]) {
-            mergedOptions.add(opt);
+        if (t.options && typeof t.options === 'string') {
+          for (const opt of t.options.split(',')) {
+            if (opt.trim()) mergedOptions.add(opt.trim());
           }
         }
       }
@@ -985,5 +986,126 @@ export class SpecificationService {
     }
 
     return tagMatches;
+  }
+
+  /**
+   * AI-powered product categorization from product name.
+   *
+   * Flow:
+   * 1. Split product name into words
+   * 2. Search Tags table for matching tags
+   * 3. Use matched tags to find categories via categoryTag
+   * 4. Fallback to keyword-based matching via categoryKeyword
+   * 5. Build full category paths (categoryLocation)
+   * 6. Return suggested tags + categories
+   */
+  async aiCategorizeFromName(productName: string) {
+    const words = productName
+      .toLowerCase()
+      .split(/[\s,.\-_\/]+/)
+      .filter((w) => w.length > 2);
+
+    if (words.length === 0) {
+      return { suggestedTags: [], suggestedCategories: [] };
+    }
+
+    // 1. Find matching tags by searching each word against tag names
+    const tagResults = await this.prisma.tags.findMany({
+      where: {
+        OR: words.map((word) => ({
+          tagName: { contains: word, mode: 'insensitive' as const },
+        })),
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      take: 20,
+      orderBy: { tagName: 'asc' },
+    });
+
+    const suggestedTags = tagResults.map((tag) => ({
+      id: tag.id,
+      tagName: tag.tagName,
+    }));
+
+    // 2. Use tag IDs to find matching categories via categoryTag
+    const tagIds = tagResults.map((t) => t.id);
+    let categoryMatches: {
+      categoryId: number;
+      categoryName: string;
+      matchedTagIds?: number[];
+      matchedKeywords?: string[];
+      matchCount?: number;
+    }[] = [];
+
+    if (tagIds.length > 0) {
+      const tagBasedMatches = await this.matchCategoriesByTags(tagIds);
+      categoryMatches = tagBasedMatches.map((m) => ({
+        categoryId: m.categoryId,
+        categoryName: m.categoryName,
+        matchedTagIds: m.matchedTagIds,
+        matchCount: m.matchCount,
+      }));
+    }
+
+    // 3. Fallback: keyword-based matching if no tag-based matches found
+    if (categoryMatches.length === 0) {
+      const keywordMatches = await this.matchCategories(productName);
+      categoryMatches = keywordMatches.map((m) => ({
+        categoryId: m.categoryId,
+        categoryName: m.categoryName,
+        matchedKeywords: m.matchedKeywords,
+      }));
+    }
+
+    // 4. Build full category paths for top 5 matches
+    const suggestedCategories = await Promise.all(
+      categoryMatches.slice(0, 5).map(async (match) => {
+        // Build the path from root to this category
+        const path = await this.buildCategoryPath(match.categoryId);
+        const categoryLocation = path.join(',');
+        return {
+          id: match.categoryId,
+          name: match.categoryName,
+          path,
+          categoryLocation,
+        };
+      }),
+    );
+
+    return { suggestedTags, suggestedCategories };
+  }
+
+  /**
+   * Build full category path from root to the given category ID.
+   * Returns array of category IDs: [root, ..., parent, categoryId]
+   */
+  private async buildCategoryPath(categoryId: number): Promise<number[]> {
+    const path: number[] = [];
+    let currentId: number | null = categoryId;
+    const visited = new Set<number>();
+
+    while (currentId !== null) {
+      if (visited.has(currentId)) break; // prevent infinite loops
+      visited.add(currentId);
+
+      const category = await this.prisma.category.findUnique({
+        where: { id: currentId },
+        select: { id: true, parentId: true },
+      });
+
+      if (!category) break;
+
+      path.unshift(category.id);
+
+      if (
+        category.parentId === null ||
+        category.parentId === category.id
+      ) {
+        break;
+      }
+      currentId = category.parentId;
+    }
+
+    return path;
   }
 }

@@ -215,6 +215,7 @@ export class CategoryController {
    * @notes  Endpoint is public; consider adding a guard if this should be
    *         admin-only.
    */
+  @UseGuards(SuperAdminAuthGuard)
   @Patch('/updateWhiteBlackList')
   updateWhiteBlackList(@Request() req, @Body() payload: any) {
     return this.categoryService.updateWhiteBlackList(payload, req);
