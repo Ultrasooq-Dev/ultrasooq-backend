@@ -44,7 +44,7 @@ import {
   ServiceFor,
   ServiceType,
   ShippingType,
-} from '@prisma/client';
+} from '../../generated/prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,

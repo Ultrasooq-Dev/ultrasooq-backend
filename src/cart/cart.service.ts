@@ -32,7 +32,7 @@
  *   no effect on runtime behaviour.
  */
 import { Injectable } from '@nestjs/common';
-import { Prisma, Status } from '@prisma/client';
+import { Prisma, Status } from '../generated/prisma/client';
 import { AddCartServiceDto, AddCartServiceProdDto } from './dto/cart.dto';
 import { features } from 'process';
 import { PrismaService } from '../prisma/prisma.service';

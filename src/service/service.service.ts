@@ -40,8 +40,8 @@
  */
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateServiceDto, UpdateServiceDto } from './dto/service.dto';
-import { Prisma } from '@prisma/client';
-import { itxClientDenyList } from '@prisma/client/runtime/library';
+import { Prisma } from '../generated/prisma/client';
+
 import { HelperService } from 'src/helper/helper.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';

@@ -24,7 +24,7 @@ RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
     (echo "BUILD FAILED: dist/src/main.js not found" && find dist -name "*.js" 2>/dev/null | head -10 && exit 1)
 
 # Copy prisma CLI binary before pruning (it's a devDep but needed for migrate deploy)
-RUN cp -r node_modules/.pnpm/prisma@6.16.1*/node_modules/prisma /tmp/prisma-cli
+RUN cp -r node_modules/.pnpm/prisma@7.4.1*/node_modules/prisma /tmp/prisma-cli
 
 # Prune dev dependencies — keep only production deps
 RUN pnpm prune --prod
@@ -50,6 +50,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/.npmrc ./.npmrc
 

@@ -23,7 +23,9 @@
  * - Validation errors are automatically transformed into 400 Bad Request responses by the
  *   global ValidationPipe.
  */
-import { JsonArray, JsonObject } from '@prisma/client/runtime/library';
+import { Prisma } from '../../generated/prisma/client';
+type JsonArray = Prisma.JsonArray;
+type JsonObject = Prisma.JsonObject;
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,

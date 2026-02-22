@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService, CACHE_KEYS, CACHE_TTL } from '../cache/cache.service';
 import { CreateSpecTemplateDto, UpdateSpecTemplateDto, BulkCreateSpecTemplateDto } from './dto/create-spec-template.dto';
 import { CreateSpecValuesDto, UpdateSpecValueDto } from './dto/create-spec-value.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 
 @Injectable()
 export class SpecificationService {

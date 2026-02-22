@@ -1,20 +1,15 @@
-/**
- * @module PrismaService
- * @description Global singleton Prisma client for database access.
- *   Replaces individual `new PrismaClient()` instances across the codebase.
- *   Extends PrismaClient to integrate with NestJS lifecycle hooks.
- * @dependencies @prisma/client
- * @usage Inject PrismaService in any service/module — no need to import PrismaModule (it's global).
- */
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
+    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
     super({
+      adapter,
       log: [
         { emit: 'event', level: 'query' },
         { emit: 'stdout', level: 'info' },

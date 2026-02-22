@@ -11,7 +11,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from 'src/auth/auth.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import * as bwipjs from 'bwip-js';
 
 @Injectable()

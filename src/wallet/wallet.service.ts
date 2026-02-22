@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { WalletStatus, WalletTransactionType, WalletTransactionStatus, WalletReferenceType } from '@prisma/client';
+import { WalletStatus, WalletTransactionType, WalletTransactionStatus, WalletReferenceType } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletDepositDto } from './dto/wallet-deposit.dto';
 import { WalletWithdrawDto } from './dto/wallet-withdraw.dto';

@@ -21,7 +21,7 @@
  * Client payload (nested in message DTO) --> class-transformer --> class-validator
  * --> ChatService.saveAttachmentMessage --> Prisma `chatAttachments.createMany`.
  */
-import { AttachmentStatus } from '@prisma/client';
+import { AttachmentStatus } from '../../generated/prisma/client';
 import { IsNotEmpty, IsString, IsInt, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 

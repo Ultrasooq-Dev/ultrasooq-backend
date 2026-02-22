@@ -11,6 +11,7 @@
  *   npx ts-node -r tsconfig-paths/register prisma/seed-products.ts
  */
 
+import 'dotenv/config';
 import {
   PrismaClient,
   Status,
@@ -19,9 +20,11 @@ import {
   TypeOfProduct,
   TypeProduct,
   ConsumerType,
-} from '@prisma/client';
+} from '../src/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 // ────────────────────────────────────────────────────────────────
 // Configuration

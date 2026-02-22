@@ -26,7 +26,7 @@
  *   `{ status, message?, data? }` response envelope.
  */
 import { Injectable, NotFoundException, BadRequestException, HttpException, HttpStatus, UploadedFiles, Request, Body, ForbiddenException } from '@nestjs/common';
-import { RfqProductPriceRequestStatus } from '@prisma/client';
+import { RfqProductPriceRequestStatus } from '../generated/prisma/client';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { UpdateRfqPriceRequest } from './dto/updateRfqPriceRequest.dto';

@@ -9,7 +9,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 import { HelperService } from 'src/helper/helper.service';
 import { ProductMediaService } from './product-media.service';

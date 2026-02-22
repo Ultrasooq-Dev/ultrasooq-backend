@@ -46,9 +46,9 @@
 import { Injectable } from '@nestjs/common';
 import * as randomstring from 'randomstring';
 import { compare, hash, genSalt } from 'bcrypt';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { NotificationService } from 'src/notification/notification.service';
-import { Decimal } from '@prisma/client/runtime/library';
+const { Decimal } = Prisma;
 
 import * as moment from 'moment';
 import { HelperService } from 'src/helper/helper.service';

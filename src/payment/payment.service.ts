@@ -50,7 +50,7 @@
  *   planned future Stripe integration path.
  */
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';

@@ -51,7 +51,7 @@ import { NotificationService } from 'src/notification/notification.service';
 
 import { S3service } from 'src/user/s3.service';
 
-import { Prisma, Product } from '@prisma/client';
+import { Prisma, Product } from '../generated/prisma/client';
 
 import * as bwipjs from 'bwip-js';
 

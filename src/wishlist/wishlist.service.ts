@@ -14,7 +14,7 @@
  * Note: A module-scoped {@link PrismaClient} instance is used for all database access.
  */
 import { Injectable } from '@nestjs/common';
-import { Prisma, Product } from '@prisma/client';
+import { Prisma, Product } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 
