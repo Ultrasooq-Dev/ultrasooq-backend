@@ -85,7 +85,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: process.env.JWT_EXPIRY || '1h',
+      expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
     });
 
     // Generate a refresh token and store it in the database
@@ -137,7 +137,7 @@ export class AuthService {
       userId: mainUserId,
       accessToken: this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
-        expiresIn: process.env.JWT_EXPIRY || '1h',
+        expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
       }),
     };
   }
@@ -310,7 +310,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: process.env.JWT_EXPIRY || '1h',
+      expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
     });
 
     // Rotate: generate new refresh token and revoke old one

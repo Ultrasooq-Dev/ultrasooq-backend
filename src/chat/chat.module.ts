@@ -49,7 +49,7 @@ import { NotificationModule } from '../notification/notification.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRY', '1h'),
+          expiresIn: configService.get<string>('JWT_EXPIRY', '1h') as any,
         },
       }),
     }),
