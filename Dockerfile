@@ -23,8 +23,16 @@ RUN pnpm exec prisma generate && pnpm exec nest build
 RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
     (echo "BUILD FAILED: dist/src/main.js not found" && find dist -name "*.js" 2>/dev/null | head -10 && exit 1)
 
+# Copy prisma CLI binary before pruning (it's a devDep but needed for migrate deploy)
+RUN cp -r node_modules/.pnpm/prisma@6.16.1*/node_modules/prisma /tmp/prisma-cli
+
 # Prune dev dependencies — keep only production deps
 RUN pnpm prune --prod
+
+# Restore prisma CLI for runtime migrations
+RUN mkdir -p node_modules/.bin node_modules/prisma && \
+    cp -r /tmp/prisma-cli/* node_modules/prisma/ && \
+    ln -sf ../prisma/build/index.js node_modules/.bin/prisma
 
 # ── Runner stage ──────────────────────────────────────────────
 FROM node:22-alpine AS runner
@@ -48,4 +56,4 @@ COPY --from=builder /app/.npmrc ./.npmrc
 EXPOSE 3000
 
 # Run migrations then start the server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/src/main.js"]
