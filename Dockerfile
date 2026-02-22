@@ -16,6 +16,10 @@ RUN npm install -g pnpm && \
 # Copy source code
 COPY . .
 
+# Dummy DATABASE_URL for prisma generate (doesn't connect, just needs the format)
+ARG DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
+ENV DATABASE_URL=$DATABASE_URL
+
 # Generate Prisma client and build
 RUN pnpm exec prisma generate && pnpm exec nest build
 
