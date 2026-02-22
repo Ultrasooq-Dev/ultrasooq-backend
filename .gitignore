@@ -47,3 +47,10 @@ aws_backup.sql
 # Backup files
 *.backup
 *.backup2
+
+# Debug artifacts
+debug-*
+
+# Stale lock files (using pnpm)
+package-lock.json
+bun.lock
