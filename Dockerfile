@@ -17,7 +17,7 @@ RUN npm install -g pnpm && \
 COPY . .
 
 # Generate Prisma client and build
-RUN npx --yes prisma@6.16.1 generate && npx nest build
+RUN pnpm exec prisma generate && pnpm exec nest build
 
 # Verify build output exists
 RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
@@ -48,4 +48,4 @@ COPY --from=builder /app/.npmrc ./.npmrc
 EXPOSE 3000
 
 # Run migrations then start the server
-CMD ["sh", "-c", "npx --yes prisma@6.16.1 migrate deploy && node dist/src/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
