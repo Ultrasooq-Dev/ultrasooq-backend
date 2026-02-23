@@ -74,7 +74,9 @@ import { getErrorMessage } from 'src/common/utils/get-error-message';
  * configuration such as `apiVersion`. An empty object inherits the
  * library's default API version.
  */
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {});
+const stripe = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_placeholder'
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {})
+  : null;
 
 /**
  * @class StripeService

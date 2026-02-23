@@ -75,7 +75,9 @@ import { getErrorMessage } from 'src/common/utils/get-error-message';
  * Currently unused -- retained for a future Stripe payment integration.
  * @type {Stripe}
  */
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {});
+const stripe = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_placeholder'
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {})
+  : null;
 
 /**
  * @class PaymentService

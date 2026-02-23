@@ -1176,6 +1176,53 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
   });
   console.log(`  Buyer: masterAccount=${buyerMaster.id}, user=${buyer.id}`);
 
+  // ── Ultrasooq Company Account ──
+  const ultrasooqPasswordHash = await bcrypt.hash('Ultra@1234', 10);
+
+  const ultrasooqMaster = await prisma.masterAccount.upsert({
+    where: { email: 'ultrasooq@gmail.com' },
+    update: { password: ultrasooqPasswordHash },
+    create: {
+      email: 'ultrasooq@gmail.com',
+      password: ultrasooqPasswordHash,
+      firstName: 'Ultrasooq',
+      lastName: 'Company',
+      phoneNumber: '+1234567892',
+      cc: '+1',
+    },
+  });
+
+  const ultrasooqCompany = await prisma.user.upsert({
+    where: { email: 'ultrasooq@gmail.com' },
+    update: {
+      firstName: 'Ultrasooq',
+      lastName: 'Company',
+      password: ultrasooqPasswordHash,
+      tradeRole: TypeTrader.COMPANY,
+      loginType: LoginType.MANUAL,
+      status: Status.ACTIVE,
+      masterAccountId: ultrasooqMaster.id,
+      isCurrent: true,
+    },
+    create: {
+      email: 'ultrasooq@gmail.com',
+      firstName: 'Ultrasooq',
+      lastName: 'Company',
+      password: ultrasooqPasswordHash,
+      tradeRole: TypeTrader.COMPANY,
+      loginType: LoginType.MANUAL,
+      status: Status.ACTIVE,
+      masterAccountId: ultrasooqMaster.id,
+      isCurrent: true,
+    },
+  });
+
+  await prisma.masterAccount.update({
+    where: { id: ultrasooqMaster.id },
+    data: { lastActiveUserId: ultrasooqCompany.id },
+  });
+  console.log(`  Ultrasooq Company: masterAccount=${ultrasooqMaster.id}, user=${ultrasooqCompany.id}`);
+
   return { sellerId: seller.id, buyerId: buyer.id };
 }
 
