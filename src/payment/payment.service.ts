@@ -410,9 +410,9 @@ export class PaymentService {
       if (paymentType === 'DUE') {
         serverAmount = Number(orderRecord.dueAmount ?? 0);
       } else if (paymentType === 'ADVANCE') {
-        serverAmount = Number(orderRecord.advanceAmount ?? orderRecord.totalAmount ?? 0);
+        serverAmount = Number(orderRecord.advanceAmount ?? orderRecord.totalPrice ?? 0);
       } else {
-        serverAmount = Number(orderRecord.totalAmount ?? 0);
+        serverAmount = Number(orderRecord.totalPrice ?? 0);
       }
       if (serverAmount <= 0 || Math.abs(serverAmount - Number(payload.amount)) > 0.01) {
         this.logger.warn(`createIntention: Amount mismatch — client sent ${payload.amount}, server expects ${serverAmount}`);
@@ -1729,7 +1729,7 @@ export class PaymentService {
       if (!orderRecord) {
         return { status: false, message: 'Order not found' };
       }
-      const serverAmount = Number(orderRecord.totalAmount ?? 0);
+      const serverAmount = Number(orderRecord.totalPrice ?? 0);
       if (serverAmount <= 0 || Math.abs(serverAmount - Number(amount)) > 0.01) {
         this.logger.warn(`createAmwalPayConfig: Amount mismatch — client ${amount}, server ${serverAmount}`);
         return { status: false, message: 'Amount mismatch with order record' };

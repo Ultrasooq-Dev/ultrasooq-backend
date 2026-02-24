@@ -2390,13 +2390,13 @@ export class OrderService {
             // P0-05 FIX: Guard against duplicate refunds — check if refund already processed for this order product
             const existingRefund = await this.prisma.walletTransaction.findFirst({
               where: {
-                orderId: order.id,
+                referenceId: String(order.id),
+                referenceType: 'REFUND',
                 transactionType: 'REFUND',
-                metadata: { path: ['orderProductId'], equals: existOrderProduct.id }
               }
             });
             if (existingRefund) {
-              // Refund already processed for this order product — skip
+              // Refund already processed for this order — skip
             } else {
             // Get refund amount - use customerPay if available, otherwise salePrice
             const refundAmount = Number(existOrderProduct.customerPay || existOrderProduct.salePrice || 0);
@@ -4544,9 +4544,9 @@ export class OrderService {
             // P0-05 FIX: Guard against duplicate refunds
             const existingRefund = await this.prisma.walletTransaction.findFirst({
               where: {
-                orderId: order.id,
+                referenceId: String(order.id),
+                referenceType: 'REFUND',
                 transactionType: 'REFUND',
-                metadata: { path: ['orderProductId'], equals: orderProduct.id }
               }
             });
             if (!existingRefund) {
