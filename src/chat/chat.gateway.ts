@@ -30,6 +30,7 @@ import { WebSocketGateway, WebSocketServer, SubscribeMessage, MessageBody, Conne
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { UsePipes, ValidationPipe } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -49,7 +50,14 @@ import { NotificationService } from '../notification/notification.service';
  *
  * @usage Automatically instantiated by NestJS when {@link ChatModule} is loaded.
  */
-@WebSocketGateway({ namespace: '/ws', cors: "*" })
+@WebSocketGateway({
+  namespace: '/ws',
+  cors: {
+    origin: process.env.CORS_ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:4001'],
+    credentials: true,
+  },
+})
+@UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   /** @description Reference to the underlying Socket.io Server instance, injected by NestJS. */
   @WebSocketServer()
@@ -507,17 +515,24 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * @returns {Promise<void>}
    */
   async handleConnection(@ConnectedSocket() client: Socket) {
-    const userId = parseInt(client.handshake.query.userId as string, 10);
+    // N-005 FIX: Use verified JWT payload instead of untrusted query parameter
+    // The JWT middleware in afterInit() stores verified payload on socket.data.user
+    const verifiedUser = client.data?.user;
+    const userId = verifiedUser?.id || verifiedUser?.sub;
 
-    if (userId && !isNaN(userId)) {
-      this.userSocketMap.set(userId, client.id);
-      const rooms = await this.chatService.getRoomsForUser(userId);
-      rooms.forEach((room: number) => {
-        client.join(room.toString());
-      });
-      // Join user to their notification room
-      client.join(`user-${userId}`);
+    if (!userId) {
+      // No verified user — disconnect immediately
+      client.disconnect(true);
+      return;
     }
+
+    this.userSocketMap.set(userId, client.id);
+    const rooms = await this.chatService.getRoomsForUser(userId);
+    rooms.forEach((room: number) => {
+      client.join(room.toString());
+    });
+    // Join user to their notification room
+    client.join(`user-${userId}`);
   }
 
   /**

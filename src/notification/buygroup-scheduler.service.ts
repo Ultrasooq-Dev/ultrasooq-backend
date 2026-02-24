@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from './notification.service';
 
 @Injectable()
 export class BuygroupSchedulerService {
+  private readonly logger = new Logger(BuygroupSchedulerService.name);
+  // P1-12 FIX: Concurrency guard to prevent overlapping cron runs
+  private isRunning = false;
+
   constructor(
     private readonly notificationService: NotificationService,
     private readonly prisma: PrismaService,
@@ -16,6 +20,12 @@ export class BuygroupSchedulerService {
    */
   @Cron('*/5 * * * *') // Every 5 minutes
   async checkBuygroupSales() {
+    // P1-12 FIX: Skip if previous run is still in progress
+    if (this.isRunning) {
+      this.logger.warn('checkBuygroupSales: Previous run still in progress — skipping');
+      return;
+    }
+    this.isRunning = true;
     try {
       const now = new Date();
       const nowTimestamp = now.getTime();
@@ -174,6 +184,9 @@ export class BuygroupSchedulerService {
         }
       }
     } catch (error) {
+      this.logger.error(`checkBuygroupSales failed: ${error?.message || error}`, error?.stack);
+    } finally {
+      this.isRunning = false;
     }
   }
 
@@ -267,6 +280,7 @@ export class BuygroupSchedulerService {
           icon: notification.icon,
         });
       } catch (error) {
+        this.logger.warn(`Failed to send buygroup notification to user ${userId}: ${error?.message || error}`);
       }
     }
   }

@@ -790,32 +790,35 @@ export class OrderService {
         });
       }
 
-      // Step 1: Find all cart IDs for the user
-      const cartIds = await this.prisma.cart.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const cartIdList = cartIds.map(c => c.id);
+      // P0-04 FIX: Atomic cart cleanup — wrap in transaction to prevent partial deletes
+      await this.prisma.$transaction(async (tx) => {
+        // Step 1: Find all cart IDs for the user
+        const cartIds = await tx.cart.findMany({
+          where: { userId },
+          select: { id: true },
+        });
+        const cartIdList = cartIds.map(c => c.id);
 
-      // Step 2: Delete from CartServiceFeature (child)
-      await this.prisma.cartServiceFeature.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
+        // Step 2: Delete from CartServiceFeature (child)
+        await tx.cartServiceFeature.deleteMany({
+          where: {
+            cartId: { in: cartIdList },
+          },
+        });
 
-      // Step 3: Delete from CartProductService (child)
-      await this.prisma.cartProductService.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
+        // Step 3: Delete from CartProductService (child)
+        await tx.cartProductService.deleteMany({
+          where: {
+            cartId: { in: cartIdList },
+          },
+        });
 
-      // Step 4: Delete from Cart (parent)
-      await this.prisma.cart.deleteMany({
-        where: {
-          userId,
-        },
+        // Step 4: Delete from Cart (parent)
+        await tx.cart.deleteMany({
+          where: {
+            userId,
+          },
+        });
       });
 
       // Fetch updated order details with walletTransactionId
@@ -1522,14 +1525,15 @@ export class OrderService {
   async getOneOrder(req: any) {
     try {
       const orderId =  req.query.orderId;
-  
+      const userId = req.user?.id;
+
       if (!orderId) {
         return {
           status: false,
           message: 'Order ID is required',
         };
       }
-  
+
       const order = await this.prisma.order.findUnique({
         where: {
           id: Number(orderId),
@@ -1546,14 +1550,28 @@ export class OrderService {
           order_orderAddress: true,
         },
       });
-  
+
       if (!order) {
         return {
           status: false,
           message: 'Order not found',
         };
       }
-  
+
+      // Ownership check: only the order's buyer or one of its sellers may view
+      if (userId) {
+        const isBuyer = order.userId === userId;
+        const isSeller = order.order_orderProducts?.some(
+          (op: any) => op.sellerId === userId,
+        );
+        if (!isBuyer && !isSeller) {
+          return {
+            status: false,
+            message: 'You do not have permission to view this order',
+          };
+        }
+      }
+
       return {
         status: true,
         message: 'Order fetched successfully',
@@ -2242,10 +2260,11 @@ export class OrderService {
    * @param {any} payload - Body containing { orderProductId: number, status: string }.
    * @returns {Promise<object>} Standard envelope with updated order-product.
    */
-  async orderProductStatusById(payload: any) {
+  async orderProductStatusById(payload: any, req?: any) {
     try {
       const orderProductId = payload?.orderProductId;
       const status = payload?.status;
+      const userId = req?.user?.id;
 
       let existOrderProduct = await this.prisma.orderProducts.findUnique({
         where: { id: orderProductId }
@@ -2256,7 +2275,19 @@ export class OrderService {
           status: false,
           message: 'Not Found',
           data: existOrderProduct
-        } 
+        }
+      }
+
+      // Ownership check: only the buyer or seller of this order-product may update its status
+      if (userId) {
+        const isBuyer = existOrderProduct.userId === userId;
+        const isSeller = existOrderProduct.sellerId === userId;
+        if (!isBuyer && !isSeller) {
+          return {
+            status: false,
+            message: 'You do not have permission to update this order product',
+          };
+        }
       }
 
       let orderProductDetail = await this.prisma.orderProducts.update({
@@ -2356,6 +2387,17 @@ export class OrderService {
 
         if (isWalletPayment) {
           try {
+            // P0-05 FIX: Guard against duplicate refunds — check if refund already processed for this order product
+            const existingRefund = await this.prisma.walletTransaction.findFirst({
+              where: {
+                referenceId: String(order.id),
+                referenceType: 'REFUND',
+                transactionType: 'REFUND',
+              }
+            });
+            if (existingRefund) {
+              // Refund already processed for this order — skip
+            } else {
             // Get refund amount - use customerPay if available, otherwise salePrice
             const refundAmount = Number(existOrderProduct.customerPay || existOrderProduct.salePrice || 0);
             // Use orderProduct userId first, fallback to order userId
@@ -2405,6 +2447,7 @@ export class OrderService {
               if (!refundResult.status) {
               }
             }
+            } // end P0-05 else (no existing refund)
           } catch (error) {
             // Log error but don't fail the cancellation
           }
@@ -2415,7 +2458,7 @@ export class OrderService {
         status: true,
         message: 'Status Changed Successfully',
         data: orderProductDetail
-      } 
+      }
 
     } catch (error) {
       return {
@@ -2461,12 +2504,27 @@ export class OrderService {
   async orderShippingStatusUpdateById(payload: any, req: any) {
     try {
       const orderShippingId = payload?.orderShippingId;
+      const userId = req?.user?.id;
+
       if (!orderShippingId) {
         return {
           status: false,
           message: 'orderShippingId is required.',
           data: []
         }
+      }
+
+      // Verify the shipping record exists and the caller is the assigned seller
+      const existingShipping = await this.prisma.orderShipping.findUnique({
+        where: { id: orderShippingId },
+      });
+
+      if (!existingShipping) {
+        return { status: false, message: 'Shipping record not found', data: [] };
+      }
+
+      if (userId && existingShipping.sellerId !== userId) {
+        return { status: false, message: 'You do not have permission to update this shipping record' };
       }
 
       let updateOrderShipping = await this.prisma.orderShipping.update({
@@ -2478,7 +2536,7 @@ export class OrderService {
       });
 
       return {
-        status: true, 
+        status: true,
         message: 'Updated Successfully',
         data: updateOrderShipping
       }
@@ -3454,7 +3512,9 @@ export class OrderService {
    */
   async getSaleDataByMonth (req: any) {
     try {
-      const { month, year, sellerId } = req.query;
+      const { month, year } = req.query;
+      // Derive sellerId from the authenticated user instead of trusting query params
+      const sellerId = req.user?.id;
 
       if (!month || !year) {
         return {
@@ -4481,10 +4541,19 @@ export class OrderService {
 
         if (isWalletPayment) {
           try {
+            // P0-05 FIX: Guard against duplicate refunds
+            const existingRefund = await this.prisma.walletTransaction.findFirst({
+              where: {
+                referenceId: String(order.id),
+                referenceType: 'REFUND',
+                transactionType: 'REFUND',
+              }
+            });
+            if (!existingRefund) {
             // Get refund amount - use customerPay if available, otherwise salePrice
             const refundAmount = Number(orderProduct.customerPay || orderProduct.salePrice || 0);
             const customerId = orderProduct.userId || order.userId;
-            
+
             // Get userAccountId from the original wallet payment transaction
             let userAccountId: number | undefined = undefined;
             if (order.walletTransactionId) {
@@ -4497,7 +4566,7 @@ export class OrderService {
                     metadata: true,
                   }
                 });
-                
+
                 if (originalPaymentTransaction) {
                   // Get the wallet to find userAccountId
                   const wallet = await this.prisma.wallet.findUnique({
@@ -4508,7 +4577,7 @@ export class OrderService {
                       userAccountId: true,
                     }
                   });
-                  
+
                   if (wallet) {
                     userAccountId = wallet.userAccountId || undefined;
                   }
@@ -4517,7 +4586,7 @@ export class OrderService {
                 // Silently handle error - will refund to master wallet
               }
             }
-            
+
             if (refundAmount > 0 && customerId) {
               const refundResult = await this.walletService.processWalletRefund(
                 customerId,
@@ -4529,6 +4598,7 @@ export class OrderService {
               if (!refundResult.status) {
               }
             }
+            } // end P0-05 duplicate refund guard
           } catch (error) {
             // Log error but don't fail the cancellation
           }

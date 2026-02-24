@@ -22,6 +22,7 @@ import { CacheService } from './cache.service';
         store: redisStore,
         host: configService.get<string>('REDIS_HOST', 'localhost'),
         port: configService.get<number>('REDIS_PORT', 6379),
+        password: configService.get<string>('REDIS_PASSWORD') || undefined, // P1-11 FIX
         ttl: 300, // 5 minutes default
         max: 1000, // maximum number of items in cache
       }),

@@ -146,7 +146,7 @@ export class LoggingInterceptor implements NestInterceptor {
       return body;
     }
 
-    const sensitiveFields = ['password', 'token', 'accessToken', 'refreshToken', 'authorization', 'secret', 'apiKey'];
+    const sensitiveFields = ['password', 'token', 'accessToken', 'refreshToken', 'authorization', 'secret', 'apiKey', 'otp', 'rawPassword', 'newPassword', 'currentPassword', 'resetToken'];
     const sanitized = { ...body };
 
     for (const field of sensitiveFields) {

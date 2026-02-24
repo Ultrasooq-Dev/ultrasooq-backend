@@ -80,10 +80,9 @@ export class AuthGuard implements CanActivate {
     let req = context.switchToHttp().getRequest();
 
     // --- Test Auth Bypass (development only) ---
-    // Allows skipping JWT validation by sending the `x-test-user-id` header.
-    // Requires BOTH conditions:
-    //   1. NODE_ENV === 'development'
-    //   2. ENABLE_TEST_AUTH_BYPASS === 'true'
+    // SECURITY: Hard-disabled in production/staging. Only active when BOTH:
+    //   1. NODE_ENV is explicitly 'development'
+    //   2. ENABLE_TEST_AUTH_BYPASS is exactly 'true'
     if (
       process.env.NODE_ENV === 'development' &&
       process.env.ENABLE_TEST_AUTH_BYPASS === 'true'
@@ -106,7 +105,7 @@ export class AuthGuard implements CanActivate {
           );
         }
 
-        this.logger.warn(`Auth bypass used for user ID: ${parsedId}`);
+        this.logger.warn(`[SECURITY] Auth bypass used for user ID: ${parsedId} — dev-only`);
         req.user = {
           id: parsedId,
           email: user.email,

@@ -124,6 +124,7 @@ export class OrderController {
    * @param {any} req - Express request with `query.orderId`.
    * @returns {Promise<object>} Standard envelope with the single order or error.
    */
+  @UseGuards(AuthGuard)
   @Get('/getOneOrderUnAuth')
   getOneOrder(@Request() req) {
     return this.orderService.getOneOrder(req);
@@ -300,9 +301,10 @@ export class OrderController {
    * @param {any} payload - Body containing { orderProductId: number, status: string }.
    * @returns {Promise<object>} Standard envelope with updated order-product record.
    */
+  @UseGuards(AuthGuard)
   @Post('/orderProductStatusById')
-  orderProductStatusById(@Body() payload: any) {
-    return this.orderService.orderProductStatusById(payload);
+  orderProductStatusById(@Body() payload: any, @Request() req) {
+    return this.orderService.orderProductStatusById(payload, req);
   }
 
   /**
@@ -325,6 +327,7 @@ export class OrderController {
    * @param {any} req     - Express request (unused in current implementation).
    * @returns {Promise<object>} Standard envelope with updated orderShipping record.
    */
+  @UseGuards(AuthGuard)
   @Patch('/orderShippingStatusUpdateById')
   orderShippingStatusUpdateById(@Body() payload: any, @Request() req) {
     return this.orderService.orderShippingStatusUpdateById(payload, req);
@@ -403,6 +406,7 @@ export class OrderController {
    * @param {any} req - Express request with query params month, year, sellerId.
    * @returns {Promise<object>} Standard envelope with daily sales array and metadata.
    */
+  @UseGuards(AuthGuard)
   @Get('/getSaleDataByMonth')
   getSaleDataByMonth (@Request() req) {
     return this.orderService.getSaleDataByMonth(req);
