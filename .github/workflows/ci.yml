@@ -42,11 +42,9 @@ jobs:
 
       - name: Lint
         run: npm run lint --if-present
-        continue-on-error: true
 
       - name: Type check
         run: npx tsc --noEmit
-        continue-on-error: true
 
       - name: Build
         run: npm run build

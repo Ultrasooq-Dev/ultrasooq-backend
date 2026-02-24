@@ -3116,10 +3116,21 @@ export class UserService {
    * @param payload - `{ userId: number }`.
    * @returns Updated user record with randomised email.
    */
-  async userDelete(payload: any) {
+  async userDelete(payload: any, req?: any) {
     try {
+      // Derive the target user from the authenticated caller, not from the payload.
+      // This prevents IDOR — a user can only delete their own account.
+      const userId = req?.user?.id;
+      if (!userId) {
+        return {
+          status: false,
+          message: 'Authentication required',
+          data: [],
+        };
+      }
+
       const userDetail = await this.prisma.user.findUnique({
-        where: { id: payload?.userId },
+        where: { id: userId },
       });
 
       if (!userDetail) {
@@ -3136,13 +3147,13 @@ export class UserService {
       let email = random + 'yopmail.com';
 
       let updatedUser = await this.prisma.user.update({
-        where: { id: payload?.userId },
+        where: { id: userId },
         data: { email: email },
       });
 
       return {
         status: true,
-        message: 'Delete Successffully',
+        message: 'Delete Successfully',
         data: updatedUser,
       };
     } catch (error) {

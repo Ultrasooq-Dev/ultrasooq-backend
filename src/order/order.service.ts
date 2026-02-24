@@ -1522,14 +1522,15 @@ export class OrderService {
   async getOneOrder(req: any) {
     try {
       const orderId =  req.query.orderId;
-  
+      const userId = req.user?.id;
+
       if (!orderId) {
         return {
           status: false,
           message: 'Order ID is required',
         };
       }
-  
+
       const order = await this.prisma.order.findUnique({
         where: {
           id: Number(orderId),
@@ -1546,14 +1547,28 @@ export class OrderService {
           order_orderAddress: true,
         },
       });
-  
+
       if (!order) {
         return {
           status: false,
           message: 'Order not found',
         };
       }
-  
+
+      // Ownership check: only the order's buyer or one of its sellers may view
+      if (userId) {
+        const isBuyer = order.userId === userId;
+        const isSeller = order.order_orderProducts?.some(
+          (op: any) => op.sellerId === userId,
+        );
+        if (!isBuyer && !isSeller) {
+          return {
+            status: false,
+            message: 'You do not have permission to view this order',
+          };
+        }
+      }
+
       return {
         status: true,
         message: 'Order fetched successfully',
@@ -2242,10 +2257,11 @@ export class OrderService {
    * @param {any} payload - Body containing { orderProductId: number, status: string }.
    * @returns {Promise<object>} Standard envelope with updated order-product.
    */
-  async orderProductStatusById(payload: any) {
+  async orderProductStatusById(payload: any, req?: any) {
     try {
       const orderProductId = payload?.orderProductId;
       const status = payload?.status;
+      const userId = req?.user?.id;
 
       let existOrderProduct = await this.prisma.orderProducts.findUnique({
         where: { id: orderProductId }
@@ -2256,7 +2272,19 @@ export class OrderService {
           status: false,
           message: 'Not Found',
           data: existOrderProduct
-        } 
+        }
+      }
+
+      // Ownership check: only the buyer or seller of this order-product may update its status
+      if (userId) {
+        const isBuyer = existOrderProduct.userId === userId;
+        const isSeller = existOrderProduct.sellerId === userId;
+        if (!isBuyer && !isSeller) {
+          return {
+            status: false,
+            message: 'You do not have permission to update this order product',
+          };
+        }
       }
 
       let orderProductDetail = await this.prisma.orderProducts.update({
@@ -2461,12 +2489,27 @@ export class OrderService {
   async orderShippingStatusUpdateById(payload: any, req: any) {
     try {
       const orderShippingId = payload?.orderShippingId;
+      const userId = req?.user?.id;
+
       if (!orderShippingId) {
         return {
           status: false,
           message: 'orderShippingId is required.',
           data: []
         }
+      }
+
+      // Verify the shipping record exists and the caller is the assigned seller
+      const existingShipping = await this.prisma.orderShipping.findUnique({
+        where: { id: orderShippingId },
+      });
+
+      if (!existingShipping) {
+        return { status: false, message: 'Shipping record not found', data: [] };
+      }
+
+      if (userId && existingShipping.sellerId !== userId) {
+        return { status: false, message: 'You do not have permission to update this shipping record' };
       }
 
       let updateOrderShipping = await this.prisma.orderShipping.update({
@@ -2478,7 +2521,7 @@ export class OrderService {
       });
 
       return {
-        status: true, 
+        status: true,
         message: 'Updated Successfully',
         data: updateOrderShipping
       }
@@ -3454,7 +3497,9 @@ export class OrderService {
    */
   async getSaleDataByMonth (req: any) {
     try {
-      const { month, year, sellerId } = req.query;
+      const { month, year } = req.query;
+      // Derive sellerId from the authenticated user instead of trusting query params
+      const sellerId = req.user?.id;
 
       if (!month || !year) {
         return {

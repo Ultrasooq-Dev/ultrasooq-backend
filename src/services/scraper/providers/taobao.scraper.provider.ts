@@ -1225,15 +1225,12 @@ export class TaobaoScraperProvider implements ScraperProvider {
                                             // Try to parse as JSON or evaluate
                                             let data: any = null;
                                             
-                                            // Try JSON.parse first
+                                            // Try JSON.parse first (safe parsing only — no dynamic code execution)
                                             try {
                                                 data = JSON.parse(dataStr);
                                             } catch {
-                                                // Try Function constructor
-                                                try {
-                                                    data = new Function('return ' + dataStr)();
-                                                } catch {
-                                                    // Try to extract nid values directly
+                                                // Fallback: extract nid values directly via regex (no dynamic eval)
+                                                {
                                                     const nidMatches = dataStr.match(/"nid"\s*:\s*"([^"]+)"/g);
                                                     if (nidMatches) {
                                                         nidMatches.forEach((nidMatch: string) => {

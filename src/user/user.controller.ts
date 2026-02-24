@@ -422,11 +422,11 @@ export class UserController {
     return this.userService.deleteUserAddress(userAddressId, req);
   }
 
-  /** POST /user/userDelete — Delete a user account (protected). */
+  /** POST /user/userDelete — Delete (anonymise) the caller's own account (protected). */
   @UseGuards(AuthGuard)
   @Post('/userDelete')
   userDelete(@Body() payload: any, @Request() req) {
-    return this.userService.userDelete(payload);
+    return this.userService.userDelete(payload, req);
   }
 
   /* ═══════════════════════════════════════════════════════════════════════

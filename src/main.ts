@@ -91,13 +91,24 @@ async function bootstrap() {
   // Global exception filter for consistent error responses
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  // Security headers via Helmet — sets various HTTP headers to help protect the app.
-  // CSP and Cross-Origin-Embedder-Policy are disabled to avoid breaking frontend
-  // asset loading and cross-origin iframe embeds during development.
+  // Security headers via Helmet.
+  // In production: CSP is enabled with a permissive default-src self + known CDNs.
+  // In development: CSP is disabled to avoid blocking local dev asset loading.
+  const isProduction = process.env.NODE_ENV === 'production';
   app.use(
     helmet({
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: isProduction
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", 'data:', 'https://*.amazonaws.com'],
+              connectSrc: ["'self'", ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [])],
+            },
+          }
+        : false,
+      crossOriginEmbedderPolicy: isProduction,
     }),
   );
 
@@ -116,14 +127,18 @@ async function bootstrap() {
 
   /* CORS — restrict to an explicit whitelist of allowed origins.
      Set the CORS_ORIGINS env var as a comma-separated list in production
-     (e.g. "https://app.ultrasooq.com,https://admin.ultrasooq.com").
-     The x-test-user-id header is included for the dev auth-bypass guard. */
+     (e.g. "https://app.ultrasooq.com,https://admin.ultrasooq.com"). */
+  const corsHeaders = ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma'];
+  // Only expose the test-bypass header in development
+  if (process.env.NODE_ENV === 'development' && process.env.ENABLE_TEST_AUTH_BYPASS === 'true') {
+    corsHeaders.push('x-test-user-id');
+  }
   app.enableCors({
     origin: process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(',')
       : ['http://localhost:4001', 'http://localhost:3001', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-test-user-id', 'Cache-Control', 'Pragma'],
+    allowedHeaders: corsHeaders,
     credentials: true,
   });
 
@@ -136,8 +151,8 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // Strips properties that are not defined in the DTO
-      //   forbidNonWhitelisted: true, // Throws an error if non-whitelisted properties are sent
-      //   transform: true,  // Automatically transforms request payloads into DTO instances
+      forbidNonWhitelisted: true, // Throws 400 if unknown properties are sent
+      transform: true, // Auto-transform payloads into DTO class instances
     }),
   );
 
