@@ -356,7 +356,24 @@ export class CacheService implements OnModuleInit {
     try {
       const store = (this.cache as any).store;
 
-      if (store && typeof store.keys === 'function') {
+      // P1-11 FIX: Use SCAN instead of KEYS to avoid blocking Redis in production
+      const client = store?.client || store?.getClient?.();
+      if (client && typeof client.scanStream === 'function') {
+        const stream = client.scanStream({ match: `${prefix}*`, count: 100 });
+        let deletedCount = 0;
+        for await (const keys of stream) {
+          if (keys.length > 0) {
+            await Promise.all(keys.map((k: string) => this.cache.del(k)));
+            deletedCount += keys.length;
+          }
+        }
+        if (deletedCount === 0) {
+          this.logger.debug(`Cache INVALIDATE_PREFIX: no keys found for "${prefix}*"`);
+        } else {
+          this.logger.log(`Cache INVALIDATE_PREFIX: deleted ${deletedCount} key(s) matching "${prefix}*"`);
+        }
+      } else if (store && typeof store.keys === 'function') {
+        // Fallback to keys() if scanStream not available
         const matchingKeys: string[] = await store.keys(`${prefix}*`);
         if (matchingKeys.length === 0) {
           this.logger.debug(`Cache INVALIDATE_PREFIX: no keys found for "${prefix}*"`);

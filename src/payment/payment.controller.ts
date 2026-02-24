@@ -41,6 +41,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Request, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from 'src/guards/AuthGuard';
+import { SuperAdminAuthGuard } from 'src/guards/SuperAdminAuthGuard';
 import { PaymentService } from './payment.service';
 
 /**
@@ -96,6 +97,8 @@ export class PaymentController {
    * @returns {Promise<{status: boolean, message: string, data?: string}>}
    *   Standard response envelope containing the Paymob auth token on success.
    */
+  // P1-03 FIX: Restrict Paymob auth token to super-admin only
+  @UseGuards(SuperAdminAuthGuard)
   @Get('/get-auth-token')
   getAuthToken(@Request() req) {
     return this.paymentService.getAuthToken(req);
@@ -133,7 +136,8 @@ export class PaymentController {
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    *   Paymob intention response wrapped in the standard envelope.
    */
-  // @UseGuards(AuthGuard)
+  // N-004 FIX: Re-enable AuthGuard — payment intentions must be authenticated
+  @UseGuards(AuthGuard)
   @Post('/create-paymob-intention')
   createIntention(@Request() req, @Body() payload: any) {
     return this.paymentService.createIntention(payload, req);
@@ -347,6 +351,8 @@ export class PaymentController {
    * @param {any} payload - Request body (unused in service).
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    */
+  // N-004 FIX: Guard saved-card payment — must require authentication
+  @UseGuards(AuthGuard)
   @Post('/createPaymentUsingSaveCardToken')
   createPaymentUsingSaveCardToken(@Request() req, @Body() payload: any) {
     return this.paymentService.createPaymentUsingSaveCardToken(req);
@@ -384,6 +390,8 @@ export class PaymentController {
    * @param {any} payload - Request body with EMI payment fields.
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    */
+  // N-004 FIX: Guard EMI payment creation — must require authentication
+  @UseGuards(AuthGuard)
   @Post('/createPaymentForEMI')
   createPaymentForEMI(@Request() req, @Body() payload: any) {
     return this.paymentService.createPaymentForEMI(payload, req);
@@ -491,15 +499,14 @@ export class PaymentController {
    * @param {any} payload - Request body (unused directly by service).
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    */
-  // used for testing purpose
-  @Post('/payInstallment-testing')
-  payInstallment(@Request() req, @Body() payload: any) {
-    return this.paymentService.payInstallment(req);
-  }
+  // N-004 FIX: Removed payInstallment-testing endpoint (was exposed in production with no auth).
+  // Use the cron job or an admin-only endpoint for EMI testing.
 
   /**
    * AMWALPAY
    */
+  // N-004 FIX: Guard AmwalPay config creation — must require authentication
+  @UseGuards(AuthGuard)
   @Post('/create-amwalpay-config')
   createAmwalPayConfig(@Request() req, @Body() payload: any) {
     return this.paymentService.createAmwalPayConfig(payload, req);
@@ -510,11 +517,15 @@ export class PaymentController {
     return this.paymentService.amwalPayWebhook(payload, req);
   }
 
+  // N-004 FIX: Guard AmwalPay wallet config — must require authentication
+  @UseGuards(AuthGuard)
   @Post('/create-amwalpay-wallet-config')
   createAmwalPayWalletConfig(@Request() req, @Body() payload: any) {
     return this.paymentService.createAmwalPayWalletConfig(payload, req);
   }
 
+  // N-004 FIX: Guard AmwalPay wallet verification — credits wallets, must require authentication
+  @UseGuards(AuthGuard)
   @Post('/verify-amwalpay-wallet-payment')
   verifyAmwalPayWalletPayment(@Request() req, @Body() payload: any) {
     return this.paymentService.verifyAmwalPayWalletPayment(payload, req);

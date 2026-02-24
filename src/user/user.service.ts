@@ -1438,10 +1438,12 @@ export class UserService {
           data: { password: password },
         });
 
+        // N-018 FIX: Strip password hash from response
+        const { password: _pw, otp: _otp, otpValidTime: _otpTime, resetPassword: _rp, ...safeUpdatedUser } = updatedUserDetail;
         return {
           status: true,
           message: 'The password has been updated successfully.',
-          data: updatedUserDetail,
+          data: safeUpdatedUser,
         };
       } else {
         return {
@@ -1563,11 +1565,13 @@ export class UserService {
             categoryDetail: true,
           },
         });
+      // N-003 FIX: Strip sensitive fields before returning
+      const { password: _pw, otp: _otp, otpValidTime: _otpTime, resetPassword: _rp, ...safeUser } = userDetail;
       return {
         status: true,
         message: 'Fetch Successfully',
         data: {
-          ...userDetail,
+          ...safeUser,
           userBusinesCategoryDetail,
         },
       };

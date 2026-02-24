@@ -104,6 +104,14 @@ export class S3service {
     if (ext && dangerousExtensions.includes(ext)) {
       throw new BadRequestException(`File extension .${ext} is not allowed for security reasons`);
     }
+
+    // P1-04 FIX: Magic-byte validation — ensure file content matches claimed MIME type
+    if (file.buffer) {
+      const detectedMime = determineMimeType(file.buffer);
+      if (detectedMime && detectedMime !== 'application/octet-stream' && detectedMime !== file.mimetype) {
+        throw new BadRequestException(`File content type mismatch: claimed ${file.mimetype} but detected ${detectedMime}`);
+      }
+    }
   }
 
   /**

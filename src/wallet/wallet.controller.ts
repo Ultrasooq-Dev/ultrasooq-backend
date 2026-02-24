@@ -7,6 +7,7 @@ import { WalletTransferDto } from './dto/wallet-transfer.dto';
 import { WalletSettingsDto } from './dto/wallet-settings.dto';
 import { WalletTransactionsDto } from './dto/wallet-transactions.dto';
 import { AuthGuard } from '../guards/AuthGuard';
+import { SuperAdminAuthGuard } from '../guards/SuperAdminAuthGuard';
 
 @ApiTags('wallet')
 @ApiBearerAuth('JWT-auth')
@@ -121,7 +122,7 @@ export class WalletController {
  * Admin wallet controller
  */
 @Controller('admin/wallets')
-@UseGuards(AuthGuard)
+@UseGuards(SuperAdminAuthGuard)
 export class AdminWalletController {
   constructor(private readonly walletService: WalletService) {}
 

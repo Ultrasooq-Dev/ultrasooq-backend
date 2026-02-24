@@ -115,5 +115,7 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   },
-  "prisma": {}
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }

@@ -49,13 +49,14 @@
  * - The Stripe instance is initialised but currently unused; it remains for a
  *   planned future Stripe integration path.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';
 import Stripe from 'stripe';
 import * as randomstring from 'randomstring';
+import * as crypto from 'crypto';
 import { HelperService } from 'src/helper/helper.service';
 const axios = require("axios");
 import * as cron from 'node-cron';
@@ -106,6 +107,8 @@ export class PaymentService {
    * **Dependencies:**
    * All parameters are provided by the NestJS DI container via {@link PaymentModule}.
    */
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly notificationService: NotificationService,
@@ -113,6 +116,74 @@ export class PaymentService {
     private readonly helperService: HelperService,
     private readonly prisma: PrismaService,
   ) { }
+
+  /**
+   * N-001 FIX: Verify Paymob webhook HMAC signature.
+   *
+   * Paymob sends an `hmac` query parameter with each webhook. We concatenate
+   * specific transaction fields in the documented order, compute HMAC-SHA512
+   * using the HMAC secret from the Paymob dashboard, and compare using
+   * timing-safe equality to prevent timing attacks.
+   *
+   * @param req - Express request object containing the webhook body and query params.
+   * @returns true if HMAC is valid, false otherwise.
+   */
+  private verifyPaymobWebhookHmac(req: any): boolean {
+    try {
+      const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+      if (!hmacSecret) {
+        this.logger.error('PAYMOB_HMAC_SECRET is not configured — rejecting webhook');
+        return false;
+      }
+
+      // Paymob sends HMAC as query param or in the body
+      const receivedHmac = req.query?.hmac || req.body?.hmac;
+      if (!receivedHmac) {
+        this.logger.warn('Webhook received without HMAC signature');
+        return false;
+      }
+
+      const obj = req.body?.obj || {};
+
+      // Paymob HMAC concatenation order (documented by Paymob):
+      const concatenatedString = [
+        obj.amount_cents ?? '',
+        obj.created_at ?? '',
+        obj.currency ?? '',
+        obj.error_occured ?? '',
+        obj.has_parent_transaction ?? '',
+        obj.id ?? '',
+        obj.integration_id ?? '',
+        obj.is_3d_secure ?? '',
+        obj.is_auth ?? '',
+        obj.is_capture ?? '',
+        obj.is_refunded ?? '',
+        obj.is_standalone_payment ?? '',
+        obj.is_voided ?? '',
+        obj.order?.id ?? '',
+        obj.owner ?? '',
+        obj.pending ?? '',
+        obj.source_data?.pan ?? '',
+        obj.source_data?.sub_type ?? '',
+        obj.source_data?.type ?? '',
+        obj.success ?? '',
+      ].join('');
+
+      const calculatedHmac = crypto
+        .createHmac('sha512', hmacSecret)
+        .update(concatenatedString)
+        .digest('hex');
+
+      // Timing-safe comparison
+      const a = Buffer.from(calculatedHmac, 'hex');
+      const b = Buffer.from(receivedHmac, 'hex');
+      if (a.length !== b.length) return false;
+      return crypto.timingSafeEqual(a, b);
+    } catch (error) {
+      this.logger.error('HMAC verification failed with error', error);
+      return false;
+    }
+  }
 
   /**
    * Retrieve all Paymob transactions for the authenticated user (paginated).
@@ -328,11 +399,30 @@ export class PaymentService {
         }
       }
 
+      // P0-01 FIX: Server-side amount verification — never trust client-supplied amount
+      const orderId = parseInt(payload.extras.orderId);
+      const orderRecord = await this.prisma.order.findUnique({ where: { id: orderId } });
+      if (!orderRecord) {
+        return { status: false, message: 'Order not found' };
+      }
+      const paymentType = payload.extras.paymentType;
+      let serverAmount: number;
+      if (paymentType === 'DUE') {
+        serverAmount = Number(orderRecord.dueAmount ?? 0);
+      } else if (paymentType === 'ADVANCE') {
+        serverAmount = Number(orderRecord.advanceAmount ?? orderRecord.totalAmount ?? 0);
+      } else {
+        serverAmount = Number(orderRecord.totalAmount ?? 0);
+      }
+      if (serverAmount <= 0 || Math.abs(serverAmount - Number(payload.amount)) > 0.01) {
+        this.logger.warn(`createIntention: Amount mismatch — client sent ${payload.amount}, server expects ${serverAmount}`);
+        return { status: false, message: 'Amount mismatch with order record' };
+      }
 
       const PAYMOB_INTENTION_URL = 'https://oman.paymob.com/v1/intention/';
       const AUTH_TOKEN = process.env.PAYMOB_SECRET_KEY
       const {
-        amount,
+        amount: _clientAmount,
         currency,
         payment_methods,
         items,
@@ -346,7 +436,7 @@ export class PaymentService {
       const response = await axios.post(
         PAYMOB_INTENTION_URL,
         {
-          amount: amount,
+          amount: serverAmount,
           currency: "OMR",
           payment_methods: [parseInt(process.env.PAYMOB_INTEGRATION_ID)],
           items: items,
@@ -428,9 +518,12 @@ export class PaymentService {
    */
   async paymobWebhook(payload: any, req: any) {
     try {
-      try {
-      } catch (e) {
+      // N-001 FIX: Verify Paymob HMAC signature before processing webhook
+      if (!this.verifyPaymobWebhookHmac(req)) {
+        this.logger.warn('paymobWebhook: Invalid HMAC signature — rejecting');
+        return { success: false, message: 'Invalid webhook signature' };
       }
+
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
@@ -440,24 +533,26 @@ export class PaymentService {
         if (payment_key_claims && payment_key_claims.extra.paymentType === 'DIRECT') {
 
           if (success && orderId) {
-
-            let transactionDetail = await this.prisma.transactionPaymob.updateMany({
-              where: { orderId: orderId },
-              data: {
-                transactionStatus: 'SUCCESS',
-                paymobTransactionId: String(id), // <-- convert to string,
-                amountCents: data.obj.amount_cents || 0,
-                success: success,
-                paymobObject: req.body,
-                merchantOrderId: merchant_order_id,
-                paymobOrderId: order?.id,
-              }
-            });
-            await this.prisma.order.update({
-              where: { id: orderId },
-              data: {
-                orderStatus: 'PAID'
-              }
+            // N-011 FIX: Atomic transaction + order update
+            await this.prisma.$transaction(async (tx) => {
+              await tx.transactionPaymob.updateMany({
+                where: { orderId: orderId },
+                data: {
+                  transactionStatus: 'SUCCESS',
+                  paymobTransactionId: String(id),
+                  amountCents: data.obj.amount_cents || 0,
+                  success: success,
+                  paymobObject: req.body,
+                  merchantOrderId: merchant_order_id,
+                  paymobOrderId: order?.id,
+                }
+              });
+              await tx.order.update({
+                where: { id: orderId },
+                data: {
+                  orderStatus: 'PAID'
+                }
+              });
             });
           } else {
             let transactionDetail = await this.prisma.transactionPaymob.updateMany({
@@ -511,28 +606,38 @@ export class PaymentService {
           let orderDetail = await this.prisma.order.findUnique({
             where: { id: orderId },
           });
-          // create trasaction
+          // N-011 FIX: Atomic transaction create + order update
           if (success && orderId) {
-            let newTransaction = await this.prisma.transactionPaymob.create({
-              data: {
-                transactionStatus: 'SUCCESS',
-                paymobTransactionId: String(id), // <-- convert to string,
-                amountCents: data.obj.amount_cents || 0,
-                success: success,
-                paymobObject: req.body,
-                merchantOrderId: merchant_order_id,
-                paymobOrderId: order?.id,
-                orderId: orderId,
-                transactionType: 'DUE',
-                userId: orderDetail.userId
-              }
+            // P0-03 FIX: Idempotency — skip if this Paymob transaction was already recorded
+            const existingDueTx = await this.prisma.transactionPaymob.findFirst({
+              where: { paymobTransactionId: String(id), transactionStatus: 'SUCCESS' }
             });
-            await this.prisma.order.update({
-              where: { id: orderId },
-              data: {
-                dueAmount: 0,
-                orderStatus: 'PAID'
-              }
+            if (existingDueTx) {
+              this.logger.warn(`paymobWebhook DUE: Duplicate webhook for txn ${id} — skipping`);
+              return { success: true, message: 'Duplicate webhook ignored' };
+            }
+            await this.prisma.$transaction(async (tx) => {
+              await tx.transactionPaymob.create({
+                data: {
+                  transactionStatus: 'SUCCESS',
+                  paymobTransactionId: String(id),
+                  amountCents: data.obj.amount_cents || 0,
+                  success: success,
+                  paymobObject: req.body,
+                  merchantOrderId: merchant_order_id,
+                  paymobOrderId: order?.id,
+                  orderId: orderId,
+                  transactionType: 'DUE',
+                  userId: orderDetail.userId
+                }
+              });
+              await tx.order.update({
+                where: { id: orderId },
+                data: {
+                  dueAmount: 0,
+                  orderStatus: 'PAID'
+                }
+              });
             });
           } else {
             let newTransaction = await this.prisma.transactionPaymob.create({
@@ -715,29 +820,33 @@ export class PaymentService {
    */
   async paymobwebhookForCreatePaymentLink(payload: any, req: any) {
     try {
-  
+      // N-001 FIX: Verify Paymob HMAC signature before processing webhook
+      if (!this.verifyPaymobWebhookHmac(req)) {
+        this.logger.warn('paymobwebhookForCreatePaymentLink: Invalid HMAC — rejecting');
+        return { success: false, message: 'Invalid webhook signature' };
+      }
+
       const data = req.body;
       let orderId: number | null = null;
-  
+
       // Step 1: Extract orderId from description if event is TRANSACTION
       if (data?.type === 'TRANSACTION') {
         const items = data?.order?.items;
         const description = items?.[0]?.description;
-  
+
         if (description) {
           const match = description.match(/orderId=(\d+)/);
           if (match) {
             orderId = parseInt(match[1], 10);
           }
         }
-  
       }
-  
+
       // Step 2: Safety check
       if (!orderId) {
         throw new Error('Order ID not found in webhook payload');
       }
-  
+
       // Step 3: Extract other fields from webhook object
       const obj = data?.obj || {};
       const success = obj.success;
@@ -745,26 +854,27 @@ export class PaymentService {
       const amount_cents = obj.amount_cents || 0;
       const merchant_order_id = parseInt(obj.order?.merchant_order_id);
       const paymobOrderId = data?.order?.id;
-  
-      // Step 4: Update transactionPaymob
-      const transactionDetail = await this.prisma.transactionPaymob.updateMany({
-        where: { orderId },
-        data: {
-          transactionStatus: 'SUCCESS',
-          paymobTransactionId: String(id),
-          amountCents: amount_cents,
-          success: success,
-          paymobObject: req.body,
-          merchantOrderId: merchant_order_id,
-          paymobOrderId: paymobOrderId,
-          transactionType: 'PAYMENTLINK'
-        },
-      });
-  
-      // Step 5: Update order status
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: { orderStatus: 'PAID' },
+
+      // N-011 FIX: Atomic transaction + order update
+      const transactionDetail = await this.prisma.$transaction(async (tx) => {
+        const txResult = await tx.transactionPaymob.updateMany({
+          where: { orderId },
+          data: {
+            transactionStatus: 'SUCCESS',
+            paymobTransactionId: String(id),
+            amountCents: amount_cents,
+            success: success,
+            paymobObject: req.body,
+            merchantOrderId: merchant_order_id,
+            paymobOrderId: paymobOrderId,
+            transactionType: 'PAYMENTLINK'
+          },
+        });
+        await tx.order.update({
+          where: { id: orderId },
+          data: { orderStatus: 'PAID' },
+        });
+        return txResult;
       });
   
       // Step 6: Respond
@@ -822,6 +932,12 @@ export class PaymentService {
    */
   async createSaveCardToken (req: any) {
     try {
+      // N-001 FIX: Verify Paymob HMAC signature before processing webhook
+      if (!this.verifyPaymobWebhookHmac(req)) {
+        this.logger.warn('createSaveCardToken: Invalid HMAC — rejecting');
+        return { success: false, message: 'Invalid webhook signature' };
+      }
+
       const { obj, type } = req.body;
 
       const newSaveCardToken = await this.prisma.orderSaveCardToken.create({
@@ -1096,6 +1212,12 @@ export class PaymentService {
    */
   async webhookForFirstEMI (req: any) {
     try {
+      // N-001 FIX: Verify Paymob HMAC signature before processing webhook
+      if (!this.verifyPaymobWebhookHmac(req)) {
+        this.logger.warn('webhookForFirstEMI: Invalid HMAC — rejecting');
+        return { success: false, message: 'Invalid webhook signature' };
+      }
+
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
@@ -1105,25 +1227,27 @@ export class PaymentService {
         if (payment_key_claims && payment_key_claims.extra.paymentType === 'EMI') {
 
           if (success && orderId) {
-
-            let transactionDetail = await this.prisma.transactionPaymob.updateMany({
-              where: { orderId: orderId },
-              data: {
-                transactionStatus: 'SUCCESS',
-                paymobTransactionId: String(id), // <-- convert to string,
-                amountCents: data.obj.amount_cents || 0,
-                success: success,
-                paymobObject: req.body,
-                merchantOrderId: merchant_order_id,
-                paymobOrderId: order?.id,
-              }
-            });
-            await this.prisma.order.update({
-              where: { id: orderId },
-              data: {
-                orderStatus: 'PENDING',
-                paymobOrderId: String(order?.id),
-              }
+            // N-011 FIX: Atomic transaction + order update
+            await this.prisma.$transaction(async (tx) => {
+              await tx.transactionPaymob.updateMany({
+                where: { orderId: orderId },
+                data: {
+                  transactionStatus: 'SUCCESS',
+                  paymobTransactionId: String(id),
+                  amountCents: data.obj.amount_cents || 0,
+                  success: success,
+                  paymobObject: req.body,
+                  merchantOrderId: merchant_order_id,
+                  paymobOrderId: order?.id,
+                }
+              });
+              await tx.order.update({
+                where: { id: orderId },
+                data: {
+                  orderStatus: 'PENDING',
+                  paymobOrderId: String(order?.id),
+                }
+              });
             });
           } else {
             let transactionDetail = await this.prisma.transactionPaymob.updateMany({
@@ -1465,6 +1589,12 @@ export class PaymentService {
    */
   async webhookForEMI (req: any) {
     try {
+      // N-001 FIX: Verify Paymob HMAC signature before processing webhook
+      if (!this.verifyPaymobWebhookHmac(req)) {
+        this.logger.warn('webhookForEMI: Invalid HMAC — rejecting');
+        return { success: false, message: 'Invalid webhook signature' };
+      }
+
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
@@ -1478,11 +1608,19 @@ export class PaymentService {
           });
 
           if (success && orderId) {
+            // P0-03 FIX: Idempotency — skip if this Paymob transaction was already recorded
+            const existingEmiTx = await this.prisma.transactionPaymob.findFirst({
+              where: { paymobTransactionId: String(id), transactionStatus: 'SUCCESS' }
+            });
+            if (existingEmiTx) {
+              this.logger.warn(`webhookForEMI: Duplicate webhook for txn ${id} — skipping`);
+              return { success: true, message: 'Duplicate webhook ignored' };
+            }
 
             let newTransaction = await this.prisma.transactionPaymob.create({
               data: {
                 transactionStatus: 'SUCCESS',
-                paymobTransactionId: String(id), // <-- convert to string,
+                paymobTransactionId: String(id),
                 amountCents: data.obj.amount_cents || 0,
                 success: success,
                 paymobObject: req.body,
@@ -1560,16 +1698,23 @@ export class PaymentService {
   /**
    * AMWALPAY INTEGRATION
    */
-  private readonly AMWALPAY_MID = process.env.AMWALPAY_MID || '158161';
-  private readonly AMWALPAY_TID = process.env.AMWALPAY_TID || '623265';
-  private readonly AMWALPAY_SECURE_HASH_KEY = process.env.AMWALPAY_SECURE_HASH_KEY || '54CB00FC77C742668B09F98B9776CC50F61D1A31D3F85EC73B31E80D1676936B'; // Hex format
-  private readonly AMWALPAY_CURRENCY_ID = process.env.AMWALPAY_CURRENCY_ID || '512'; // OMR
+  // P0-02 FIX: Removed hardcoded fallback secrets — env vars are mandatory
+  private readonly AMWALPAY_MID = process.env.AMWALPAY_MID;
+  private readonly AMWALPAY_TID = process.env.AMWALPAY_TID;
+  private readonly AMWALPAY_SECURE_HASH_KEY = process.env.AMWALPAY_SECURE_HASH_KEY;
+  private readonly AMWALPAY_CURRENCY_ID = process.env.AMWALPAY_CURRENCY_ID || '512'; // OMR default is not sensitive
 
   /**
    * Create AmwalPay Smartbox Configuration
    */
   async createAmwalPayConfig(payload: any, req: any) {
     try {
+      // P0-02 FIX: Fail fast if AmwalPay env vars are not configured
+      if (!this.AMWALPAY_MID || !this.AMWALPAY_TID || !this.AMWALPAY_SECURE_HASH_KEY) {
+        this.logger.error('AmwalPay env vars (AMWALPAY_MID, AMWALPAY_TID, AMWALPAY_SECURE_HASH_KEY) are not configured');
+        return { status: false, message: 'Payment gateway not configured' };
+      }
+
       const { amount, orderId, languageId = 'en' } = payload;
 
       if (!amount || !orderId) {
@@ -1577,6 +1722,17 @@ export class PaymentService {
           status: false,
           message: 'Missing required fields: amount and orderId'
         };
+      }
+
+      // P0-01 FIX: Verify amount from database — never trust client-supplied amount
+      const orderRecord = await this.prisma.order.findUnique({ where: { id: parseInt(orderId) } });
+      if (!orderRecord) {
+        return { status: false, message: 'Order not found' };
+      }
+      const serverAmount = Number(orderRecord.totalAmount ?? 0);
+      if (serverAmount <= 0 || Math.abs(serverAmount - Number(amount)) > 0.01) {
+        this.logger.warn(`createAmwalPayConfig: Amount mismatch — client ${amount}, server ${serverAmount}`);
+        return { status: false, message: 'Amount mismatch with order record' };
       }
 
       // Generate merchant reference (unique order identifier)
@@ -2066,6 +2222,12 @@ export class PaymentService {
    */
   async createAmwalPayWalletConfig(payload: any, req: any) {
     try {
+      // P0-02 FIX: Fail fast if AmwalPay env vars are not configured
+      if (!this.AMWALPAY_MID || !this.AMWALPAY_TID || !this.AMWALPAY_SECURE_HASH_KEY) {
+        this.logger.error('AmwalPay env vars (AMWALPAY_MID, AMWALPAY_TID, AMWALPAY_SECURE_HASH_KEY) are not configured');
+        return { status: false, message: 'Payment gateway not configured' };
+      }
+
       const { amount, walletId, languageId = 'en' } = payload;
 
       if (!amount || !walletId) {
@@ -2073,6 +2235,11 @@ export class PaymentService {
           status: false,
           message: 'Missing required fields: amount and walletId'
         };
+      }
+
+      // P0-01 FIX: Validate amount is a positive number
+      if (typeof amount !== 'number' || amount <= 0 || amount > 100000) {
+        return { status: false, message: 'Invalid amount: must be a positive number up to 100,000' };
       }
 
       // Generate merchant reference for wallet recharge

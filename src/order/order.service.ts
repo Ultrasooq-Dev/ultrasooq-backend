@@ -790,32 +790,35 @@ export class OrderService {
         });
       }
 
-      // Step 1: Find all cart IDs for the user
-      const cartIds = await this.prisma.cart.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const cartIdList = cartIds.map(c => c.id);
+      // P0-04 FIX: Atomic cart cleanup — wrap in transaction to prevent partial deletes
+      await this.prisma.$transaction(async (tx) => {
+        // Step 1: Find all cart IDs for the user
+        const cartIds = await tx.cart.findMany({
+          where: { userId },
+          select: { id: true },
+        });
+        const cartIdList = cartIds.map(c => c.id);
 
-      // Step 2: Delete from CartServiceFeature (child)
-      await this.prisma.cartServiceFeature.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
+        // Step 2: Delete from CartServiceFeature (child)
+        await tx.cartServiceFeature.deleteMany({
+          where: {
+            cartId: { in: cartIdList },
+          },
+        });
 
-      // Step 3: Delete from CartProductService (child)
-      await this.prisma.cartProductService.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
+        // Step 3: Delete from CartProductService (child)
+        await tx.cartProductService.deleteMany({
+          where: {
+            cartId: { in: cartIdList },
+          },
+        });
 
-      // Step 4: Delete from Cart (parent)
-      await this.prisma.cart.deleteMany({
-        where: {
-          userId,
-        },
+        // Step 4: Delete from Cart (parent)
+        await tx.cart.deleteMany({
+          where: {
+            userId,
+          },
+        });
       });
 
       // Fetch updated order details with walletTransactionId
@@ -2384,6 +2387,17 @@ export class OrderService {
 
         if (isWalletPayment) {
           try {
+            // P0-05 FIX: Guard against duplicate refunds — check if refund already processed for this order product
+            const existingRefund = await this.prisma.walletTransaction.findFirst({
+              where: {
+                orderId: order.id,
+                transactionType: 'REFUND',
+                metadata: { path: ['orderProductId'], equals: existOrderProduct.id }
+              }
+            });
+            if (existingRefund) {
+              // Refund already processed for this order product — skip
+            } else {
             // Get refund amount - use customerPay if available, otherwise salePrice
             const refundAmount = Number(existOrderProduct.customerPay || existOrderProduct.salePrice || 0);
             // Use orderProduct userId first, fallback to order userId
@@ -2433,6 +2447,7 @@ export class OrderService {
               if (!refundResult.status) {
               }
             }
+            } // end P0-05 else (no existing refund)
           } catch (error) {
             // Log error but don't fail the cancellation
           }
@@ -2443,7 +2458,7 @@ export class OrderService {
         status: true,
         message: 'Status Changed Successfully',
         data: orderProductDetail
-      } 
+      }
 
     } catch (error) {
       return {
@@ -4526,10 +4541,19 @@ export class OrderService {
 
         if (isWalletPayment) {
           try {
+            // P0-05 FIX: Guard against duplicate refunds
+            const existingRefund = await this.prisma.walletTransaction.findFirst({
+              where: {
+                orderId: order.id,
+                transactionType: 'REFUND',
+                metadata: { path: ['orderProductId'], equals: orderProduct.id }
+              }
+            });
+            if (!existingRefund) {
             // Get refund amount - use customerPay if available, otherwise salePrice
             const refundAmount = Number(orderProduct.customerPay || orderProduct.salePrice || 0);
             const customerId = orderProduct.userId || order.userId;
-            
+
             // Get userAccountId from the original wallet payment transaction
             let userAccountId: number | undefined = undefined;
             if (order.walletTransactionId) {
@@ -4542,7 +4566,7 @@ export class OrderService {
                     metadata: true,
                   }
                 });
-                
+
                 if (originalPaymentTransaction) {
                   // Get the wallet to find userAccountId
                   const wallet = await this.prisma.wallet.findUnique({
@@ -4553,7 +4577,7 @@ export class OrderService {
                       userAccountId: true,
                     }
                   });
-                  
+
                   if (wallet) {
                     userAccountId = wallet.userAccountId || undefined;
                   }
@@ -4562,7 +4586,7 @@ export class OrderService {
                 // Silently handle error - will refund to master wallet
               }
             }
-            
+
             if (refundAmount > 0 && customerId) {
               const refundResult = await this.walletService.processWalletRefund(
                 customerId,
@@ -4574,6 +4598,7 @@ export class OrderService {
               if (!refundResult.status) {
               }
             }
+            } // end P0-05 duplicate refund guard
           } catch (error) {
             // Log error but don't fail the cancellation
           }

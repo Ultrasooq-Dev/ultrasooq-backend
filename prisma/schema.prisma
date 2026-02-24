@@ -1650,7 +1650,7 @@ model Cart {
   productDetails      Product?             @relation(fields: [productId], references: [id])
   productPriceDetails ProductPrice?        @relation(fields: [productPriceId], references: [id])
   service             Service?             @relation(fields: [serviceId], references: [id])
-  userDetails         User?                @relation(fields: [userId], references: [id])
+  userDetails         User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
   cartProductServices CartProductService[]
   cartServiceFeatures CartServiceFeature[]
 
@@ -1767,6 +1767,8 @@ model Order {
   @@index([userId, orderStatus, createdAt])
   @@index([orderStatus])
   @@index([userId])
+  @@index([orderNo])
+  @@index([paymobOrderId])
 }
 
 // OrderSaveCardToken — Stores saved payment card tokens from the Paymob payment gateway.
@@ -1783,6 +1785,8 @@ model OrderSaveCardToken {
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+
+  @@index([paymobOrderId])
 }
 
 // OrderShipping — Shipping/delivery details for an order, supporting multiple shipping methods.
@@ -1877,7 +1881,7 @@ model OrderProducts {
   serviceFeatures           Json?
   serviceId                 Int?
   orderProductServices      OrderProductService[]
-  orderProduct_order        Order?                @relation(fields: [orderId], references: [id])
+  orderProduct_order        Order?                @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderShippingDetail       OrderShipping?        @relation(fields: [orderShippingId], references: [id])
   orderProduct_product      Product?              @relation(fields: [productId], references: [id])
   orderProduct_productPrice ProductPrice?         @relation(fields: [productPriceId], references: [id])
@@ -1891,6 +1895,7 @@ model OrderProducts {
   @@index([productPriceId])
   @@index([orderShippingId])
   @@index([orderProductStatus])
+  @@index([userId])
 }
 
 // OrderProductService — Links an order line item to an associated service (product-service bundle in order).
@@ -1940,7 +1945,7 @@ model OrderAddress {
   countryId          Int?
   stateId            Int?
   town               String?
-  orderAddress_order Order?      @relation(fields: [orderId], references: [id])
+  orderAddress_order Order?      @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }
@@ -1963,6 +1968,9 @@ model OrderEMI {
   deletedAt                 DateTime?
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([emiStatus])
 }
 
 // DynamicForm — Admin-defined custom forms that can be attached to products or categories.
@@ -2153,7 +2161,7 @@ model Wishlist {
   deletedAt              DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
-  wishlist_productDetail Product?  @relation(fields: [productId], references: [id])
+  wishlist_productDetail Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([productId])

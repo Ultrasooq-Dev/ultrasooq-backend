@@ -27,6 +27,17 @@ if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY !== 'placeholde
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
+// P1-06 FIX: HTML-escape user-supplied values to prevent email injection / XSS
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 
 @Injectable()
 export class NotificationService {
@@ -70,11 +81,11 @@ export class NotificationService {
                                           <tbody>
                                               <tr>
                                                   <td width="600" valign="top">
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${escapeHtml(data.name)}</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To complete your registration, please use the following One-Time Password (OTP).</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
+                                                      <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${escapeHtml(data.otp)}</h3>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Please note that this OTP is valid for the next 10 minutes. if you don't verify within this time, you'll need to request a new OTP.</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -153,11 +164,11 @@ export class NotificationService {
                                           <tbody>
                                               <tr>
                                                   <td width="600" valign="top">
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${escapeHtml(data.name)}</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To verify your OTP, please use the following One-Time Password (OTP).</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
+                                                      <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${escapeHtml(data.otp)}</h3>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Please note that this OTP is valid for the next 10 minutes. if you don't verify within this time, you'll need to request a new OTP.</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -238,11 +249,11 @@ export class NotificationService {
                                             <tbody>
                                                 <tr>
                                                     <td width="600" valign="top">
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${escapeHtml(data.name)}</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. This is your password!</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your account has been created successfully.</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your Password : ${data.rawPassword}</h3>
+                                                        <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Please use the <strong>Forgot Password</strong> option on the login page to set your password.</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
@@ -320,11 +331,11 @@ export class NotificationService {
                                             <tbody>
                                                 <tr>
                                                     <td width="600" valign="top">
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${escapeHtml(data.name)}</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To complete your registration, please use the following Password.</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your account has been created successfully.</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your Password : ${data.password}</h3>
+                                                        <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Please use the <strong>Forgot Password</strong> option on the login page to set your password.</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
                                                         </p>
@@ -403,17 +414,17 @@ export class NotificationService {
                             <tbody>
                               <tr>
                                 <td width="600" valign="top">
-                                  <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name},</p>
+                                  <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${escapeHtml(data.name)},</p>
                                   <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">We have received your query and our team has provided a response below.</p>
-  
+
                                   <h3 style="margin: 0px;padding: 10px 0;color: #2f327d;font-size: 20px;font-weight: 600;">Your Query:</h3>
                                   <p style="background: #fff; padding: 10px; border-left: 4px solid #2f327d; color: #000;font-size: 16px; line-height: 25px; font-weight: 400;">
-                                    ${data.userQuery}
+                                    ${escapeHtml(data.userQuery)}
                                   </p>
-  
+
                                   <h3 style="margin: 0px;padding: 10px 0;color: #2f327d;font-size: 20px;font-weight: 600;">Our Response:</h3>
                                   <p style="background: #fff; padding: 10px; border-left: 4px solid #28a745; color: #000;font-size: 16px; line-height: 25px; font-weight: 400;">
-                                    ${data.response}
+                                    ${escapeHtml(data.response)}
                                   </p>
   
                                   <p style="margin: 0px;padding: 15px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you need further assistance, feel free to reply to this email or visit our <a href="https://dev.ultrasooq.com/" style="color: #2f327d; text-decoration: none;">Help Center</a>.</p>

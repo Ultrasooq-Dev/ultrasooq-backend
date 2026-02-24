@@ -42,9 +42,10 @@ import { CreateSpecTemplateDto, UpdateSpecTemplateDto, BulkCreateSpecTemplateDto
 import { CreateSpecValuesDto, UpdateSpecValueDto } from './dto/create-spec-value.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from 'src/guards/AuthGuard';
+import { SuperAdminAuthGuard } from 'src/guards/SuperAdminAuthGuard';
 
 @ApiTags('specifications')
-@UseGuards(AuthGuard)
+@UseGuards(SuperAdminAuthGuard)
 @Controller('specification')
 export class SpecificationController {
   constructor(private readonly specService: SpecificationService) {}

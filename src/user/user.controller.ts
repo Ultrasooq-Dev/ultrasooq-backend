@@ -87,18 +87,21 @@ export class UserController {
 
   /** POST /user/register — Create a new user account (public, no auth).
    *  Sends OTP email for verification. User is inactive until OTP is validated. */
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('/register')
   register(@Body() createUserDto: CreateUserDto) {
     return this.userService.create(createUserDto);
   }
 
   /** POST /user/registerValidateOtp — Validate OTP sent during registration (public). */
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('/registerValidateOtp')
   registerValidateOtp(@Body() payload: RegisterValidateOtp) {
     return this.userService.registerValidateOtp(payload);
   }
 
   /** POST /user/resendOtp — Resend OTP email for registration verification (public). */
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('/resendOtp')
   resendOtp(@Body() payload: any) {
     return this.userService.resendOtp(payload);
@@ -261,7 +264,8 @@ export class UserController {
     return this.userService.findAll();
   }
 
-  /** POST /user/findUnique — Find a single user by criteria (public — NO auth guard). */
+  /** POST /user/findUnique — Find a single user by criteria (protected). */
+  @UseGuards(AuthGuard)
   @Post('/findUnique')
   findUnique(@Body() payload: any) {
     return this.userService.findUnique(payload);
@@ -296,12 +300,14 @@ export class UserController {
    * ═══════════════════════════════════════════════════════════════════════ */
 
   /** POST /user/forgetPassword — Initiate password reset, sends OTP email (public). */
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('/forgetPassword')
   forgetPassword(@Body() payload: any) {
     return this.userService.forgetPassword(payload);
   }
 
   /** POST /user/verifyOtp — Verify OTP for password reset (public). */
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('/verifyOtp')
   verifyOtp(@Body() payload: any) {
     return this.userService.verifyOtp(payload);
