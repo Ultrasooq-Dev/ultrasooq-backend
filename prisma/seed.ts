@@ -327,9 +327,11 @@ async function main() {
 
   const defaultPassword = await hashPassword('Test@1234');
 
-  // Super Admin user
-  const adminUser = await prisma.user.create({
-    data: {
+  // Super Admin user (upsert for idempotent seeding)
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@ultrasooq.com' },
+    update: { password: defaultPassword, adminRoleId: superAdminRole.id },
+    create: {
       email: 'admin@ultrasooq.com',
       firstName: 'Super',
       lastName: 'Admin',
@@ -345,8 +347,10 @@ async function main() {
   });
 
   // Support Agent
-  const supportUser = await prisma.user.create({
-    data: {
+  const supportUser = await prisma.user.upsert({
+    where: { email: 'support@ultrasooq.com' },
+    update: { password: defaultPassword, adminRoleId: supportAdminRole.id },
+    create: {
       email: 'support@ultrasooq.com',
       firstName: 'Support',
       lastName: 'Agent',
@@ -361,13 +365,19 @@ async function main() {
     },
   });
 
-  // Admin members
-  await prisma.adminMember.create({
-    data: { userId: adminUser.id, adminRoleId: superAdminRole.id, addedBy: adminUser.id },
-  });
-  await prisma.adminMember.create({
-    data: { userId: supportUser.id, adminRoleId: supportAdminRole.id, addedBy: adminUser.id },
-  });
+  // Admin members (skip if already exist)
+  const existingAdminMember = await prisma.adminMember.findFirst({ where: { userId: adminUser.id } });
+  if (!existingAdminMember) {
+    await prisma.adminMember.create({
+      data: { userId: adminUser.id, adminRoleId: superAdminRole.id, addedBy: adminUser.id },
+    });
+  }
+  const existingSupportMember = await prisma.adminMember.findFirst({ where: { userId: supportUser.id } });
+  if (!existingSupportMember) {
+    await prisma.adminMember.create({
+      data: { userId: supportUser.id, adminRoleId: supportAdminRole.id, addedBy: adminUser.id },
+    });
+  }
 
   // ── Seller users (Companies) ──
   const sellersData = [
@@ -380,8 +390,10 @@ async function main() {
 
   const sellers: any[] = [];
   for (const sd of sellersData) {
-    const seller = await prisma.user.create({
-      data: {
+    const seller = await prisma.user.upsert({
+      where: { email: sd.email },
+      update: { password: defaultPassword },
+      create: {
         email: sd.email,
         firstName: sd.firstName,
         lastName: sd.lastName,
@@ -416,8 +428,10 @@ async function main() {
 
   const buyers: any[] = [];
   for (const bd of buyersData) {
-    const buyer = await prisma.user.create({
-      data: {
+    const buyer = await prisma.user.upsert({
+      where: { email: bd.email },
+      update: { password: defaultPassword },
+      create: {
         email: bd.email,
         firstName: bd.firstName,
         lastName: bd.lastName,
@@ -434,8 +448,10 @@ async function main() {
   }
 
   // ── Freelancer user ──
-  const freelancer = await prisma.user.create({
-    data: {
+  const freelancer = await prisma.user.upsert({
+    where: { email: 'freelancer1@example.com' },
+    update: { password: defaultPassword },
+    create: {
       email: 'freelancer1@example.com',
       firstName: 'Saif',
       lastName: 'Al-Mamari',
@@ -450,8 +466,10 @@ async function main() {
   });
 
   // ── Team member user ──
-  const teamMember = await prisma.user.create({
-    data: {
+  const teamMember = await prisma.user.upsert({
+    where: { email: 'member1@ultrasooq.com' },
+    update: { password: defaultPassword },
+    create: {
       email: 'member1@ultrasooq.com',
       firstName: 'Hamad',
       lastName: 'Al-Harthi',
@@ -467,15 +485,24 @@ async function main() {
     },
   });
 
-  await prisma.teamMember.create({
-    data: { userId: teamMember.id, userRoleId: sellerManagerRole.id, addedBy: sellers[0].id },
-  });
+  const existingTeamMember = await prisma.teamMember.findFirst({ where: { userId: teamMember.id } });
+  if (!existingTeamMember) {
+    await prisma.teamMember.create({
+      data: { userId: teamMember.id, userRoleId: sellerManagerRole.id, addedBy: sellers[0].id },
+    });
+  }
 
   console.log(`    ✅ ${2 + sellers.length + buyers.length + 2} users (2 admins, ${sellers.length} sellers, ${buyers.length} buyers, 1 freelancer, 1 team member)`);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 6. USER ADDRESSES
+  // 6. USER ADDRESSES (skip if data already exists)
   // ═══════════════════════════════════════════════════════════════════════
+  const existingAddresses = await prisma.userAddress.count();
+  if (existingAddresses > 0) {
+    console.log('  ⏩ Skipping remaining seed sections — data already exists');
+    console.log('\n✅ Seed complete (users upserted, existing data preserved).');
+    return;
+  }
   console.log('  🏠 Seeding user addresses...');
 
   for (const buyer of buyers) {
