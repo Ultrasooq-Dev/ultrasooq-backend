@@ -90,6 +90,9 @@ describe('OrderService', () => {
   let setIntervalSpy: jest.SpyInstance;
 
   beforeEach(async () => {
+    // Clear mocks from previous test iteration BEFORE setting up spies
+    jest.clearAllMocks();
+
     // Spy on setInterval before module creation
     setIntervalSpy = jest.spyOn(global, 'setInterval').mockReturnValue({
       ref: jest.fn(),
@@ -112,8 +115,6 @@ describe('OrderService', () => {
 
     service = module.get<OrderService>(OrderService);
     prisma = module.get(PrismaService);
-
-    jest.clearAllMocks();
   });
 
   afterEach(() => {
