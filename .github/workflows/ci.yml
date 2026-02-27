@@ -25,6 +25,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/ultrasooq_test
+      JWT_SECRET: test-secret-ci
+      JWT_EXPIRY: 1h
+      NODE_ENV: test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,8 +59,3 @@ jobs:
 
       - name: Test
         run: npm run test --if-present
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/ultrasooq_test
-          JWT_SECRET: test-secret-ci
-          JWT_EXPIRY: 1h
-          NODE_ENV: test
