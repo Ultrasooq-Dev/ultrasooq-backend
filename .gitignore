@@ -51,6 +51,5 @@ aws_backup.sql
 # Debug artifacts
 debug-*
 
-# Stale lock files (using pnpm)
-package-lock.json
+# Stale lock files
 bun.lock
