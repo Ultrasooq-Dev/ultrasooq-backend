@@ -131,7 +131,7 @@ export class S3service {
     const contentType = mimetype
 
     const uploadParams = {
-      Bucket: process.env.AWS_BUCKET, //'puremoon',
+      Bucket: process.env.AWS_BUCKET, //'ultrasooq',
       Key: path,
       Body: file,
       ContentType: contentType,
@@ -179,7 +179,7 @@ export class S3service {
     const contentType = mimetype
 
     const uploadParams = {
-      Bucket: process.env.AWS_BUCKET, //'puremoon',
+      Bucket: process.env.AWS_BUCKET, //'ultrasooq',
       Key: path,
       Body: file,
       ContentType: contentType,

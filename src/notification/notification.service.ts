@@ -16,7 +16,7 @@
  *
  * @notes
  *  - Email templates are hardcoded HTML.
- *  - Brand name "Puremoon" is hardcoded in templates.
+ *  - Brand name "Ultrasooq" is hardcoded in templates.
  *  - SendGrid API key was previously hardcoded but now uses env var.
  */
 import { Injectable, Logger } from '@nestjs/common';
@@ -52,7 +52,7 @@ export class NotificationService {
       // from: "shayankar@technoexponent.com",
       from: process.env.SENDGRID_SENDER,
       to: data.email,
-      subject: 'Welcome To Puremoon',
+      subject: 'Welcome To Ultrasooq',
       html: `<table id="m_2717022745648039245m_-4740547828852282236mailerPage" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
       <tbody>
           <tr>
@@ -72,7 +72,7 @@ export class NotificationService {
                                                   <td width="600" valign="top">
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To complete your registration, please use the following One-Time Password (OTP).</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. To complete your registration, please use the following One-Time Password (OTP).</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -81,9 +81,9 @@ export class NotificationService {
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
                                                       </p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon.</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq.</p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Puremoon Team</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
                                                   </td>
                                               </tr>
                                               <tr>
@@ -92,7 +92,7 @@ export class NotificationService {
                                               </tr>
                                               <tr>
                                                   <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                                      <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Puremoon. All rights reserved </p>
+                                                      <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved </p>
                                                   </td>
                                               </tr>
                                           </tbody>
@@ -122,8 +122,8 @@ export class NotificationService {
 
   /**
    * Sends an OTP verification email. Similar to {@link mailService} but uses
-   * a different subject line ("Verify OTP for Puremoon" instead of
-   * "Welcome To Puremoon").
+   * a different subject line ("Verify OTP for Ultrasooq" instead of
+   * "Welcome To Ultrasooq").
    *
    * @param data - { email: string, name: string, otp: string }
    *   - email: Recipient email address.
@@ -135,7 +135,7 @@ export class NotificationService {
       // from: "shayankar@technoexponent.com",
       from: process.env.SENDGRID_SENDER,
       to: data.email,
-      subject: 'Verify OTP for Puremoon',
+      subject: 'Verify OTP for Ultrasooq',
       html: `<table id="m_2717022745648039245m_-4740547828852282236mailerPage" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
       <tbody>
           <tr>
@@ -155,7 +155,7 @@ export class NotificationService {
                                                   <td width="600" valign="top">
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To verify your OTP, please use the following One-Time Password (OTP).</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. To verify your OTP, please use the following One-Time Password (OTP).</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -164,9 +164,9 @@ export class NotificationService {
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
                                                       </p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon.</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq.</p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Puremoon Team</p>
+                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
                                                   </td>
                                               </tr>
                                               <tr>
@@ -175,7 +175,7 @@ export class NotificationService {
                                               </tr>
                                               <tr>
                                                   <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                                      <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Puremoon. All rights reserved </p>
+                                                      <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved </p>
                                                   </td>
                                               </tr>
                                           </tbody>
@@ -220,7 +220,7 @@ export class NotificationService {
       // from: "shayankar@technoexponent.com",
       from: process.env.SENDGRID_SENDER,
       to: data.email,
-      subject: 'Welcome To Puremoon',
+      subject: 'Welcome To Ultrasooq',
       html: `<table id="m_2717022745648039245m_-4740547828852282236mailerPage" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
         <tbody>
             <tr>
@@ -240,7 +240,7 @@ export class NotificationService {
                                                     <td width="600" valign="top">
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. This is your password!</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. This is your password!</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your Password : ${data.rawPassword}</h3>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -248,9 +248,9 @@ export class NotificationService {
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
                                                         </p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon.</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq.</p>
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Puremoon Team</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
                                                     </td>
                                                 </tr>
                                                 <tr>
@@ -259,7 +259,7 @@ export class NotificationService {
                                                 </tr>
                                                 <tr>
                                                     <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                                        <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Puremoon. All rights reserved </p>
+                                                        <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved </p>
                                                     </td>
                                                 </tr>
                                             </tbody>
@@ -302,7 +302,7 @@ export class NotificationService {
       // from: "shayankar@technoexponent.com",
       from: process.env.SENDGRID_SENDER,
       to: data.email,
-      subject: 'Welcome To Puremoon',
+      subject: 'Welcome To Ultrasooq',
       html: `<table id="m_2717022745648039245m_-4740547828852282236mailerPage" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
         <tbody>
             <tr>
@@ -322,16 +322,16 @@ export class NotificationService {
                                                     <td width="600" valign="top">
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon! Your security is important to us. To complete your registration, please use the following Password.</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. To complete your registration, please use the following Password.</p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your Password : ${data.password}</h3>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
                                                         </p>
                                                         <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Puremoon.</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq.</p>
                                                         <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Puremoon Team</p>
+                                                        <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
                                                     </td>
                                                 </tr>
                                                 <tr>
@@ -340,7 +340,7 @@ export class NotificationService {
                                                 </tr>
                                                 <tr>
                                                     <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                                        <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Puremoon. All rights reserved </p>
+                                                        <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved </p>
                                                     </td>
                                                 </tr>
                                             </tbody>
@@ -383,7 +383,7 @@ export class NotificationService {
       // from: "shayankar@technoexponent.com",
       from: process.env.SENDGRID_SENDER,
       to: data.email,
-      subject: 'Response to Your Help Center Inquiry - Puremoon',
+      subject: 'Response to Your Help Center Inquiry - Ultrasooq',
       html: `
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
           <tbody>
@@ -419,7 +419,7 @@ export class NotificationService {
                                   <p style="margin: 0px;padding: 15px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you need further assistance, feel free to reply to this email or visit our <a href="https://dev.ultrasooq.com/" style="color: #2f327d; text-decoration: none;">Help Center</a>.</p>
   
                                   <p style="margin: 0px;padding: 15px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                  <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Puremoon Team</p>
+                                  <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
                                 </td>
                               </tr>
                               <tr>
@@ -428,7 +428,7 @@ export class NotificationService {
                               </tr>
                               <tr>
                                 <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                  <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Puremoon. All rights reserved.</p>
+                                  <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved.</p>
                                 </td>
                               </tr>
                             </tbody>
