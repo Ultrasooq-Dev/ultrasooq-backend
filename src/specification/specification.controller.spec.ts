@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SpecificationController } from './specification.controller';
 import { SpecificationService } from './specification.service';
+import { AuthGuard } from 'src/guards/AuthGuard';
+import { AuthService } from 'src/auth/auth.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 // ─────────────────────────────────────────────────────────
 // Mock SpecificationService — stub every public method
@@ -63,6 +66,8 @@ describe('SpecificationController', () => {
       controllers: [SpecificationController],
       providers: [
         { provide: SpecificationService, useValue: mockSpecService },
+        { provide: AuthService, useValue: {} },
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
 
