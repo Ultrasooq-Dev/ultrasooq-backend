@@ -54,10 +54,73 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
+  // ─── Session config cache (reads from PageSetting slug: "session-settings") ───
+  private sessionConfigCache: {
+    data: { jwtAccessTokenExpiry: string; refreshTokenDays: number };
+    expiry: number;
+  } | null = null;
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * getSessionConfig — Reads session timing from the PageSetting table
+   * (slug: "session-settings") with a 5-minute in-memory cache.
+   *
+   * Falls back to env vars / defaults if no DB record exists.
+   *
+   * @returns { jwtAccessTokenExpiry: string, refreshTokenDays: number }
+   */
+  async getSessionConfig(): Promise<{
+    jwtAccessTokenExpiry: string;
+    refreshTokenDays: number;
+  }> {
+    // Return cached value if still valid
+    if (this.sessionConfigCache && Date.now() < this.sessionConfigCache.expiry) {
+      return this.sessionConfigCache.data;
+    }
+
+    const defaults = {
+      jwtAccessTokenExpiry: (process.env.JWT_EXPIRY || '1h') as string,
+      refreshTokenDays: 7,
+    };
+
+    try {
+      const setting = await this.prisma.pageSetting.findUnique({
+        where: { slug: 'session-settings' },
+      });
+
+      if (setting?.setting && typeof setting.setting === 'object') {
+        const s = setting.setting as Record<string, any>;
+        const config = {
+          jwtAccessTokenExpiry:
+            typeof s.jwtAccessTokenExpiry === 'string'
+              ? s.jwtAccessTokenExpiry
+              : defaults.jwtAccessTokenExpiry,
+          refreshTokenDays:
+            typeof s.refreshTokenDays === 'number' && s.refreshTokenDays > 0
+              ? s.refreshTokenDays
+              : defaults.refreshTokenDays,
+        };
+
+        this.sessionConfigCache = {
+          data: config,
+          expiry: Date.now() + 5 * 60 * 1000, // 5-minute cache
+        };
+        return config;
+      }
+    } catch {
+      // DB error — fall back to defaults silently
+    }
+
+    this.sessionConfigCache = {
+      data: defaults,
+      expiry: Date.now() + 5 * 60 * 1000,
+    };
+    return defaults;
+  }
 
   /**
    * login — Creates a short-lived access token and a database-backed refresh token
@@ -75,6 +138,9 @@ export class AuthService {
    *        UserService.registerValidateOtp(), UserService.verifyOtp().
    */
   async login(user) {
+    // Read session config from DB (cached 5 min) with env fallback
+    const sessionConfig = await this.getSessionConfig();
+
     // Minimal JWT payload — only essential claims, no full user object
     const payload = {
       sub: user.id,
@@ -85,7 +151,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
+      expiresIn: sessionConfig.jwtAccessTokenExpiry as any,
     });
 
     // Generate a refresh token and store it in the database
@@ -117,6 +183,9 @@ export class AuthService {
    *        userAccountId in the JWT payload — a more minimal and secure approach.
    */
   async getToken(user) {
+    // Read session config from DB (cached 5 min) with env fallback
+    const sessionConfig = await this.getSessionConfig();
+
     // Handle both user object structures (from User model or custom object)
     const mainUserId = user.id || user.userId;
     const tradeRole = user.tradeRole;
@@ -137,7 +206,7 @@ export class AuthService {
       userId: mainUserId,
       accessToken: this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
-        expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
+        expiresIn: sessionConfig.jwtAccessTokenExpiry as any,
       }),
     };
   }
@@ -249,9 +318,12 @@ export class AuthService {
    * @returns The raw refresh token string (hex-encoded).
    */
   async generateRefreshToken(userId: number): Promise<string> {
+    // Read session config from DB (cached 5 min) with env fallback
+    const sessionConfig = await this.getSessionConfig();
+
     const token = crypto.randomBytes(64).toString('hex');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days from now
+    expiresAt.setDate(expiresAt.getDate() + sessionConfig.refreshTokenDays);
 
     await this.prisma.refreshToken.create({
       data: {
@@ -300,6 +372,9 @@ export class AuthService {
 
     const user = storedToken.user;
 
+    // Read session config from DB (cached 5 min) with env fallback
+    const sessionConfig = await this.getSessionConfig();
+
     // Generate new access token with minimal payload
     const payload = {
       sub: user.id,
@@ -310,7 +385,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
-      expiresIn: (process.env.JWT_EXPIRY || '1h') as any,
+      expiresIn: sessionConfig.jwtAccessTokenExpiry as any,
     });
 
     // Rotate: generate new refresh token and revoke old one
