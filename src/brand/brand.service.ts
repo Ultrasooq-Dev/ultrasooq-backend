@@ -217,10 +217,10 @@ export class BrandService {
               contains: searchTerm,
               mode: 'insensitive',
             },
-            brandType: 'ADMIN',
-            // addedBy: {
-            //   notIn: [addedBY] // Exclude brands with addedBy matching addedBY
-            // }
+            brandType: {
+              not: null,
+            },
+            ...(addedBY ? { NOT: { addedBy: addedBY } } : {}),
           },
         });
       } else {
