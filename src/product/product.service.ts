@@ -12195,6 +12195,7 @@ export class ProductService {
       }
 
       // Search for existing product with similar name (case-insensitive, partial match)
+      // Return FULL details so frontend can skip AI if product exists in DB
       const existingProduct = await this.prisma.existingProduct.findFirst({
         where: {
           deletedAt: null,
@@ -12204,16 +12205,61 @@ export class ProductService {
             mode: 'insensitive',
           },
         },
-        select: {
-          id: true,
-          productName: true,
+        include: {
+          category: { select: { id: true, name: true, parentId: true } },
+          brand: { select: { id: true, brandName: true } },
+          existingProductImages: { select: { id: true, image: true } },
+          existingProductTags: {
+            include: { existingProductTag: { select: { id: true, tagName: true } } },
+          },
         },
       });
 
+      if (!existingProduct) {
+        return {
+          status: true,
+          exists: false,
+          existingProduct: null,
+        };
+      }
+
+      // Parse specification JSON to extract structured specs for the frontend
+      let specifications: Array<{ label: string; specification: string }> = [];
+      if (existingProduct.specification) {
+        try {
+          const specObj =
+            typeof existingProduct.specification === 'string'
+              ? JSON.parse(existingProduct.specification)
+              : existingProduct.specification;
+          if (Array.isArray(specObj)) {
+            specifications = specObj;
+          } else if (typeof specObj === 'object') {
+            specifications = Object.entries(specObj).map(([key, val]) => ({
+              label: key,
+              specification: String(val),
+            }));
+          }
+        } catch {
+          // Non-JSON specification string — keep as-is
+        }
+      }
+
       return {
         status: true,
-        exists: !!existingProduct,
-        existingProduct: existingProduct || null,
+        exists: true,
+        existingProduct: {
+          id: existingProduct.id,
+          productName: existingProduct.productName,
+          description: existingProduct.description,
+          specification: existingProduct.specification,
+          specifications,
+          category: existingProduct.category?.name || null,
+          categoryId: existingProduct.categoryId,
+          brand: existingProduct.brand?.brandName || null,
+          brandId: existingProduct.brandId,
+          images: existingProduct.existingProductImages || [],
+          tags: existingProduct.existingProductTags?.map((t) => t.existingProductTag) || [],
+        },
       };
     } catch (error: any) {
       return {

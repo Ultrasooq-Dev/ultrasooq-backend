@@ -820,9 +820,179 @@ export class ProductRfqService {
   }
 
   /**
+   * @method findMatchingTagIds
+   * @description Uses existing CategoryKeyword + CategoryTag tables to find
+   *   matching tag IDs from product names. No custom keyword extraction —
+   *   leverages the platform's existing category keyword/tag taxonomy.
+   */
+  async findMatchingTagIds(texts: string[]): Promise<number[]> {
+    try {
+      const combined = texts.filter(Boolean).join(' ').toLowerCase();
+      if (!combined) return [];
+
+      // 1. Find CategoryKeywords that appear in the product text
+      const allCategoryKeywords = await this.prisma.categoryKeyword.findMany({
+        where: { status: 'ACTIVE' },
+        select: { keyword: true, categoryId: true },
+      });
+
+      const matchedCategoryIds = new Set<number>();
+      for (const ck of allCategoryKeywords) {
+        if (combined.includes(ck.keyword.toLowerCase())) {
+          matchedCategoryIds.add(ck.categoryId);
+        }
+      }
+
+      // 2. Get tag IDs from CategoryTag for those matched categories
+      const tagIds = new Set<number>();
+      if (matchedCategoryIds.size > 0) {
+        const categoryTags = await this.prisma.categoryTag.findMany({
+          where: {
+            status: 'ACTIVE',
+            categoryId: { in: Array.from(matchedCategoryIds) },
+          },
+          select: { tagId: true },
+        });
+        for (const ct of categoryTags) {
+          tagIds.add(ct.tagId);
+        }
+      }
+
+      // 3. Also directly match tag names that appear in the text
+      const allTags = await this.prisma.tags.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, tagName: true },
+      });
+      for (const tag of allTags) {
+        if (combined.includes(tag.tagName.toLowerCase())) {
+          tagIds.add(tag.id);
+        }
+      }
+
+      return Array.from(tagIds);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * @method getVendorsByKeywords
+   * @description Find vendors using existing CategoryKeyword + CategoryTag + Tags system.
+   *   Matches product text against category keywords to find relevant tags,
+   *   then finds vendors whose branches/products use those tags.
+   */
+  async getVendorsByKeywords(
+    productTexts: string[],
+    excludeUserId?: number,
+  ): Promise<number[]> {
+    try {
+      // Find matching tag IDs from existing category keywords/tags
+      const tagIds = await this.findMatchingTagIds(productTexts);
+      if (!tagIds.length) return [];
+
+      const vendorIds = new Set<number>();
+      const excludeFilter = excludeUserId ? { not: excludeUserId } : undefined;
+
+      // 1. Find vendors whose branch tags match
+      const branchTagMatches = await this.prisma.userBranchTags.findMany({
+        where: {
+          status: 'ACTIVE',
+          tagId: { in: tagIds },
+          userBranch: {
+            status: 'ACTIVE',
+            user: {
+              status: 'ACTIVE',
+              tradeRole: { in: ['COMPANY', 'FREELANCER', 'MEMBER'] },
+              id: excludeFilter,
+            },
+          },
+        },
+        select: {
+          userBranch: {
+            select: { user: { select: { id: true, tradeRole: true, addedBy: true } } },
+          },
+        },
+      });
+      for (const m of branchTagMatches) {
+        const u = m.userBranch?.user;
+        if (!u) continue;
+        vendorIds.add(u.tradeRole === 'MEMBER' && u.addedBy ? u.addedBy : u.id);
+      }
+
+      // 2. Find vendors whose branch business types match
+      const bizTypeMatches = await this.prisma.userBranchBusinessType.findMany({
+        where: {
+          status: 'ACTIVE',
+          businessTypeId: { in: tagIds },
+          userBranch: {
+            status: 'ACTIVE',
+            user: {
+              status: 'ACTIVE',
+              tradeRole: { in: ['COMPANY', 'FREELANCER', 'MEMBER'] },
+              id: excludeFilter,
+            },
+          },
+        },
+        select: {
+          userBranch: {
+            select: { user: { select: { id: true, tradeRole: true, addedBy: true } } },
+          },
+        },
+      });
+      for (const m of bizTypeMatches) {
+        const u = m.userBranch?.user;
+        if (!u) continue;
+        vendorIds.add(u.tradeRole === 'MEMBER' && u.addedBy ? u.addedBy : u.id);
+      }
+
+      // 3. Find vendors whose profile business types match
+      const profileMatches = await this.prisma.userProfileBusinessType.findMany({
+        where: {
+          status: 'ACTIVE',
+          businessTypeId: { in: tagIds },
+          userDetail: {
+            status: 'ACTIVE',
+            tradeRole: { in: ['COMPANY', 'FREELANCER'] },
+            id: excludeFilter,
+          },
+        },
+        select: { userId: true },
+      });
+      for (const m of profileMatches) {
+        vendorIds.add(m.userId);
+      }
+
+      // 4. Find vendors who sell products with matching tags
+      const productTagMatches = await this.prisma.productTags.findMany({
+        where: {
+          status: 'ACTIVE',
+          tagId: { in: tagIds },
+          productTags_product: {
+            status: 'ACTIVE',
+            deletedAt: null,
+            userId: excludeFilter,
+          },
+        },
+        select: {
+          productTags_product: { select: { userId: true, adminId: true } },
+        },
+      });
+      for (const m of productTagMatches) {
+        const sid = m.productTags_product?.userId || m.productTags_product?.adminId;
+        if (sid && sid !== excludeUserId) vendorIds.add(sid);
+      }
+
+      return Array.from(vendorIds);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * @method addRfqQuotes
    * @description Creates RFQ quote requests targeting specific sellers for a product,
    *   and dispatches notifications to each targeted seller.
+   *   Matches vendors by BOTH location AND product keywords/tags.
    */
   async addRfqQuotes(payload: any, req: any) {
     try {
@@ -836,26 +1006,19 @@ export class ProductRfqService {
       const cityId = payload?.cityId ? parseInt(payload.cityId) : undefined;
 
       // Get vendors based on location
-      const vendorIds = await this.getVendorsByLocation(
+      const locationVendorIds = await this.getVendorsByLocation(
         countryId,
         stateId,
         cityId,
         userId,
       );
 
-      if (vendorIds.length === 0) {
-        return {
-          status: false,
-          message: 'No vendors found for the selected location. Please try a different location or contact support.',
-          data: null,
-        };
-      }
-
       let totalPrice = 0;
 
       let rfqProductList = [];
 
-      let allUserList = vendorIds.map((id) => ({ id }));
+      // Collect product names for keyword extraction
+      const productNames: string[] = [];
 
       for (let i = 0; i < payload.rfqCartIds.length; i++) {
         let rfqCartDetail = await this.prisma.rFQCart.findUnique({
@@ -863,6 +1026,7 @@ export class ProductRfqService {
 
           select: {
             productId: true,
+            rfqProductId: true,
 
             quantity: true,
 
@@ -877,6 +1041,24 @@ export class ProductRfqService {
             productType: true,
           },
         });
+
+        // Collect product name for keyword extraction
+        if (rfqCartDetail?.productId) {
+          const product = await this.prisma.product.findUnique({
+            where: { id: rfqCartDetail.productId },
+            select: { productName: true, description: true },
+          });
+          if (product?.productName) productNames.push(product.productName);
+          if (product?.description) productNames.push(product.description);
+        }
+        if (rfqCartDetail?.rfqProductId) {
+          const rfqProduct = await this.prisma.rFQProduct.findUnique({
+            where: { id: rfqCartDetail.rfqProductId },
+            select: { rfqProductName: true, productNote: true },
+          });
+          if (rfqProduct?.rfqProductName) productNames.push(rfqProduct.rfqProductName);
+          if (rfqProduct?.productNote) productNames.push(rfqProduct.productNote);
+        }
 
         let rfqProductDetails = await this.prisma.product.findUnique({
           where: { id: rfqCartDetail.productId },
@@ -909,6 +1091,23 @@ export class ProductRfqService {
             parseFloat(rfqCartDetail.offerPriceTo?.toString()) || 0;
 
         totalPrice += totalPriceForProduct; // we are calculating offerPriceTo
+      }
+
+      // Find matching vendors using existing CategoryKeyword + CategoryTag system
+      const keywordVendorIds = productNames.length > 0
+        ? await this.getVendorsByKeywords(productNames, userId)
+        : [];
+
+      // Merge location + keyword vendors (union — include both)
+      const allVendorIds = new Set<number>([...locationVendorIds, ...keywordVendorIds]);
+      const allUserList = Array.from(allVendorIds).map((id) => ({ id }));
+
+      if (allUserList.length === 0) {
+        return {
+          status: false,
+          message: 'No vendors found matching your location or product keywords. Please try a different location or product description.',
+          data: null,
+        };
       }
 
       // create rfq Quote Address
