@@ -46,6 +46,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import * as randomstring from 'randomstring';
 import { CreateUserDto } from './dto/create-user.dto';
 import { compare, hash, genSalt } from 'bcrypt';
 import { compareSync } from 'bcrypt';

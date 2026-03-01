@@ -48,6 +48,7 @@
  *   model where sub-admins operate under a parent super-admin.
  */
 import { Injectable } from '@nestjs/common';
+import * as randomstring from 'randomstring';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';
