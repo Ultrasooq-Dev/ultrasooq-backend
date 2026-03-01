@@ -55,7 +55,6 @@ import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';
 import Stripe from 'stripe';
-import * as randomstring from 'randomstring';
 import { HelperService } from 'src/helper/helper.service';
 const axios = require("axios");
 import * as cron from 'node-cron';

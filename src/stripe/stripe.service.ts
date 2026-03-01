@@ -53,7 +53,6 @@ import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';
 import Stripe from 'stripe';
-import * as randomstring from 'randomstring';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 

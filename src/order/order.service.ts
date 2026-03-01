@@ -44,7 +44,6 @@
  *     (location-specific fees matched by country/state/city).
  */
 import { Injectable } from '@nestjs/common';
-import * as randomstring from 'randomstring';
 import { compare, hash, genSalt } from 'bcrypt';
 import { Prisma } from '../generated/prisma/client';
 import { NotificationService } from 'src/notification/notification.service';

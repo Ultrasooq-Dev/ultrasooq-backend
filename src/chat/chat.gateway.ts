@@ -20,7 +20,7 @@
  *                                           \--> Server.emit (broadcast to rooms)
  *
  * @notes
- * - Namespace: `/ws`, CORS: `*` (all origins).
+ * - Namespace: `/ws`, CORS: uses CORS_ORIGINS env var (falls back to localhost in dev).
  * - Each connecting client provides a `userId` query parameter used to register the
  *   socket and auto-join all rooms the user participates in.
  * - The gateway passes the Socket.io `Server` instance to {@link ChatService} via
@@ -49,7 +49,15 @@ import { NotificationService } from '../notification/notification.service';
  *
  * @usage Automatically instantiated by NestJS when {@link ChatModule} is loaded.
  */
-@WebSocketGateway({ namespace: '/ws', cors: "*" })
+@WebSocketGateway({
+  namespace: '/ws',
+  cors: {
+    origin: process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',')
+      : ['http://localhost:4001', 'http://localhost:3001'],
+    credentials: true,
+  },
+})
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   /** @description Reference to the underlying Socket.io Server instance, injected by NestJS. */
   @WebSocketServer()

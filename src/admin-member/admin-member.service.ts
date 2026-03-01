@@ -51,7 +51,6 @@ import { Injectable } from '@nestjs/common';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from 'src/user/s3.service';
-import * as randomstring from 'randomstring';
 import { compare, hash, genSalt } from 'bcrypt';
 import { HelperService } from 'src/helper/helper.service';
 import { PrismaService } from '../prisma/prisma.service';

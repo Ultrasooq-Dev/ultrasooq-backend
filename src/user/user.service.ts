@@ -53,7 +53,6 @@ import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { S3service } from './s3.service';
 import { retry } from 'rxjs';
-import * as randomstring from 'randomstring';
 import { HelperService } from 'src/helper/helper.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {

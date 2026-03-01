@@ -483,19 +483,9 @@ export class PaymentController {
    * **Dependencies:** Paymob Intention API (MOTO), Paymob Acceptance API, Prisma.
    *
    * **Notes:**
-   * - Intended **only** for testing; no AuthGuard is applied.
-   * - The amount is hard-coded to `1000` (will need to be dynamic in production).
-   * - Uses MOTO integration ID `25198` for unattended card charges.
-   *
-   * @param {any} req     - Express request with `req.body.orderId`.
-   * @param {any} payload - Request body (unused directly by service).
-   * @returns {Promise<{status: boolean, message: string, data?: any}>}
+   * - REMOVED: Unguarded test endpoint deleted for security.
+   * - Use the guarded production endpoint or unit tests instead.
    */
-  // used for testing purpose
-  @Post('/payInstallment-testing')
-  payInstallment(@Request() req, @Body() payload: any) {
-    return this.paymentService.payInstallment(req);
-  }
 
   /**
    * AMWALPAY

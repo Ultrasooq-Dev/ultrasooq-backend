@@ -44,7 +44,6 @@
  */
 
 import { S3 } from 'aws-sdk';
-import fileType from 'file-type';
 import { BadRequestException } from '@nestjs/common';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 

@@ -29,7 +29,7 @@
  *   - IsString and MinLength are imported but unused.
  */
 
-import { IsString, IsEmail, MinLength, IsNumber } from 'class-validator';
+import { IsEmail, IsNumber } from 'class-validator';
 
 export class RegisterValidateOtp {
     @IsEmail()

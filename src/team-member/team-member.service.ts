@@ -45,8 +45,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { compare, hash, genSalt } from 'bcrypt';
-import * as randomstring from 'randomstring';
+import { hash, genSalt } from 'bcrypt';
 import { AuthService } from 'src/auth/auth.service';
 import { HelperService } from 'src/helper/helper.service';
 import { NotificationService } from 'src/notification/notification.service';
