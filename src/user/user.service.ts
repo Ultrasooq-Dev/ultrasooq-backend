@@ -675,6 +675,15 @@ export class UserService {
         };
       }
 
+      // Auto-activate WAITING accounts on login (no admin approval needed)
+      if (activeUser.status === 'WAITING') {
+        await this.prisma.user.update({
+          where: { id: activeUser.id },
+          data: { status: 'ACTIVE' },
+        });
+        activeUser = { ...activeUser, status: 'ACTIVE' };
+      }
+
       // Set this account as current
       await this.prisma.user.updateMany({
         where: {
@@ -883,6 +892,14 @@ export class UserService {
         };
       }
 
+      // Auto-activate WAITING accounts on social login (no admin approval needed)
+      if (user.status === 'WAITING') {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { status: 'ACTIVE' },
+        });
+      }
+
       // Generate auth token
       let userAuth = {
         id: user.id,
@@ -988,6 +1005,15 @@ export class UserService {
           };
         }
 
+        // Auto-activate WAITING sub-accounts (no admin approval needed)
+        if (subAccountUser.status === 'WAITING') {
+          await this.prisma.user.update({
+            where: { id: subAccountUser.id },
+            data: { status: 'ACTIVE' },
+          });
+          (subAccountUser as any).status = 'ACTIVE';
+        }
+
         // Return sub-account user's data with personal info from Master Account
         const subAccountData = {
           ...subAccountUser,
@@ -1066,6 +1092,15 @@ export class UserService {
           message: 'Your account has been banned. Please contact administrator.',
           data: null,
         };
+      }
+
+      // Auto-activate WAITING main accounts (no admin approval needed)
+      if (userDetail.status === 'WAITING') {
+        await this.prisma.user.update({
+          where: { id: userDetail.id },
+          data: { status: 'ACTIVE' },
+        });
+        (userDetail as any).status = 'ACTIVE';
       }
 
       // Add main account identification and personal info from MasterAccount
@@ -4345,6 +4380,7 @@ export class UserService {
           tradeRole: payload.tradeRole,
           isActive: true,
           isCurrent: false,
+          status: 'ACTIVE', // Auto-approve sub-accounts (no admin approval needed)
           uniqueId: requestId, // Set the unique ID
           // Company-specific fields (only for COMPANY role)
           ...(payload.tradeRole === 'COMPANY' && {
@@ -4514,7 +4550,7 @@ export class UserService {
 
         // Find the sub-account that belongs to the same MasterAccount
 
-        const userAccount = await this.prisma.user.findFirst({
+        let userAccount = await this.prisma.user.findFirst({
           where: {
             id: userAccountId,
             masterAccountId: currentUser.masterAccountId,
@@ -4539,6 +4575,15 @@ export class UserService {
             message: 'This account has been banned. Please contact administrator.',
             data: null,
           };
+        }
+
+        // Auto-activate WAITING sub-accounts when switched to (no admin approval needed)
+        if (userAccount.status === 'WAITING') {
+          await this.prisma.user.update({
+            where: { id: userAccountId },
+            data: { status: 'ACTIVE' },
+          });
+          userAccount = { ...userAccount, status: 'ACTIVE' };
         }
 
         // Activate this account as current
