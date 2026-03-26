@@ -207,7 +207,7 @@ export class ExternalDropshipService {
             priceRow?.productPrice ?? product.productPrice ?? 0,
           ),
           currency: 'OMR',
-          category: product.category?.categoryName || '',
+          category: product.category?.name || '',
           brand: product.brand?.brandName || '',
           images: product.productImages?.map((img) => img.image) || [],
           availability:
