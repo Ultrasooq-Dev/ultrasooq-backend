@@ -59,6 +59,107 @@ export class ExternalDropshipService {
     }
   }
 
+  async updateStore(
+    userId: number,
+    storeId: number,
+    payload: { name?: string; platform?: string; settings?: any },
+  ) {
+    try {
+      const store = await this.prisma.externalStore.findFirst({
+        where: { id: storeId, userId, status: 'ACTIVE', deletedAt: null },
+      });
+
+      if (!store) {
+        return { status: false, message: 'Store not found or access denied' };
+      }
+
+      const updated = await this.prisma.externalStore.update({
+        where: { id: storeId },
+        data: {
+          ...(payload.name !== undefined && { name: payload.name }),
+          ...(payload.platform !== undefined && {
+            platform: payload.platform,
+          }),
+          ...(payload.settings !== undefined && {
+            settings: payload.settings,
+          }),
+        },
+      });
+
+      return {
+        status: true,
+        message: 'External store updated successfully',
+        data: updated,
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Failed to update external store',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
+  async deleteStore(userId: number, storeId: number) {
+    try {
+      const store = await this.prisma.externalStore.findFirst({
+        where: { id: storeId, userId, status: 'ACTIVE', deletedAt: null },
+      });
+
+      if (!store) {
+        return { status: false, message: 'Store not found or access denied' };
+      }
+
+      await this.prisma.externalStore.update({
+        where: { id: storeId },
+        data: { status: 'DELETE', deletedAt: new Date() },
+      });
+
+      return {
+        status: true,
+        message: 'External store deleted successfully',
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Failed to delete external store',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
+  async unsubscribeProduct(
+    userId: number,
+    storeId: number,
+    productId: number,
+  ) {
+    try {
+      const store = await this.prisma.externalStore.findFirst({
+        where: { id: storeId, userId, status: 'ACTIVE', deletedAt: null },
+      });
+
+      if (!store) {
+        return { status: false, message: 'Store not found or access denied' };
+      }
+
+      await this.prisma.externalStoreSubscription.updateMany({
+        where: { externalStoreId: storeId, productId },
+        data: { status: 'DELETE' },
+      });
+
+      return {
+        status: true,
+        message: 'Product unsubscribed successfully',
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Failed to unsubscribe product',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
   async subscribeProducts(
     userId: number,
     storeId: number,

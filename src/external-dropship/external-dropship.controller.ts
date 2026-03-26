@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Request,
   Res,
@@ -34,6 +36,29 @@ export class ExternalDropshipController {
   }
 
   @UseGuards(AuthGuard)
+  @Patch('/stores/:storeId')
+  updateStore(
+    @Request() req,
+    @Param('storeId') storeId: string,
+    @Body() payload: { name?: string; platform?: string; settings?: any },
+  ) {
+    return this.externalDropshipService.updateStore(
+      req.user.id,
+      parseInt(storeId, 10),
+      payload,
+    );
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('/stores/:storeId')
+  deleteStore(@Request() req, @Param('storeId') storeId: string) {
+    return this.externalDropshipService.deleteStore(
+      req.user.id,
+      parseInt(storeId, 10),
+    );
+  }
+
+  @UseGuards(AuthGuard)
   @Post('/stores/:storeId/subscribe-products')
   subscribeProducts(
     @Request() req,
@@ -58,6 +83,20 @@ export class ExternalDropshipController {
     return this.externalDropshipService.getSubscribedProducts(
       req.user.id,
       parseInt(storeId, 10),
+    );
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('/stores/:storeId/unsubscribe-product/:productId')
+  unsubscribeProduct(
+    @Request() req,
+    @Param('storeId') storeId: string,
+    @Param('productId') productId: string,
+  ) {
+    return this.externalDropshipService.unsubscribeProduct(
+      req.user.id,
+      parseInt(storeId, 10),
+      parseInt(productId, 10),
     );
   }
 
