@@ -133,6 +133,7 @@ model User {
   productSearches                               ProductSearch[] @relation("UserProductSearches")
   productClicks                                 ProductClick[] @relation("UserProductClicks")
   refreshTokens                                 RefreshToken[]
+  externalStores                                ExternalStore[]
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -920,6 +921,7 @@ model Product {
   // ── Multi-category & Spec Template relations (Phase 1) ──
   productCategories               ProductCategoryMap[]
   productSpecValues               ProductSpecValue[]
+  externalStoreSubscriptions      ExternalStoreSubscription[]
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -3437,4 +3439,48 @@ model SystemHealthLog {
 
   @@index([component, checkedAt])
   @@map("system_health_log")
+}
+
+// ExternalStore — Represents an external e-commerce store that a seller connects for dropshipping.
+// Fields: name (store display name), platform (e.g. Shopify, WooCommerce), feedToken (unique token for feed URLs),
+//   userId (FK to owner User), settings (JSON for platform-specific config).
+// Relations: User (owner), ExternalStoreSubscription (products subscribed to this store).
+model ExternalStore {
+  id            Int       @id @default(autoincrement())
+  name          String
+  platform      String?
+  feedToken     String    @unique @default(uuid())
+  userId        Int
+  settings      Json?
+  status        Status    @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user          User      @relation(fields: [userId], references: [id])
+  subscriptions ExternalStoreSubscription[]
+
+  @@index([userId, status])
+  @@index([feedToken])
+}
+
+// ExternalStoreSubscription — Links a product to an external store for feed syndication.
+// Fields: externalStoreId (FK), productId (FK), externalProductId (ID on external platform),
+//   externalSku (SKU on external platform), status (ACTIVE/INACTIVE).
+model ExternalStoreSubscription {
+  id                Int       @id @default(autoincrement())
+  externalStoreId   Int
+  productId         Int
+  externalProductId String?
+  externalSku       String?
+  status            Status    @default(ACTIVE)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  externalStore     ExternalStore @relation(fields: [externalStoreId], references: [id])
+  product           Product       @relation(fields: [productId], references: [id])
+
+  @@unique([externalStoreId, productId])
+  @@index([externalStoreId, status])
+  @@index([productId])
 }

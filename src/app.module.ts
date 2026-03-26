@@ -78,6 +78,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { SpecificationModule } from './specification/specification.module';
+import { ExternalDropshipModule } from './external-dropship/external-dropship.module';
 
 @Module({
   imports: [
@@ -168,7 +169,8 @@ import { SpecificationModule } from './specification/specification.module';
     ServiceModule,        // Service (freelancer/company service offerings) CRUD
     WalletModule,
     ScraperModule,
-    BannerModule
+    BannerModule,
+    ExternalDropshipModule
   ],
   controllers: [AppController],
   providers: [
