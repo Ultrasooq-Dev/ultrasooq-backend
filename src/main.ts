@@ -123,7 +123,10 @@ async function bootstrap() {
       ? process.env.CORS_ORIGINS.split(',')
       : ['http://localhost:4001', 'http://localhost:3001', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-test-user-id', 'Cache-Control', 'Pragma'],
+    allowedHeaders: [
+      'Content-Type', 'Authorization', 'x-test-user-id', 'Cache-Control', 'Pragma',
+      'x-request-id', 'X-Track-Events', 'X-Track-Vitals', 'X-Track-Page', 'X-Session-Id',
+    ],
     credentials: true,
   });
 
