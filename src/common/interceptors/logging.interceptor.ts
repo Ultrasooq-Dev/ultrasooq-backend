@@ -4,17 +4,24 @@ import {
   ExecutionContext,
   CallHandler,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request } from 'express';
 import { SystemLogService } from '../../system-log/system-log.service';
+import { EventCollectorService } from '../../analytics/services/event-collector.service';
+import { PerformanceService } from '../../analytics/services/performance.service';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
 
-  constructor(private readonly systemLogService: SystemLogService) {}
+  constructor(
+    private readonly systemLogService: SystemLogService,
+    @Optional() private readonly eventCollector?: EventCollectorService,
+    @Optional() private readonly performanceService?: PerformanceService,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -22,12 +29,40 @@ export class LoggingInterceptor implements NestInterceptor {
     const userAgent = request.headers['user-agent'] || '';
     const now = Date.now();
 
-    // Generate request ID if not exists
+    // Use X-Request-Id from frontend (Channel A correlation) or generate one
+    const frontendRequestId = request.headers['x-request-id'] as string;
     if (!(request as any).requestId) {
-      (request as any).requestId = this.generateRequestId();
+      (request as any).requestId = frontendRequestId || this.generateRequestId();
     }
 
     const requestId = (request as any).requestId;
+    const sessionId = request.headers['x-session-id'] as string | undefined;
+
+    // Fire-and-forget: process piggybacked frontend events from X-Track-Events header
+    const xTrackEvents = request.headers['x-track-events'] as string | undefined;
+    if (xTrackEvents && this.eventCollector) {
+      try {
+        const events = JSON.parse(xTrackEvents);
+        if (Array.isArray(events) && events.length > 0) {
+          const clientIp = (request.headers['x-forwarded-for'] as string) || ip || '';
+          this.eventCollector.ingestEvents(events, clientIp, userAgent).catch(() => {});
+        }
+      } catch {
+        // Malformed header — skip silently
+      }
+    }
+
+    // Fire-and-forget: process piggybacked Web Vitals from X-Track-Vitals header
+    const xTrackVitals = request.headers['x-track-vitals'] as string | undefined;
+    if (xTrackVitals && this.performanceService) {
+      try {
+        const vitals = JSON.parse(xTrackVitals);
+        const pageUrl = request.headers['x-track-page'] as string | undefined;
+        this.performanceService.trackVitalsBatch(vitals, sessionId, pageUrl).catch(() => {});
+      } catch {
+        // Malformed header — skip silently
+      }
+    }
     // Extract user ID - AuthGuard now sets the active subaccount in req.user
     const reqUser = (request as any).user;
     const userId = reqUser?.id || reqUser?.userId || null;
@@ -47,6 +82,22 @@ export class LoggingInterceptor implements NestInterceptor {
           const response = context.switchToHttp().getResponse();
           const delay = Date.now() - now;
           const statusCode = response.statusCode;
+
+          // Echo requestId back to frontend for correlation
+          response.setHeader('X-Request-Id', requestId);
+
+          // Fire-and-forget: track backend-measured API latency (100% coverage)
+          if (this.performanceService && !url.startsWith('/health')) {
+            this.performanceService.trackMetric({
+              metricName: 'api_latency',
+              metricValue: delay,
+              source: 'backend',
+              endpoint: url,
+              method,
+              requestId,
+              sessionId,
+            }).catch(() => {});
+          }
 
           this.logger.log(
             `← ${method} ${url} ${statusCode} - ${delay}ms - Request ID: ${requestId}`,
