@@ -14,6 +14,8 @@ import { VisitorService } from './services/visitor.service';
 import { HealthCronService } from './services/health-cron.service';
 import { RedisBufferService } from './services/redis-buffer.service';
 import { SlackAlertService } from './services/slack-alert.service';
+import { VendorAnalyticsController } from './vendor-analytics.controller';
+import { VendorAnalyticsService } from './vendor-analytics.service';
 
 @Module({
   imports: [
@@ -26,7 +28,7 @@ import { SlackAlertService } from './services/slack-alert.service';
       }),
     }),
   ],
-  controllers: [AnalyticsController, AnalyticsAdminController],
+  controllers: [AnalyticsController, AnalyticsAdminController, VendorAnalyticsController],
   providers: [
     AuthService,
     SuperAdminAuthGuard,
@@ -39,6 +41,7 @@ import { SlackAlertService } from './services/slack-alert.service';
     VisitorService,
     HealthCronService,
     AnalyticsGateway,
+    VendorAnalyticsService,
   ],
   exports: [
     EventCollectorService,
