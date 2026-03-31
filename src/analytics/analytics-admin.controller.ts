@@ -784,6 +784,7 @@ export class AnalyticsAdminController {
     const filename = `analytics-${type}-${since.toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
+    try {
     const escape = (v: unknown): string => {
       if (v == null) return '';
       const s = String(v).replace(/"/g, '""');
@@ -846,6 +847,13 @@ export class AnalyticsAdminController {
     }
 
     res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        res.status(500).json({ message: error.message });
+      } else {
+        res.end();
+      }
+    }
   }
 
   // ────────────────────────────────────────────
