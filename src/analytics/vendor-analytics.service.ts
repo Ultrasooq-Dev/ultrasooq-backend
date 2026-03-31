@@ -162,6 +162,163 @@ export class VendorAnalyticsService {
   }
 
   /**
+   * Single product detail: full analytics for one product (seller must own it)
+   */
+  async getProductDetail(sellerId: number, productPriceId: number, days: number) {
+    const cacheKey = `vendor:analytics:product-detail:${sellerId}:${productPriceId}:${days}`;
+    return this.cache.getOrSet(cacheKey, async () => {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      // Verify seller owns this productPrice
+      const pp = await this.prisma.productPrice.findFirst({
+        where: { id: productPriceId, adminId: sellerId, deletedAt: null },
+        select: {
+          id: true,
+          productId: true,
+          productPrice: true,
+          offerPrice: true,
+          stock: true,
+          productPrice_product: {
+            select: {
+              id: true,
+              productName: true,
+              productImages: { take: 1, select: { image: true } },
+            },
+          },
+        },
+      });
+      if (!pp) return null;
+
+      const productId = pp.productId!;
+
+      // KPIs
+      const [totalViews, uniqueViewers, totalClicks, cartAdds, orders, delivered, cancelled, revenueAgg, reviewAgg] =
+        await this.prisma.$transaction([
+          this.prisma.productView.count({ where: { productId, createdAt: { gte: since } } }),
+          this.prisma.productView.count({ where: { productId, createdAt: { gte: since }, userId: { not: null } } }),
+          this.prisma.productClick.count({ where: { productId, createdAt: { gte: since } } }),
+          this.prisma.cart.count({ where: { productPriceId, status: 'ACTIVE', deletedAt: null } }),
+          this.prisma.orderProducts.count({ where: { productPriceId, createdAt: { gte: since } } }),
+          this.prisma.orderProducts.count({ where: { productPriceId, orderProductStatus: 'DELIVERED', createdAt: { gte: since } } }),
+          this.prisma.orderProducts.count({ where: { productPriceId, orderProductStatus: 'CANCELLED', createdAt: { gte: since } } }),
+          this.prisma.orderProducts.aggregate({
+            where: { productPriceId, orderProductStatus: 'DELIVERED', createdAt: { gte: since } },
+            _sum: { sellerReceives: true },
+          }),
+          this.prisma.productPriceReview.aggregate({
+            where: { productPriceId, status: 'ACTIVE', deletedAt: null },
+            _avg: { rating: true },
+            _count: true,
+          }),
+        ]);
+
+      const revenue = Number(revenueAgg._sum.sellerReceives ?? 0);
+
+      // Daily views trend
+      const viewsTrend = await this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+        SELECT TO_CHAR("createdAt", 'YYYY-MM-DD') AS date, COUNT(*) AS count
+        FROM "ProductView"
+        WHERE "productId" = ${productId} AND "createdAt" >= ${since}
+        GROUP BY TO_CHAR("createdAt", 'YYYY-MM-DD')
+        ORDER BY date ASC
+      `;
+
+      // Daily orders trend
+      const ordersTrend = await this.prisma.$queryRaw<Array<{ date: string; orders: bigint; revenue: any }>>`
+        SELECT TO_CHAR("createdAt", 'YYYY-MM-DD') AS date,
+          COUNT(*) AS orders,
+          COALESCE(SUM("sellerReceives"), 0) AS revenue
+        FROM "OrderProducts"
+        WHERE "productPriceId" = ${productPriceId} AND "createdAt" >= ${since}
+        GROUP BY TO_CHAR("createdAt", 'YYYY-MM-DD')
+        ORDER BY date ASC
+      `;
+
+      // Recent orders for this product
+      const recentOrders = await this.prisma.orderProducts.findMany({
+        where: { productPriceId, createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          orderNo: true,
+          orderQuantity: true,
+          salePrice: true,
+          sellerReceives: true,
+          orderProductStatus: true,
+          createdAt: true,
+        },
+      });
+
+      // Recent reviews
+      const reviews = await this.prisma.productPriceReview.findMany({
+        where: { productPriceId, status: 'ACTIVE', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          rating: true,
+          createdAt: true,
+          productPriceReview_user: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      // Click sources
+      const clickSources = await this.prisma.$queryRaw<Array<{ clickSource: string; count: bigint }>>`
+        SELECT COALESCE("clickSource", 'direct') AS "clickSource", COUNT(*) AS count
+        FROM "ProductClick"
+        WHERE "productId" = ${productId} AND "createdAt" >= ${since}
+        GROUP BY "clickSource"
+        ORDER BY count DESC LIMIT 10
+      `;
+
+      return {
+        product: {
+          productPriceId: pp.id,
+          productId,
+          productName: pp.productPrice_product?.productName ?? '—',
+          price: Number(pp.productPrice),
+          offerPrice: Number(pp.offerPrice),
+          stock: pp.stock,
+          image: pp.productPrice_product?.productImages?.[0]?.image ?? null,
+        },
+        kpis: {
+          totalViews,
+          uniqueViewers,
+          totalClicks,
+          cartAdds,
+          orders,
+          delivered,
+          cancelled,
+          revenue,
+          conversionRate: totalViews > 0 ? Math.round((orders / totalViews) * 10000) / 100 : 0,
+          avgRating: Math.round((reviewAgg._avg.rating ?? 0) * 10) / 10,
+          totalReviews: reviewAgg._count,
+        },
+        viewsTrend: viewsTrend.map((r) => ({ date: r.date, count: Number(r.count) })),
+        ordersTrend: ordersTrend.map((r) => ({ date: r.date, orders: Number(r.orders), revenue: Number(r.revenue) })),
+        clickSources: clickSources.map((r) => ({ source: r.clickSource, count: Number(r.count) })),
+        recentOrders: recentOrders.map((o) => ({
+          ...o,
+          salePrice: Number(o.salePrice ?? 0),
+          sellerReceives: Number(o.sellerReceives ?? 0),
+        })),
+        reviews: reviews.map((r) => ({
+          id: r.id,
+          title: r.title,
+          description: r.description,
+          rating: r.rating,
+          createdAt: r.createdAt,
+          buyerName: [r.productPriceReview_user?.firstName, r.productPriceReview_user?.lastName].filter(Boolean).join(' ') || 'Anonymous',
+        })),
+        period: { since, days },
+      };
+    }, CACHE_TTL);
+  }
+
+  /**
    * Conversion funnel: Views → Clicks → Cart → Orders → Delivered
    */
   async getFunnel(sellerId: number, days: number) {

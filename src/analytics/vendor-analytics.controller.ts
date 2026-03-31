@@ -1,9 +1,12 @@
 import {
   Controller,
   Get,
+  Param,
   Query,
   Req,
   UseGuards,
+  ParseIntPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '../guards/AuthGuard';
@@ -41,6 +44,21 @@ export class VendorAnalyticsController {
     const p = Math.max(parseInt(page) || 1, 1);
     const l = Math.min(parseInt(limit) || 20, 100);
     return this.vendorAnalytics.getProducts(sellerId, d, p, l);
+  }
+
+  @Get('products/:id')
+  @ApiOperation({ summary: 'Vendor single product detail: views trend, orders, reviews, click sources' })
+  @ApiQuery({ name: 'days', required: false, example: 30 })
+  async getProductDetail(
+    @Param('id', ParseIntPipe) productPriceId: number,
+    @Query('days') days = '30',
+    @Req() req: any,
+  ) {
+    const sellerId = req.user?.id ?? req.user?.userId;
+    const d = Math.min(Math.max(parseInt(days) || 30, 1), 365);
+    const result = await this.vendorAnalytics.getProductDetail(sellerId, productPriceId, d);
+    if (!result) throw new NotFoundException('Product not found or not owned by you');
+    return result;
   }
 
   @Get('funnel')
