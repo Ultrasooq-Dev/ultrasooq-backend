@@ -37,13 +37,14 @@ export class VendorAnalyticsService {
         };
       }
 
+      // Exclude vendor's own views/clicks (self-visits shouldn't count as customer traffic)
       const [views, clicks, cartAdds, orders, delivered, cancelled, revenueAgg] =
         await this.prisma.$transaction([
           this.prisma.productView.count({
-            where: { productId: { in: productIds }, createdAt: { gte: since } },
+            where: { productId: { in: productIds }, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] },
           }),
           this.prisma.productClick.count({
-            where: { productId: { in: productIds }, createdAt: { gte: since } },
+            where: { productId: { in: productIds }, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] },
           }),
           this.prisma.cart.count({
             where: { productPriceId: { in: priceIds }, status: 'ACTIVE', deletedAt: null },
@@ -120,8 +121,8 @@ export class VendorAnalyticsService {
           pp."productPrice",
           pp."offerPrice",
           pp.stock,
-          (SELECT COUNT(*) FROM "ProductView" WHERE "productId" = p.id AND "createdAt" >= ${since}) AS views,
-          (SELECT COUNT(*) FROM "ProductClick" WHERE "productId" = p.id AND "createdAt" >= ${since}) AS clicks,
+          (SELECT COUNT(*) FROM "ProductView" WHERE "productId" = p.id AND "createdAt" >= ${since} AND ("userId" IS NULL OR "userId" != ${sellerId})) AS views,
+          (SELECT COUNT(*) FROM "ProductClick" WHERE "productId" = p.id AND "createdAt" >= ${since} AND ("userId" IS NULL OR "userId" != ${sellerId})) AS clicks,
           (SELECT COUNT(*) FROM "Cart" WHERE "productPriceId" = pp.id AND status = 'ACTIVE' AND "deletedAt" IS NULL) AS "cartAdds",
           (SELECT COUNT(*) FROM "OrderProducts" WHERE "productPriceId" = pp.id AND "createdAt" >= ${since}) AS orders,
           (SELECT COALESCE(SUM("sellerReceives"), 0) FROM "OrderProducts" WHERE "productPriceId" = pp.id AND "orderProductStatus" = 'DELIVERED') AS revenue,
@@ -194,9 +195,9 @@ export class VendorAnalyticsService {
       // KPIs
       const [totalViews, uniqueViewers, totalClicks, cartAdds, orders, delivered, cancelled, revenueAgg, reviewAgg] =
         await this.prisma.$transaction([
-          this.prisma.productView.count({ where: { productId, createdAt: { gte: since } } }),
-          this.prisma.productView.count({ where: { productId, createdAt: { gte: since }, userId: { not: null } } }),
-          this.prisma.productClick.count({ where: { productId, createdAt: { gte: since } } }),
+          this.prisma.productView.count({ where: { productId, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] } }),
+          this.prisma.productView.count({ where: { productId, createdAt: { gte: since }, userId: { not: sellerId }, NOT: { userId: null } } }),
+          this.prisma.productClick.count({ where: { productId, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] } }),
           this.prisma.cart.count({ where: { productPriceId, status: 'ACTIVE', deletedAt: null } }),
           this.prisma.orderProducts.count({ where: { productPriceId, createdAt: { gte: since } } }),
           this.prisma.orderProducts.count({ where: { productPriceId, orderProductStatus: 'DELIVERED', createdAt: { gte: since } } }),
@@ -338,8 +339,8 @@ export class VendorAnalyticsService {
       }
 
       const [views, clicks, cartAdds, orders, delivered] = await this.prisma.$transaction([
-        this.prisma.productView.count({ where: { productId: { in: productIds }, createdAt: { gte: since } } }),
-        this.prisma.productClick.count({ where: { productId: { in: productIds }, createdAt: { gte: since } } }),
+        this.prisma.productView.count({ where: { productId: { in: productIds }, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] } }),
+        this.prisma.productClick.count({ where: { productId: { in: productIds }, createdAt: { gte: since }, OR: [{ userId: null }, { userId: { not: sellerId } }] } }),
         this.prisma.cart.count({ where: { productPriceId: { in: priceIds }, status: 'ACTIVE', deletedAt: null } }),
         this.prisma.orderProducts.count({ where: { sellerId, createdAt: { gte: since } } }),
         this.prisma.orderProducts.count({ where: { sellerId, orderProductStatus: 'DELIVERED', createdAt: { gte: since } } }),
