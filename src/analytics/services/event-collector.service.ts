@@ -294,16 +294,16 @@ export class EventCollectorService {
       });
 
       // Events by name (top 20)
-      const eventsByName = await this.prisma.$queryRaw<Array<{ event_name: string; count: bigint }>>`
-        SELECT event_name, COUNT(*) AS count FROM analytics_event
-        WHERE created_at >= ${yesterday} AND created_at < ${today}
-        GROUP BY event_name ORDER BY count DESC LIMIT 20
+      const eventsByName = await this.prisma.$queryRaw<Array<{ eventName: string; count: bigint }>>`
+        SELECT "eventName", COUNT(*) AS count FROM analytics_event
+        WHERE "createdAt" >= ${yesterday} AND "createdAt" < ${today}
+        GROUP BY "eventName" ORDER BY count DESC LIMIT 20
       `;
 
       // Sessions by country (top 20)
       const sessionsByCountry = await this.prisma.$queryRaw<Array<{ country: string; count: bigint }>>`
         SELECT country, COUNT(*) AS count FROM visitor_session
-        WHERE started_at >= ${yesterday} AND started_at < ${today} AND country IS NOT NULL
+        WHERE "startedAt" >= ${yesterday} AND "startedAt" < ${today} AND country IS NOT NULL
         GROUP BY country ORDER BY count DESC LIMIT 20
       `;
 
@@ -316,7 +316,7 @@ export class EventCollectorService {
         ...eventsByName.map((r) => ({
           date: yesterday,
           metric: 'events_by_name',
-          dimension: r.event_name,
+          dimension: r.eventName,
           value: Number(r.count),
         })),
         ...sessionsByCountry.map((r) => ({

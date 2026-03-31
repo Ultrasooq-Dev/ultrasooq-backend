@@ -89,33 +89,33 @@ export class AnalyticsAdminController {
       // Raw SQL for groupBy queries to avoid Prisma TypeScript circular reference issue
       const [dailyEvents, topEvents, topPages, topCountries] = await Promise.all([
         this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
-          SELECT TO_CHAR(created_at, 'YYYY-MM-DD') AS date, COUNT(*) AS count
+          SELECT TO_CHAR("createdAt", 'YYYY-MM-DD') AS date, COUNT(*) AS count
           FROM analytics_event
-          WHERE created_at >= ${since}
-          GROUP BY TO_CHAR(created_at, 'YYYY-MM-DD')
+          WHERE "createdAt" >= ${since}
+          GROUP BY TO_CHAR("createdAt", 'YYYY-MM-DD')
           ORDER BY date ASC
         `,
-        this.prisma.$queryRaw<Array<{ event_name: string; count: bigint }>>`
-          SELECT event_name, COUNT(*) AS count
+        this.prisma.$queryRaw<Array<{ "eventName": string; count: bigint }>>`
+          SELECT "eventName", COUNT(*) AS count
           FROM analytics_event
-          WHERE created_at >= ${since}
-          GROUP BY event_name
+          WHERE "createdAt" >= ${since}
+          GROUP BY "eventName"
           ORDER BY count DESC
           LIMIT 10
         `,
-        this.prisma.$queryRaw<Array<{ page_url: string; count: bigint }>>`
-          SELECT page_url, COUNT(*) AS count
+        this.prisma.$queryRaw<Array<{ "pageUrl": string; count: bigint }>>`
+          SELECT "pageUrl", COUNT(*) AS count
           FROM analytics_event
-          WHERE created_at >= ${since}
-            AND page_url IS NOT NULL
-          GROUP BY page_url
+          WHERE "createdAt" >= ${since}
+            AND "pageUrl" IS NOT NULL
+          GROUP BY "pageUrl"
           ORDER BY count DESC
           LIMIT 10
         `,
         this.prisma.$queryRaw<Array<{ country: string; count: bigint }>>`
           SELECT country, COUNT(*) AS count
           FROM visitor_session
-          WHERE started_at >= ${since}
+          WHERE "startedAt" >= ${since}
             AND country IS NOT NULL
           GROUP BY country
           ORDER BY count DESC
@@ -133,8 +133,8 @@ export class AnalyticsAdminController {
           avgApiLatencyMs: Math.round(avgPerformance._avg.metricValue ?? 0),
         },
         dailyEvents: dailyEvents.map(r => ({ date: r.date, count: Number(r.count) })),
-        topEvents: topEvents.map(r => ({ name: r.event_name, count: Number(r.count) })),
-        topPages: topPages.map(r => ({ url: r.page_url, count: Number(r.count) })),
+        topEvents: topEvents.map(r => ({ name: r.eventName, count: Number(r.count) })),
+        topPages: topPages.map(r => ({ url: r.pageUrl, count: Number(r.count) })),
         topCountries: topCountries.map(r => ({ country: r.country, count: Number(r.count) })),
         period: { since },
       };
@@ -167,20 +167,20 @@ export class AnalyticsAdminController {
     return this.cache.getOrSet(cacheKey, async () => {
 
       // Group product events by productId from metadata
-      const productViews = await this.prisma.$queryRaw<Array<{ event_name: string; count: bigint }>>`
-        SELECT event_name, COUNT(*) AS count
+      const productViews = await this.prisma.$queryRaw<Array<{ "eventName": string; count: bigint }>>`
+        SELECT "eventName", COUNT(*) AS count
         FROM analytics_event
-        WHERE event_name IN ('product_view', 'product_click', 'product_search', 'add_to_cart')
-          AND created_at >= ${since}
-        GROUP BY event_name
+        WHERE "eventName" IN ('product_view', 'product_click', 'product_search', 'add_to_cart')
+          AND "createdAt" >= ${since}
+        GROUP BY "eventName"
       `;
 
       // Top viewed products (metadata.productId)
       const rawViews = await this.prisma.$queryRaw<Array<{ product_id: string; count: bigint }>>`
         SELECT (metadata->>'productId')::text AS product_id, COUNT(*) AS count
         FROM analytics_event
-        WHERE event_name = 'product_view'
-          AND created_at >= ${since}
+        WHERE "eventName" = 'product_view'
+          AND "createdAt" >= ${since}
           AND metadata->>'productId' IS NOT NULL
         GROUP BY (metadata->>'productId')
         ORDER BY count DESC
@@ -214,7 +214,7 @@ export class AnalyticsAdminController {
       return {
         data: rows,
         summary: productViews.reduce<Record<string, number>>((acc, row) => {
-          acc[row.event_name] = Number(row.count);
+          acc[row.eventName] = Number(row.count);
           return acc;
         }, {}),
         page: p,
@@ -309,8 +309,8 @@ export class AnalyticsAdminController {
         this.prisma.$queryRaw<Array<{ query: string; count: bigint }>>`
           SELECT (metadata->>'query')::text AS query, COUNT(*) AS count
           FROM analytics_event
-          WHERE event_name = 'product_search'
-            AND created_at >= ${since}
+          WHERE "eventName" = 'product_search'
+            AND "createdAt" >= ${since}
             AND metadata->>'query' IS NOT NULL
           GROUP BY (metadata->>'query')
           ORDER BY count DESC
@@ -319,8 +319,8 @@ export class AnalyticsAdminController {
         this.prisma.$queryRaw<Array<{ query: string; count: bigint }>>`
           SELECT (metadata->>'query')::text AS query, COUNT(*) AS count
           FROM analytics_event
-          WHERE event_name = 'product_search'
-            AND created_at >= ${since}
+          WHERE "eventName" = 'product_search'
+            AND "createdAt" >= ${since}
             AND metadata->>'resultsCount' = '0'
           GROUP BY (metadata->>'query')
           ORDER BY count DESC
@@ -394,13 +394,13 @@ export class AnalyticsAdminController {
         this.prisma.$queryRaw<Array<{ source: string; error_groups: bigint; total_occurrences: bigint }>>`
           SELECT source, COUNT(*) AS error_groups, SUM(count) AS total_occurrences
           FROM error_log
-          WHERE last_seen_at >= ${since}
+          WHERE "lastSeenAt" >= ${since}
           GROUP BY source
         `,
         this.prisma.$queryRaw<Array<{ level: string; cnt: bigint }>>`
           SELECT level, COUNT(*) AS cnt
           FROM error_log
-          WHERE last_seen_at >= ${since}
+          WHERE "lastSeenAt" >= ${since}
           GROUP BY level
         `,
       ]);
@@ -447,20 +447,20 @@ export class AnalyticsAdminController {
 
       // P75 and P95 via raw query for better percentile accuracy
       const percentiles = await this.prisma.$queryRaw<
-        Array<{ metric_name: string; p50: number; p75: number; p95: number }>
+        Array<{ "metricName": string; p50: number; p75: number; p95: number }>
       >`
         SELECT
-          metric_name,
-          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY metric_value) AS p50,
-          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY metric_value) AS p75,
-          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY metric_value) AS p95
+          "metricName",
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "metricValue") AS p50,
+          PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "metricValue") AS p75,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "metricValue") AS p95
         FROM performance_metric
-        WHERE created_at >= ${since}
-        GROUP BY metric_name
+        WHERE "createdAt" >= ${since}
+        GROUP BY "metricName"
       `;
 
       const percentileMap = percentiles.reduce<Record<string, any>>((acc, r) => {
-        acc[r.metric_name] = { p50: Math.round(r.p50), p75: Math.round(r.p75), p95: Math.round(r.p95) };
+        acc[r.metricName] = { p50: Math.round(r.p50), p75: Math.round(r.p75), p95: Math.round(r.p95) };
         return acc;
       }, {});
 
@@ -469,12 +469,12 @@ export class AnalyticsAdminController {
         Array<{ endpoint: string; avg_ms: number; p95_ms: number; count: bigint }>
       >`
         SELECT endpoint,
-          ROUND(AVG(metric_value)::numeric, 1) AS avg_ms,
-          ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY metric_value)::numeric, 1) AS p95_ms,
+          ROUND(AVG("metricValue")::numeric, 1) AS avg_ms,
+          ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "metricValue")::numeric, 1) AS p95_ms,
           COUNT(*) AS count
         FROM performance_metric
-        WHERE metric_name = 'api_latency'
-          AND created_at >= ${since}
+        WHERE "metricName" = 'api_latency'
+          AND "createdAt" >= ${since}
           AND endpoint IS NOT NULL
         GROUP BY endpoint
         ORDER BY avg_ms DESC
@@ -486,12 +486,12 @@ export class AnalyticsAdminController {
         Array<{ endpoint: string; avg_ms: number; max_ms: number; count: bigint }>
       >`
         SELECT endpoint,
-          ROUND(AVG(metric_value)::numeric, 1) AS avg_ms,
-          ROUND(MAX(metric_value)::numeric, 1) AS max_ms,
+          ROUND(AVG("metricValue")::numeric, 1) AS avg_ms,
+          ROUND(MAX("metricValue")::numeric, 1) AS max_ms,
           COUNT(*) AS count
         FROM performance_metric
-        WHERE metric_name = 'prisma_slow_query'
-          AND created_at >= ${since}
+        WHERE "metricName" = 'prisma_slow_query'
+          AND "createdAt" >= ${since}
           AND endpoint IS NOT NULL
         GROUP BY endpoint
         ORDER BY avg_ms DESC
