@@ -23,6 +23,7 @@ export class HealthCronService {
       this.checkDatabase(),
       this.checkRedis(),
       this.checkMemory(),
+      this.checkAnalyticsBuffer(),
     ]);
   }
 
@@ -97,6 +98,46 @@ export class HealthCronService {
   }
 
   /**
+   * Check analytics buffer health — alert if DLQ has items or buffer is backing up.
+   */
+  private async checkAnalyticsBuffer(): Promise<void> {
+    try {
+      const [bufferSize, dlqSize, healthy] = await Promise.all([
+        this.redisBuffer.getBufferSize(),
+        this.redisBuffer.getDlqSize(),
+        this.redisBuffer.isHealthy(),
+      ]);
+
+      let status = 'healthy';
+      if (!healthy) status = 'down';
+      else if (dlqSize > 0) status = 'degraded';
+      else if (bufferSize > 2000) status = 'degraded'; // buffer backing up
+
+      await this.prisma.systemHealthLog.create({
+        data: {
+          component: 'analytics_buffer',
+          status,
+          responseMs: null,
+          details: { bufferSize, dlqSize, redisConnected: healthy },
+        },
+      });
+
+      if (status !== 'healthy') {
+        this.logger.warn(
+          `Analytics buffer ${status}: buffer=${bufferSize}, dlq=${dlqSize}, redis=${healthy}`,
+        );
+        this.gateway?.emitHealthAlert({
+          component: 'analytics_buffer',
+          status,
+          responseMs: bufferSize,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Analytics buffer health check failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Get health history for admin dashboard.
    */
   async getHealthHistory(days: number, component?: string) {
@@ -116,7 +157,7 @@ export class HealthCronService {
    */
   async getComponentSummary(days: number) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const components = ['database', 'redis', 'memory'];
+    const components = ['database', 'redis', 'memory', 'analytics_buffer'];
     const result = [];
 
     for (const comp of components) {

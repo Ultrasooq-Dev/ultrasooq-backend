@@ -3445,6 +3445,21 @@ model SystemHealthLog {
   @@map("system_health_log")
 }
 
+// AnalyticsDailyRollup — Pre-computed daily aggregates for fast dashboard queries.
+// Nightly cron summarises raw events/sessions/errors → one row per (date, metric, dimension).
+model AnalyticsDailyRollup {
+  id        Int       @id @default(autoincrement())
+  date      DateTime  @db.Date
+  metric    String    @db.VarChar(50)  // "events", "sessions", "errors", "bounced", "page_views"
+  dimension String    @default("") @db.VarChar(255) // country, eventName — empty = total
+  value     Int       @default(0)
+
+  @@unique([date, metric, dimension])
+  @@index([date])
+  @@index([metric, date])
+  @@map("analytics_daily_rollup")
+}
+
 // ExternalStore — Represents an external e-commerce store that a seller connects for dropshipping.
 // Fields: name (store display name), platform (e.g. Shopify, WooCommerce), feedToken (unique token for feed URLs),
 //   userId (FK to owner User), settings (JSON for platform-specific config).
@@ -3524,6 +3539,7 @@ model AnalyticsEvent {
   @@index([eventType, createdAt])
   @@index([deviceId])
   @@index([source, createdAt])
+  @@index([country])
   @@map("analytics_event")
 }
 
@@ -3598,5 +3614,6 @@ model VisitorSession {
   @@index([startedAt])
   @@index([isActive])
   @@index([lastActiveAt])
+  @@index([country])
   @@map("visitor_session")
 }

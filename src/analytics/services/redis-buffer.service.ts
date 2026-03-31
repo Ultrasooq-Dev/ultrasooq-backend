@@ -5,6 +5,8 @@ import Redis from 'ioredis';
 const BUFFER_KEY = 'analytics:events:buffer';
 const PERF_KEY = 'analytics:perf:buffer';
 const PAUSED_KEY = 'analytics:paused';
+const DLQ_KEY = 'analytics:events:dlq';
+const MAX_FLUSH_RETRIES = 3;
 
 @Injectable()
 export class RedisBufferService implements OnModuleInit, OnModuleDestroy {
@@ -42,8 +44,10 @@ export class RedisBufferService implements OnModuleInit, OnModuleDestroy {
     await this.redis?.quit();
   }
 
+  private flushFailCount = 0;
+
   get keys() {
-    return { BUFFER_KEY, PERF_KEY, PAUSED_KEY };
+    return { BUFFER_KEY, PERF_KEY, PAUSED_KEY, DLQ_KEY };
   }
 
   async push(key: string, data: string): Promise<void> {
@@ -82,6 +86,91 @@ export class RedisBufferService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.warn(`Atomic flush failed: ${error.message}`);
       return [];
+    }
+  }
+
+  /**
+   * Two-phase flush: PEEK → (caller writes to DB) → CONFIRM.
+   * Events stay in Redis until the DB write succeeds.
+   * If DB write fails 3 times, events move to dead-letter queue.
+   */
+  async peek(key: string, maxItems: number = 500): Promise<string[]> {
+    try {
+      const result = await this.redis.lrange(key, 0, maxItems - 1);
+      return result || [];
+    } catch (error) {
+      this.logger.warn(`Peek failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Confirm successful DB write — remove the peeked items from Redis.
+   * Uses Lua to atomically trim only the count we consumed.
+   */
+  async confirmFlush(key: string, count: number): Promise<void> {
+    try {
+      await this.redis.call(
+        'EVAL',
+        `if redis.call('LLEN', KEYS[1]) >= tonumber(ARGV[1]) then redis.call('LTRIM', KEYS[1], ARGV[1], -1) end return 1`,
+        '1',
+        key,
+        count.toString(),
+      );
+      this.flushFailCount = 0;
+    } catch (error) {
+      this.logger.warn(`Confirm flush failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Mark a flush failure. After MAX_FLUSH_RETRIES consecutive failures,
+   * move the batch to a dead-letter queue so the buffer doesn't grow forever.
+   */
+  async markFlushFailure(key: string, count: number): Promise<void> {
+    this.flushFailCount++;
+    if (this.flushFailCount >= MAX_FLUSH_RETRIES) {
+      this.logger.error(
+        `Flush failed ${MAX_FLUSH_RETRIES} times — moving ${count} items to DLQ`,
+      );
+      try {
+        // Move failed items to DLQ
+        const items = await this.redis.lrange(key, 0, count - 1);
+        if (items.length > 0) {
+          await this.redis.lpush(DLQ_KEY, ...items);
+          await this.redis.call(
+            'EVAL',
+            `redis.call('LTRIM', KEYS[1], ARGV[1], -1) return 1`,
+            '1',
+            key,
+            count.toString(),
+          );
+          // Expire DLQ after 7 days to avoid unbounded growth
+          await this.redis.expire(DLQ_KEY, 7 * 24 * 60 * 60);
+        }
+        this.flushFailCount = 0;
+      } catch (error) {
+        this.logger.error(`DLQ move failed: ${error.message}`);
+      }
+    }
+  }
+
+  /** Get dead-letter queue size for monitoring */
+  async getDlqSize(): Promise<number> {
+    try {
+      return await this.redis.llen(DLQ_KEY);
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Check if Redis connection is alive */
+  async isHealthy(): Promise<boolean> {
+    try {
+      const pong = await this.redis.ping();
+      return pong === 'PONG';
+    } catch {
+      return false;
     }
   }
 

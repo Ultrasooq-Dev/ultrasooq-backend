@@ -66,18 +66,19 @@ export class EventCollectorService {
 
   /**
    * Flush Redis buffer to PostgreSQL every 10 seconds.
-   * Uses atomic Lua script — no events lost under concurrent access.
+   * Two-phase: PEEK → DB write → CONFIRM. Events stay in Redis until DB succeeds.
+   * After 3 consecutive failures, moves batch to dead-letter queue.
    */
   @Cron('*/10 * * * * *')
   async flushBuffer(): Promise<void> {
     const paused = await this.redisBuffer.isPaused();
     if (paused) return;
 
+    const bufferKey = this.redisBuffer.keys.BUFFER_KEY;
+
     try {
-      const rawItems = await this.redisBuffer.atomicFlush(
-        this.redisBuffer.keys.BUFFER_KEY,
-        500,
-      );
+      // Phase 1: PEEK — read without removing
+      const rawItems = await this.redisBuffer.peek(bufferKey, 500);
       if (rawItems.length === 0) return;
 
       const events = rawItems.map((item) => JSON.parse(item));
@@ -86,7 +87,6 @@ export class EventCollectorService {
       const heartbeats = [];
 
       for (const event of events) {
-        // Route specialized events
         if (
           event.eventName === 'product_view' ||
           event.eventName === 'product_search' ||
@@ -99,7 +99,6 @@ export class EventCollectorService {
           heartbeats.push(event);
         }
 
-        // All events go to AnalyticsEvent table
         analyticsEvents.push({
           sessionId: event.sessionId,
           requestId: event.requestId || null,
@@ -121,19 +120,20 @@ export class EventCollectorService {
         });
       }
 
-      // Bulk insert all events
+      // Phase 2: WRITE to DB
       if (analyticsEvents.length > 0) {
         await this.prisma.analyticsEvent.createMany({ data: analyticsEvents });
         this.dbWritesToday++;
         this.eventsToday += analyticsEvents.length;
       }
 
-      // Route product events
+      // Phase 3: CONFIRM — remove from Redis only after DB success
+      await this.redisBuffer.confirmFlush(bufferKey, rawItems.length);
+
+      // Side-effects (non-critical, fire-and-forget)
       for (const pe of productEvents) {
         await this.productTracking.routeEvent(pe).catch(() => {});
       }
-
-      // Update visitor sessions from heartbeats
       for (const hb of heartbeats) {
         await this.visitorService
           .heartbeat(hb.sessionId, hb.pageUrl)
@@ -143,7 +143,7 @@ export class EventCollectorService {
       this.lastFlushAt = new Date();
       this.logger.debug(`Flushed ${analyticsEvents.length} events to DB`);
 
-      // Emit real-time stats + new events to admin dashboards
+      // Emit real-time stats to admin dashboards
       if (this.gateway && analyticsEvents.length > 0) {
         const activeSessions = await this.prisma.visitorSession.count({
           where: { lastActiveAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } },
@@ -152,7 +152,6 @@ export class EventCollectorService {
           activeVisitors: activeSessions,
           eventsPerMinute: analyticsEvents.length,
         });
-        // Emit the most recent event for the live feed
         const latest = analyticsEvents[analyticsEvents.length - 1];
         if (latest) {
           this.gateway.emitNewEvent({
@@ -164,22 +163,26 @@ export class EventCollectorService {
       }
     } catch (error) {
       this.logger.error(`Buffer flush failed: ${error.message}`);
+      // Track failure — after 3 consecutive failures, move to DLQ
+      const len = await this.redisBuffer.getListLength(bufferKey);
+      if (len > 0) {
+        await this.redisBuffer.markFlushFailure(bufferKey, Math.min(len, 500));
+      }
     }
   }
 
   /**
-   * Also flush performance metrics buffer.
+   * Also flush performance metrics buffer (two-phase).
    */
   @Cron('*/10 * * * * *')
   async flushPerfBuffer(): Promise<void> {
     const paused = await this.redisBuffer.isPaused();
     if (paused) return;
 
+    const perfKey = this.redisBuffer.keys.PERF_KEY;
+
     try {
-      const rawItems = await this.redisBuffer.atomicFlush(
-        this.redisBuffer.keys.PERF_KEY,
-        500,
-      );
+      const rawItems = await this.redisBuffer.peek(perfKey, 500);
       if (rawItems.length === 0) return;
 
       const metrics = rawItems.map((item) => {
@@ -201,6 +204,8 @@ export class EventCollectorService {
         await this.prisma.performanceMetric.createMany({ data: metrics });
         this.dbWritesToday++;
       }
+
+      await this.redisBuffer.confirmFlush(perfKey, rawItems.length);
     } catch (error) {
       this.logger.error(`Perf buffer flush failed: ${error.message}`);
     }
@@ -254,11 +259,110 @@ export class EventCollectorService {
     this.dbWritesToday = 0;
   }
 
-  getStatus() {
+  /**
+   * Nightly rollup: aggregate yesterday's raw data into AnalyticsDailyRollup.
+   * Runs at 02:00 — after midnight but before cleanup at 03:00.
+   * Dashboard queries use rollups for historical data → fast even at millions of rows.
+   */
+  @Cron('0 2 * * *')
+  async buildDailyRollup(): Promise<void> {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const today = new Date(yesterday);
+    today.setDate(today.getDate() + 1);
+
+    try {
+      // Total events
+      const totalEvents = await this.prisma.analyticsEvent.count({
+        where: { createdAt: { gte: yesterday, lt: today } },
+      });
+
+      // Total sessions + bounced
+      const [totalSessions, bouncedSessions] = await this.prisma.$transaction([
+        this.prisma.visitorSession.count({
+          where: { startedAt: { gte: yesterday, lt: today } },
+        }),
+        this.prisma.visitorSession.count({
+          where: { startedAt: { gte: yesterday, lt: today }, pageCount: { lte: 1 } },
+        }),
+      ]);
+
+      // Total errors
+      const totalErrors = await this.prisma.errorLog.count({
+        where: { lastSeenAt: { gte: yesterday, lt: today } },
+      });
+
+      // Events by name (top 20)
+      const eventsByName = await this.prisma.$queryRaw<Array<{ event_name: string; count: bigint }>>`
+        SELECT event_name, COUNT(*) AS count FROM analytics_event
+        WHERE created_at >= ${yesterday} AND created_at < ${today}
+        GROUP BY event_name ORDER BY count DESC LIMIT 20
+      `;
+
+      // Sessions by country (top 20)
+      const sessionsByCountry = await this.prisma.$queryRaw<Array<{ country: string; count: bigint }>>`
+        SELECT country, COUNT(*) AS count FROM visitor_session
+        WHERE started_at >= ${yesterday} AND started_at < ${today} AND country IS NOT NULL
+        GROUP BY country ORDER BY count DESC LIMIT 20
+      `;
+
+      // Build rollup rows
+      const rows: Array<{ date: Date; metric: string; dimension: string | null; value: number }> = [
+        { date: yesterday, metric: 'events', dimension: null, value: totalEvents },
+        { date: yesterday, metric: 'sessions', dimension: null, value: totalSessions },
+        { date: yesterday, metric: 'bounced', dimension: null, value: bouncedSessions },
+        { date: yesterday, metric: 'errors', dimension: null, value: totalErrors },
+        ...eventsByName.map((r) => ({
+          date: yesterday,
+          metric: 'events_by_name',
+          dimension: r.event_name,
+          value: Number(r.count),
+        })),
+        ...sessionsByCountry.map((r) => ({
+          date: yesterday,
+          metric: 'sessions_by_country',
+          dimension: r.country,
+          value: Number(r.count),
+        })),
+      ];
+
+      // Upsert rows (idempotent — safe to re-run)
+      for (const row of rows) {
+        await this.prisma.analyticsDailyRollup.upsert({
+          where: {
+            date_metric_dimension: {
+              date: row.date,
+              metric: row.metric,
+              dimension: row.dimension ?? '',
+            },
+          },
+          update: { value: row.value },
+          create: { ...row, dimension: row.dimension ?? '' },
+        });
+      }
+
+      this.logger.log(
+        `Daily rollup: ${rows.length} rows for ${yesterday.toISOString().slice(0, 10)}`,
+      );
+    } catch (error) {
+      this.logger.error(`Daily rollup failed: ${error.message}`);
+    }
+  }
+
+  async getStatus() {
+    const [bufferSize, dlqSize, redisHealthy] = await Promise.all([
+      this.redisBuffer.getBufferSize(),
+      this.redisBuffer.getDlqSize(),
+      this.redisBuffer.isHealthy(),
+    ]);
     return {
       lastFlushAt: this.lastFlushAt,
       eventsToday: this.eventsToday,
       dbWritesToday: this.dbWritesToday,
+      bufferSize,
+      dlqSize,
+      redisHealthy,
     };
   }
 
