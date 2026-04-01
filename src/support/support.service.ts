@@ -262,7 +262,28 @@ export class SupportService {
       this.prisma.supportConversation.count({ where }),
     ]);
 
-    return { conversations, total, page, pages: Math.ceil(total / limit) };
+    // Calculate unread count per conversation (messages after last admin reply)
+    const enriched = await Promise.all(
+      conversations.map(async (conv: any) => {
+        const lastAdminMsg = await this.prisma.supportMessage.findFirst({
+          where: { conversationId: conv.id, senderType: 'admin' },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+
+        const unreadForAdmin = await this.prisma.supportMessage.count({
+          where: {
+            conversationId: conv.id,
+            senderType: { in: ['customer', 'bot'] },
+            ...(lastAdminMsg ? { createdAt: { gt: lastAdminMsg.createdAt } } : {}),
+          },
+        });
+
+        return { ...conv, unreadForAdmin };
+      }),
+    );
+
+    return { conversations: enriched, total, page, pages: Math.ceil(total / limit) };
   }
 
   /**
