@@ -138,6 +138,8 @@ model User {
   errorLogs                                     ErrorLog[] @relation("UserErrorLogs")
   performanceMetrics                            PerformanceMetric[] @relation("UserPerformanceMetrics")
   visitorSessions                               VisitorSession[] @relation("UserVisitorSessions")
+  supportConversationsAsContact                 SupportConversation[] @relation("SupportContact")
+  supportConversationsAsAssignee                SupportConversation[] @relation("SupportAssignee")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -3458,6 +3460,138 @@ model AnalyticsDailyRollup {
   @@index([date])
   @@index([metric, date])
   @@map("analytics_daily_rollup")
+}
+
+// ─── SUPPORT BOT SYSTEM ──────────────────────────────────────────
+
+// SupportConversation — One support session from open to resolution.
+// Status flow: bot → open → assigned → pending → resolved (or snoozed)
+model SupportConversation {
+  id                 Int       @id @default(autoincrement())
+  contactId          Int                 // FK → User (customer)
+  assigneeId         Int?                // FK → User (admin/agent) — null = bot
+  status             String    @default("bot")      // bot | open | assigned | pending | resolved | snoozed
+  channel            String    @default("web_widget") // web_widget | whatsapp | email
+  priority           String    @default("normal")    // low | normal | high | urgent
+  topic              String?             // menu item: product_search | order_tracker | faq | etc.
+  metadata           Json?               // { currentPage, cartValue, tradeRole, productId, locale }
+  firstResponseAt    DateTime?
+  resolvedAt         DateTime?
+  csatRating         Int?                // 1-5
+  csatComment        String?
+  botMessagesCount   Int       @default(0)
+  humanMessagesCount Int       @default(0)
+  escalatedAt        DateTime?
+  escalationReason   String?             // low_confidence | user_request | negative_feedback
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  contact            User      @relation("SupportContact", fields: [contactId], references: [id])
+  assignee           User?     @relation("SupportAssignee", fields: [assigneeId], references: [id])
+  messages           SupportMessage[]
+  events             SupportEvent[]
+
+  @@index([contactId, status])
+  @@index([assigneeId, status])
+  @@index([status, createdAt])
+  @@index([topic])
+  @@index([priority, status])
+  @@map("support_conversation")
+}
+
+// SupportMessage — Individual message within a support conversation.
+model SupportMessage {
+  id              Int       @id @default(autoincrement())
+  conversationId  Int
+  senderType      String                // customer | bot | admin
+  senderId        Int?                  // FK → User (null for bot)
+  content         String    @db.Text
+  contentType     String    @default("text")  // text | menu | cards | buttons | search_results | navigate | file | status
+  metadata        Json?                 // contentType-specific: cards[], buttons[], navigateTo, fileName, confidence
+  status          String    @default("sent")  // sent | delivered | read
+  feedbackScore   Int?                  // 1=thumbs down, 5=thumbs up (bot messages only)
+  createdAt       DateTime  @default(now())
+
+  conversation    SupportConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@index([senderType])
+  @@map("support_message")
+}
+
+// SupportEvent — Tracking: every meaningful action for analytics.
+model SupportEvent {
+  id              Int       @id @default(autoincrement())
+  conversationId  Int
+  eventType       String    // conversation_started | message_sent | bot_response | escalated_to_admin | etc.
+  metadata        Json?     // event-specific payload
+  userId          Int?
+  createdAt       DateTime  @default(now())
+
+  conversation    SupportConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([eventType, createdAt])
+  @@map("support_event")
+}
+
+// BotLearning — Self-learning: question→answer pairs that improve over time.
+model BotLearning {
+  id            Int       @id @default(autoincrement())
+  question      String    @db.Text
+  questionHash  String    @unique       // SHA-256 of normalized question (dedup)
+  answer        String    @db.Text
+  topic         String?                 // auto-categorized: product | order | shipping | payment | account
+  confidence    Float     @default(0.5) // 0-1, adjusted by feedback
+  useCount      Int       @default(0)
+  thumbsUp      Int       @default(0)
+  thumbsDown    Int       @default(0)
+  source        String    @default("admin_escalation") // admin_escalation | manual | faq
+  locale        String    @default("en") @db.VarChar(5)
+  status        String    @default("active") // active | review | disabled
+  createdBy     Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, confidence])
+  @@index([topic])
+  @@map("bot_learning")
+}
+
+// KnowledgeBase — Curated FAQ/help articles managed by admin.
+model KnowledgeBase {
+  id           Int       @id @default(autoincrement())
+  shortCode    String    @unique
+  title        String
+  content      String    @db.Text
+  category     String              // faq | policy | guide | tutorial
+  tags         String[]
+  locale       String    @default("en") @db.VarChar(5)
+  viewCount    Int       @default(0)
+  helpfulCount Int       @default(0)
+  status       String    @default("active")
+  createdBy    Int?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([category, locale, status])
+  @@map("knowledge_base")
+}
+
+// CannedResponse — Quick reply templates for admin agents.
+model CannedResponse {
+  id          Int       @id @default(autoincrement())
+  shortCode   String    @unique       // "!shipping", "!returns"
+  title       String
+  content     String    @db.Text
+  category    String?
+  locale      String    @default("en")
+  createdBy   Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("canned_response")
 }
 
 // ExternalStore — Represents an external e-commerce store that a seller connects for dropshipping.
