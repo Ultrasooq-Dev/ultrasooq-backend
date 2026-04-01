@@ -16,7 +16,19 @@ export class SupportService {
   // ─── Conversation Lifecycle ────────────────────────────────────
 
   /**
-   * Start a new conversation (called from widget init).
+   * Force-create a new conversation (ignores existing active ones).
+   */
+  async createNewConversation(contactId: number, metadata?: Record<string, any>) {
+    const conversation = await this.prisma.supportConversation.create({
+      data: { contactId, metadata, status: 'bot' },
+      include: { messages: true },
+    });
+    this.tracking.track('conversation_started', conversation.id, metadata, contactId);
+    return conversation;
+  }
+
+  /**
+   * Start or resume a conversation (called from widget init).
    */
   async startConversation(contactId: number, metadata?: Record<string, any>) {
     // Check for existing active conversation

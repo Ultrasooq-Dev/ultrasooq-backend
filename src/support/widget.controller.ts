@@ -32,9 +32,11 @@ export class WidgetController {
   @Post('init')
   @HttpCode(200)
   @ApiOperation({ summary: 'Start or resume a support conversation' })
-  async init(@Req() req: any, @Body() body: { metadata?: any }) {
+  async init(@Req() req: any, @Body() body: { metadata?: any; forceNew?: boolean }) {
     const userId = req.user?.id ?? req.user?.userId;
-    const conversation = await this.supportService.startConversation(userId, body.metadata);
+    const conversation = body.forceNew
+      ? await this.supportService.createNewConversation(userId, body.metadata)
+      : await this.supportService.startConversation(userId, body.metadata);
 
     // Get menu items for this user's role
     const tradeRole = req.user?.tradeRole ?? 'BUYER';
