@@ -14,6 +14,35 @@ export class VendorAnalyticsService {
   ) {}
 
   /**
+   * Mini stats: lightweight batch stats for all seller's products (for product list badges)
+   */
+  async getMiniStats(sellerId: number) {
+    const cacheKey = `vendor:analytics:mini-stats:${sellerId}`;
+    return this.cache.getOrSet(cacheKey, async () => {
+      const stats = await this.prisma.$queryRaw<any[]>`
+        SELECT
+          pp.id AS "productPriceId",
+          (SELECT COUNT(*) FROM "ProductView" WHERE "productId" = pp."productId" AND ("userId" IS NULL OR "userId" != ${sellerId})) AS views,
+          (SELECT COUNT(*) FROM "OrderProducts" WHERE "productPriceId" = pp.id) AS orders,
+          (SELECT COALESCE(SUM("sellerReceives"), 0) FROM "OrderProducts" WHERE "productPriceId" = pp.id AND "orderProductStatus" = 'DELIVERED') AS revenue,
+          (SELECT COALESCE(AVG(rating), 0) FROM "ProductPriceReview" WHERE "productPriceId" = pp.id AND status = 'ACTIVE') AS "avgRating"
+        FROM "ProductPrice" pp
+        WHERE pp."adminId" = ${sellerId} AND pp.status = 'ACTIVE' AND pp."deletedAt" IS NULL
+      `;
+      const map: Record<number, { views: number; orders: number; revenue: number; avgRating: number }> = {};
+      for (const s of stats) {
+        map[s.productPriceId] = {
+          views: Number(s.views),
+          orders: Number(s.orders),
+          revenue: Number(s.revenue),
+          avgRating: Math.round(Number(s.avgRating) * 10) / 10,
+        };
+      }
+      return map;
+    }, CACHE_TTL);
+  }
+
+  /**
    * Overview: KPIs + daily sales trend for a seller
    */
   async getOverview(sellerId: number, days: number) {

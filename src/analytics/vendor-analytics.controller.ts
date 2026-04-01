@@ -19,6 +19,13 @@ import { VendorAnalyticsService } from './vendor-analytics.service';
 export class VendorAnalyticsController {
   constructor(private vendorAnalytics: VendorAnalyticsService) {}
 
+  @Get('mini-stats')
+  @ApiOperation({ summary: 'Vendor mini stats: lightweight batch stats for product list badges' })
+  async getMiniStats(@Req() req: any) {
+    const sellerId = req.user?.id ?? req.user?.userId;
+    return this.vendorAnalytics.getMiniStats(sellerId);
+  }
+
   @Get('overview')
   @ApiOperation({ summary: 'Vendor overview: KPIs and sales trend' })
   @ApiQuery({ name: 'days', required: false, example: 30 })
