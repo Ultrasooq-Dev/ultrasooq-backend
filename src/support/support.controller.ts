@@ -112,6 +112,25 @@ export class SupportController {
     return { ok: true };
   }
 
+  @Patch('conversations/:id/read')
+  @ApiOperation({ summary: 'Mark conversation as read by admin (resets unread count)' })
+  async markRead(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const adminId = req.user?.id ?? req.user?.userId;
+    // Insert a silent admin "read" marker — this makes unreadForAdmin = 0
+    // because the count is "messages after last admin message"
+    await this.prisma.supportMessage.create({
+      data: {
+        conversationId: id,
+        senderType: 'admin',
+        senderId: adminId,
+        content: '',
+        contentType: 'status',
+        status: 'read',
+      },
+    });
+    return { ok: true };
+  }
+
   @Patch('conversations/:id/priority')
   @ApiOperation({ summary: 'Change conversation priority' })
   async setPriority(
