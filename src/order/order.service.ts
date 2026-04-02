@@ -55,6 +55,7 @@ import { HelperService } from 'src/helper/helper.service';
 import { WalletService } from 'src/wallet/wallet.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
+const axios = require('axios');
 
 /**
  * @class OrderService
@@ -304,29 +305,16 @@ export class OrderService {
         let quantity = cartDetails.quantity;
         let totalProductDiscount = discountAmount * quantity;
 
-        // -------------------------------------------------------------- Updating Stock
+        // -------------------------------------------------------------- Stock Validation (pre-check only)
+        // Actual stock deduction happens atomically inside the transaction below.
+        // This pre-check filters out obviously out-of-stock items before we begin.
         if (productPriceDetails.productId && productPriceDetails.id && quantity) {
           const productPriceDetail = await this.prisma.productPrice.findUnique({
             where: { id: productPriceDetails.id },
           });
 
           if (productPriceDetail) {
-            if (productPriceDetail.stock >= quantity) {
-              let updatedStock = productPriceDetail.stock - quantity;
-
-              // Ensure stock doesn't go negative
-              if (updatedStock < 0) {
-                updatedStock = 0;
-              }
-
-              await this.prisma.productPrice.update({
-                where: { id: productPriceDetails.id },
-                data: {
-                  stock: updatedStock,
-                },
-              });
-
-            } else {
+            if (productPriceDetail.stock < quantity) {
               productCannotBuy.push({
                 productId: productPriceDetails.productId,
                 productReasonMessage: "Out Of Stock"
@@ -521,304 +509,291 @@ export class OrderService {
         }
       }
       
-      // order create
-      let orderDetails = await this.prisma.order.create({
-        data: {
-          userId: userId,
-          totalPrice: totalPrice,
-          actualPrice: totalPurchasedPrice,
-          totalDiscount: discount,
-          totalCustomerPay: totalCustomerPay,
-          totalPlatformFee: totalPlatformFee,
-          totalCashbackToCustomer: totalCashbackToCustomer,
-          paymentMethod: payload?.paymentMethod,
-          deliveryCharge: payload?.deliveryCharge || null,
-          orderDate: new Date(),
-          orderNo: "Ord_" + randomstring.generate({length: 12, charset: "alphanumeric",}),
+      // ================================================================
+      // ATOMIC ORDER CREATION — All DB writes wrapped in a transaction
+      // If any step fails, everything rolls back (stock restored, no orphans)
+      // ================================================================
+      const orderNo = "Ord_" + randomstring.generate({ length: 12, charset: "alphanumeric" });
+      const userAccountId = req?.user?.userAccountId;
 
-          paymentType: payload?.paymentType || 'DIRECT',
-          advanceAmount: payload?.advanceAmount,
-          dueAmount: payload?.dueAmount
+      const txResult = await this.prisma.$transaction(async (tx) => {
+        // 1. Deduct stock atomically (prevents race conditions)
+        for (const product of productList) {
+          if (product.productPriceId && product.quantity && product.orderProductType === 'PRODUCT') {
+            const updated = await tx.productPrice.updateMany({
+              where: {
+                id: product.productPriceId,
+                stock: { gte: product.quantity },
+              },
+              data: {
+                stock: { decrement: product.quantity },
+              },
+            });
+            if (updated.count === 0) {
+              throw new Error(`Out of stock: product price ${product.productPriceId}`);
+            }
+          }
         }
-      });
 
-      // Handle wallet payment
-      let walletTransactionId: number | null = null;
-      if (payload?.paymentMethod === 'WALLET') {
-        try {
-          const userAccountId = req?.user?.userAccountId;
+        // 2. Create Order
+        const orderDetails = await tx.order.create({
+          data: {
+            userId: userId,
+            totalPrice: totalPrice,
+            actualPrice: totalPurchasedPrice,
+            totalDiscount: discount,
+            totalCustomerPay: totalCustomerPay,
+            totalPlatformFee: totalPlatformFee,
+            totalCashbackToCustomer: totalCashbackToCustomer,
+            paymentMethod: payload?.paymentMethod,
+            deliveryCharge: payload?.deliveryCharge || null,
+            orderDate: new Date(),
+            orderNo: orderNo,
+            paymentType: payload?.paymentType || 'DIRECT',
+            advanceAmount: payload?.advanceAmount,
+            dueAmount: payload?.dueAmount,
+          },
+        });
+
+        // 3. Handle wallet payment (inside transaction for atomicity)
+        let walletTransactionId: number | null = null;
+        if (payload?.paymentMethod === 'WALLET') {
           const walletPaymentResult = await this.walletService.processWalletPayment(
             userId,
             totalCustomerPay,
             orderDetails.id,
-            userAccountId
+            userAccountId,
           );
-          
+
           if (!walletPaymentResult.status) {
-            // If wallet payment fails, delete the order and return error
-            await this.prisma.order.delete({
-              where: { id: orderDetails.id }
-            });
-            
-            return {
-              status: false,
-              message: 'Wallet payment failed',
-              error: walletPaymentResult.message
-            };
+            throw new Error(`Wallet payment failed: ${walletPaymentResult.message}`);
           }
 
-          // Store wallet transaction ID separately
           walletTransactionId = walletPaymentResult.transactionId || null;
-          await this.prisma.order.update({
+          await tx.order.update({
             where: { id: orderDetails.id },
             data: {
-              walletTransactionId: walletTransactionId as any, // Type assertion for new field
-              paymentMethod: 'WALLET'
-            } as any
+              walletTransactionId: walletTransactionId as any,
+              paymentMethod: 'WALLET',
+            } as any,
           });
-        } catch (error) {
-          // If wallet payment fails, delete the order and return error
-          await this.prisma.order.delete({
-            where: { id: orderDetails.id }
-          });
-          
-          return {
-            status: false,
-            message: 'Wallet payment failed',
-            error: getErrorMessage(error)
-          };
-        }
-      }
-
-      let newOrderEMI;
-      if (payload?.paymentType === 'EMI') {
-        const nextEmiDueDate = new Date();
-        nextEmiDueDate.setDate(nextEmiDueDate.getDate() + 30); // Adds 30 days to today
-
-        newOrderEMI = await this.prisma.orderEMI.create({
-          data: {
-            orderId: orderDetails.id,
-            emiInstallmentCount: payload?.emiInstallmentCount,
-            emiInstallmentAmount: payload?.emiInstallmentAmount,
-            emiInstallmentAmountCents: payload?.emiInstallmentAmountCents,
-            emiStartDate: new Date(),
-            emiInstallmentsPaid: 1,
-            emiStatus: 'ONGOING',
-            nextEmiDueDate: nextEmiDueDate,
-          }
-        });
-      }
-
-
-
-      for (let sellerId of uniqueSellerIds) {
-        const sellerOrderNo = `Ords_${randomstring.generate({ length: 12, charset: 'alphanumeric' })}`;
-
-        // order seller
-        let addOrderSeller = await this.prisma.orderSeller.create({
-          data: {
-            orderId: orderDetails.id,
-            orderNo: orderDetails.orderNo,
-            sellerOrderNo: sellerOrderNo,
-            amount: productList.filter(item => item.sellerId === sellerId).reduce((acc, item) => acc + (parseFloat(item.offerPrice) * item.quantity), 0),
-            purchasedAmount: productList.filter(item => item.sellerId === sellerId).reduce((acc, item) => acc + (parseFloat(item.purchasedPrice) * item.quantity), 0),
-            sellerId: sellerId,
-          }
-        });
-
-        // check and create shipping
-        let newOrderShipping;
-        if (isShipping === true) {
-          const shippingData = payload.shipping.find(ship => ship.sellerId === sellerId);
-
-          if (shippingData) {
-            newOrderShipping = await this.prisma.orderShipping.create({
-              data: {
-                orderId: orderDetails.id,
-                sellerId: sellerId,
-                orderShippingType: shippingData.orderShippingType,
-                serviceId: shippingData.serviceId || null,
-                shippingDate: new Date(shippingData.shippingDate),
-                shippingCharge: shippingData.shippingCharge || 0,
-                status: "PENDING",
-                fromTime: new Date(shippingData?.fromTime) || null,
-                toTime: new Date(shippingData?.toTime) || null,
-              }
-            });
-          }
         }
 
-        //order products
-        const productListForSeller = productList.filter(item => item.sellerId === sellerId);
-        let cartOrder: any = {};
-        for (let product of productListForSeller) {
-
-          if (
-            product.orderProductType === 'SERVICE' &&
-            product.serviceId
-          ) {
-            const { serviceConfirmType } = await this.prisma.service.findUnique({
-              where: { id: product.serviceId },
-              select: { serviceConfirmType: true },
-            }) || {};
-
-            if (serviceConfirmType === 'AUTO') {
-              product.orderProductStatus = 'CONFIRMED';
-            }
-          }
-
-          let orderProduct = await this.prisma.orderProducts.create({
+        // 4. Create EMI record if applicable
+        if (payload?.paymentType === 'EMI') {
+          const nextEmiDueDate = new Date();
+          nextEmiDueDate.setDate(nextEmiDueDate.getDate() + 30);
+          await tx.orderEMI.create({
             data: {
-              userId: userId,
-              orderNo: orderDetails.orderNo,
-              sellerOrderNo: sellerOrderNo, // Use the generated sellerOrderNo
               orderId: orderDetails.id,
-              orderSellerId: addOrderSeller.id,
-              productPriceId: product.productPriceId,
-              productId: product.productId,
+              emiInstallmentCount: payload?.emiInstallmentCount,
+              emiInstallmentAmount: payload?.emiInstallmentAmount,
+              emiInstallmentAmountCents: payload?.emiInstallmentAmountCents,
+              emiStartDate: new Date(),
+              emiInstallmentsPaid: 1,
+              emiStatus: 'ONGOING',
+              nextEmiDueDate: nextEmiDueDate,
+            },
+          });
+        }
 
-              serviceId: product.serviceId,
-              serviceFeatures: product.breakdown,
+        // 5. Create OrderSeller, OrderShipping, OrderProducts per seller
+        let cartOrder: any = {};
+        for (const sellerId of uniqueSellerIds) {
+          const sellerOrderNo = `Ords_${randomstring.generate({ length: 12, charset: 'alphanumeric' })}`;
 
-              purchasePrice: product.purchasedPrice,
-              salePrice: product.offerPrice,
-
-              sellerId: product.sellerId,
-              orderQuantity: product.quantity,
-              orderProductDate: new Date(),
-
-              breakdown: product.breakdown,
-              customerPay: product.customerPay,
-              cashbackToCustomer: product.cashbackToCustomer,
-              sellerReceives: product.sellerReceives,
-              platformFee: product.platformProfit,
-
-              object: product.object,
-              orderShippingId: newOrderShipping?.id || undefined,
-              orderProductType: product.orderProductType,
-              orderProductStatus: product?.orderProductStatus,
-            }
+          const addOrderSeller = await tx.orderSeller.create({
+            data: {
+              orderId: orderDetails.id,
+              orderNo: orderDetails.orderNo,
+              sellerOrderNo: sellerOrderNo,
+              amount: productList.filter(item => item.sellerId === sellerId).reduce((acc, item) => acc + (parseFloat(item.offerPrice) * item.quantity), 0),
+              purchasedAmount: productList.filter(item => item.sellerId === sellerId).reduce((acc, item) => acc + (parseFloat(item.purchasedPrice) * item.quantity), 0),
+              sellerId: sellerId,
+            },
           });
 
-          cartOrder[product.cartId] = orderProduct.id // map cartId to orderId
-        }
-        
-
-        if (cartProductServiceRelation.length > 0) {
-          for (let relation of cartProductServiceRelation) {
-            const orderProductId = cartOrder[relation.cartId];
-            const relatedOrderProductId = relation.relatedCartId ? cartOrder[relation.relatedCartId] : null;
-          
-            if (orderProductId) {
-              await this.prisma.orderProductService.create({
+          // Create shipping record
+          let newOrderShipping;
+          if (isShipping === true) {
+            const shippingData = payload.shipping.find(ship => ship.sellerId === sellerId);
+            if (shippingData) {
+              newOrderShipping = await tx.orderShipping.create({
                 data: {
-                  productId: relation.productId,
-                  serviceId: relation.serviceId,
-                  orderProductId: orderProductId,
-                  relatedOrderProductId: relatedOrderProductId,
-                  orderProductType: relation.cartType // "product" or "service"
-                }
+                  orderId: orderDetails.id,
+                  sellerId: sellerId,
+                  orderShippingType: shippingData.orderShippingType,
+                  serviceId: shippingData.serviceId || null,
+                  shippingDate: new Date(shippingData.shippingDate),
+                  shippingCharge: shippingData.shippingCharge || 0,
+                  status: 'PENDING',
+                  fromTime: new Date(shippingData?.fromTime) || null,
+                  toTime: new Date(shippingData?.toTime) || null,
+                },
               });
             }
           }
-        }
-      }
 
-      // order Billing address
-      await this.prisma.orderAddress.create({
-        data: {
-          orderId: orderDetails.id,
-          firstName: payload?.firstName,
-          lastName: payload?.lastName,
-          email: payload?.email,
-          cc: payload?.cc,
-          phone: payload?.phone,
-          address: payload?.billingAddress,
-          city: payload?.billingCity,
-          province: payload?.billingProvince,
-          country: payload?.billingCountry,
-          postCode: payload?.billingPostCode,
-          addressType: 'BILLING',
-          countryId: payload?.countryId,
-          stateId: payload?.stateId,
-          cityId: payload?.cityId,
-          town: payload?.town,
-        }
-      });
+          // Create order products for this seller
+          const productListForSeller = productList.filter(item => item.sellerId === sellerId);
+          for (const product of productListForSeller) {
+            // Check service auto-confirm
+            if (product.orderProductType === 'SERVICE' && product.serviceId) {
+              const svc = await tx.service.findUnique({
+                where: { id: product.serviceId },
+                select: { serviceConfirmType: true },
+              });
+              if (svc?.serviceConfirmType === 'AUTO') {
+                product.orderProductStatus = 'CONFIRMED';
+              }
+            }
 
-      // order shipping address
-      await this.prisma.orderAddress.create({
-        data: {
-          orderId: orderDetails.id,
-          firstName: payload?.firstName,
-          lastName: payload?.lastName,
-          email: payload?.email,
-          cc: payload?.cc,
-          phone: payload?.phone,
-          address: payload?.shippingAddress,
-          city: payload?.shippingCity,
-          province: payload?.shippingProvince,
-          country: payload?.shippingCountry,
-          postCode: payload?.shippingPostCode,
-          addressType: 'SHIPPING',
-          countryId: payload?.countryId,
-          stateId: payload?.stateId,
-          cityId: payload?.cityId,
-          town: payload?.town,
-        }
-      });
+            const orderProduct = await tx.orderProducts.create({
+              data: {
+                userId: userId,
+                orderNo: orderDetails.orderNo,
+                sellerOrderNo: sellerOrderNo,
+                orderId: orderDetails.id,
+                orderSellerId: addOrderSeller.id,
+                productPriceId: product.productPriceId,
+                productId: product.productId,
+                serviceId: product.serviceId,
+                serviceFeatures: product.breakdown,
+                purchasePrice: product.purchasedPrice,
+                salePrice: product.offerPrice,
+                sellerId: product.sellerId,
+                orderQuantity: product.quantity,
+                orderProductDate: new Date(),
+                breakdown: product.breakdown,
+                customerPay: product.customerPay,
+                cashbackToCustomer: product.cashbackToCustomer,
+                sellerReceives: product.sellerReceives,
+                platformFee: product.platformProfit,
+                object: product.object,
+                orderShippingId: newOrderShipping?.id || undefined,
+                orderProductType: product.orderProductType,
+                orderProductStatus: product?.orderProductStatus || 'PLACED',
+              },
+            });
 
-      // Create Transaction Paymob (only for payment gateway, not wallet)
-      let newTransaction: any = null;
-      if (payload?.paymentMethod !== 'WALLET') {
-        newTransaction = await this.prisma.transactionPaymob.create({
+            cartOrder[product.cartId] = orderProduct.id;
+          }
+
+          // Create order product service relations
+          if (cartProductServiceRelation.length > 0) {
+            for (const relation of cartProductServiceRelation) {
+              const orderProductId = cartOrder[relation.cartId];
+              const relatedOrderProductId = relation.relatedCartId ? cartOrder[relation.relatedCartId] : null;
+              if (orderProductId) {
+                await tx.orderProductService.create({
+                  data: {
+                    productId: relation.productId,
+                    serviceId: relation.serviceId,
+                    orderProductId: orderProductId,
+                    relatedOrderProductId: relatedOrderProductId,
+                    orderProductType: relation.cartType,
+                  },
+                });
+              }
+            }
+          }
+        }
+
+        // 6. Create billing address
+        await tx.orderAddress.create({
           data: {
-            userId: userId,
             orderId: orderDetails.id,
-            transactionStatus: 'PENDING',
-            success: false,
-            transactionType: payload?.paymentType || 'DIRECT',
-            amount: payload?.paymentType === 'ADVANCE' ? payload?.amount : totalCustomerPay
-          }
+            firstName: payload?.firstName,
+            lastName: payload?.lastName,
+            email: payload?.email,
+            cc: payload?.cc,
+            phone: payload?.phone,
+            address: payload?.billingAddress,
+            city: payload?.billingCity,
+            province: payload?.billingProvince,
+            country: payload?.billingCountry,
+            postCode: payload?.billingPostCode,
+            addressType: 'BILLING',
+            countryId: payload?.countryId,
+            stateId: payload?.stateId,
+            cityId: payload?.cityId,
+            town: payload?.town,
+          },
         });
 
-        let updateOrderDetail = await this.prisma.order.update({
-          where: { id: orderDetails.id },
+        // 7. Create shipping address
+        await tx.orderAddress.create({
           data: {
-            transactionId: newTransaction.id  // Only for payment gateway transactions
-          }
+            orderId: orderDetails.id,
+            firstName: payload?.firstName,
+            lastName: payload?.lastName,
+            email: payload?.email,
+            cc: payload?.cc,
+            phone: payload?.phone,
+            address: payload?.shippingAddress,
+            city: payload?.shippingCity,
+            province: payload?.shippingProvince,
+            country: payload?.shippingCountry,
+            postCode: payload?.shippingPostCode,
+            addressType: 'SHIPPING',
+            countryId: payload?.countryId,
+            stateId: payload?.stateId,
+            cityId: payload?.cityId,
+            town: payload?.town,
+          },
         });
+
+        // 8. Create payment transaction (only for non-wallet payments)
+        let newTransaction: any = null;
+        if (payload?.paymentMethod !== 'WALLET') {
+          newTransaction = await tx.transactionPaymob.create({
+            data: {
+              userId: userId,
+              orderId: orderDetails.id,
+              transactionStatus: 'PENDING',
+              success: false,
+              transactionType: payload?.paymentType || 'DIRECT',
+              amount: payload?.paymentType === 'ADVANCE' ? payload?.amount : totalCustomerPay,
+            },
+          });
+
+          await tx.order.update({
+            where: { id: orderDetails.id },
+            data: { transactionId: newTransaction.id },
+          });
+        }
+
+        return { orderDetails, newTransaction, walletTransactionId };
+      }, { timeout: 30000 });
+
+      // ================================================================
+      // POST-TRANSACTION: Cart cleanup + notifications (safe to fail)
+      // ================================================================
+
+      // Delete only the ordered cart items (not ALL user carts)
+      try {
+        const orderedCartIds = [
+          ...(payload.cartIds || []),
+          ...(payload.serviceCartIds || []),
+        ];
+        if (orderedCartIds.length > 0) {
+          await this.prisma.cartServiceFeature.deleteMany({
+            where: { cartId: { in: orderedCartIds } },
+          });
+          await this.prisma.cartProductService.deleteMany({
+            where: { cartId: { in: orderedCartIds } },
+          });
+          await this.prisma.cart.deleteMany({
+            where: { id: { in: orderedCartIds } },
+          });
+        }
+      } catch (cartError) {
+        // Cart cleanup failure should not fail the order
       }
 
-      // Step 1: Find all cart IDs for the user
-      const cartIds = await this.prisma.cart.findMany({
-        where: { userId },
-        select: { id: true },
-      });
-      const cartIdList = cartIds.map(c => c.id);
+      const { orderDetails, newTransaction } = txResult;
 
-      // Step 2: Delete from CartServiceFeature (child)
-      await this.prisma.cartServiceFeature.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
-
-      // Step 3: Delete from CartProductService (child)
-      await this.prisma.cartProductService.deleteMany({
-        where: {
-          cartId: { in: cartIdList },
-        },
-      });
-
-      // Step 4: Delete from Cart (parent)
-      await this.prisma.cart.deleteMany({
-        where: {
-          userId,
-        },
-      });
-
-      // Fetch updated order details with walletTransactionId
+      // Fetch updated order details
       const updatedOrderDetails = await this.prisma.order.findUnique({
         where: { id: orderDetails.id },
         select: {
@@ -826,28 +801,25 @@ export class OrderService {
           orderNo: true,
           paymentMethod: true,
           transactionId: true,
-          walletTransactionId: true as any, // Type assertion for new field
+          walletTransactionId: true as any,
           orderStatus: true,
           totalPrice: true,
           totalCustomerPay: true,
           createdAt: true,
-        } as any
+        } as any,
       }) as any;
 
-      // Send notifications to vendors/sellers about the new order
+      // Send notifications (non-blocking)
       try {
-        // Get buyer name for notification
-        const buyerName = userDetail?.firstName 
+        const buyerName = userDetail?.firstName
           ? `${userDetail.firstName} ${userDetail.lastName || ''}`.trim()
           : 'A customer';
 
         for (const sellerId of uniqueSellerIds) {
-          // Get seller's order products count for this order
           const sellerOrderProducts = productList.filter(item => item.sellerId === sellerId);
           const productCount = sellerOrderProducts.length;
           const productText = productCount === 1 ? 'product' : 'products';
 
-          // Create notification for seller
           await this.notificationService.createNotification({
             userId: sellerId,
             type: 'ORDER',
@@ -865,7 +837,6 @@ export class OrderService {
           });
         }
 
-        // Also notify the buyer about successful order placement
         await this.notificationService.createNotification({
           userId: userId,
           type: 'ORDER',
@@ -886,7 +857,7 @@ export class OrderService {
         status: true,
         message: 'Created Successfully',
         message1: invalidProducts.length > 0 ? "Some products are not available for your trade role" : "Fetch Successfully",
-        data: updatedOrderDetails || orderDetails, // Return updated order with walletTransactionId
+        data: updatedOrderDetails || orderDetails,
         data1: productList,
         totalPrice,
         totalPurchasedPrice,
@@ -896,7 +867,7 @@ export class OrderService {
         totalCustomerPay: totalCustomerPay,
         totalPlatformFee: totalPlatformFee,
         totalCashbackToCustomer: totalCashbackToCustomer,
-        newTransaction: newTransaction || null // Handle wallet payments (no Paymob transaction)
+        newTransaction: newTransaction || null,
       };
 
     } catch (error) {
@@ -2264,6 +2235,41 @@ export class OrderService {
         data: { orderProductStatus: status }
       });
 
+      // Record delivery event for timeline tracking
+      await this.createDeliveryEvent({
+        orderProductId,
+        orderShippingId: existOrderProduct.orderShippingId,
+        event: status,
+        actor: 'SELLER',
+        note: `Status updated to ${status}`,
+      });
+
+      // Handle PICKUP orders: generate pickup code when CONFIRMED
+      if (status === 'CONFIRMED' && existOrderProduct.orderShippingId) {
+        const shipping = await this.prisma.orderShipping.findUnique({
+          where: { id: existOrderProduct.orderShippingId },
+        });
+        if (shipping?.orderShippingType === 'PICKUP') {
+          await this.generatePickupCode(orderProductId, existOrderProduct.sellerId);
+        }
+      }
+
+      // Handle SELLERDROP: set auto-confirm timer when DELIVERED
+      if (status === 'DELIVERED' && existOrderProduct.orderShippingId) {
+        const shipping = await this.prisma.orderShipping.findUnique({
+          where: { id: existOrderProduct.orderShippingId },
+        });
+        if (shipping?.orderShippingType === 'SELLERDROP') {
+          const autoConfirmDays = parseInt(process.env.DELIVERY_AUTO_CONFIRM_DAYS || '7');
+          const autoConfirmAt = new Date();
+          autoConfirmAt.setDate(autoConfirmAt.getDate() + autoConfirmDays);
+          await this.prisma.orderShipping.update({
+            where: { id: existOrderProduct.orderShippingId },
+            data: { autoConfirmAt },
+          });
+        }
+      }
+
       // Get order details for notification
       let orderForNotification = null;
       if (existOrderProduct.orderId) {
@@ -2289,9 +2295,17 @@ export class OrderService {
               title: 'Order Shipped',
               message: `Your order ${orderNo} has been shipped`
             },
+            'OFD': {
+              title: 'Out For Delivery',
+              message: `Your order ${orderNo} is out for delivery`
+            },
             'DELIVERED': {
               title: 'Order Delivered',
-              message: `Your order ${orderNo} has been delivered`
+              message: `Your order ${orderNo} has been delivered. Please confirm receipt.`
+            },
+            'RECEIVED': {
+              title: 'Order Received',
+              message: `Receipt confirmed for order ${orderNo}`
             },
             'CANCELLED': {
               title: 'Order Cancelled',
@@ -2407,6 +2421,31 @@ export class OrderService {
             }
           } catch (error) {
             // Log error but don't fail the cancellation
+          }
+        }
+
+        // Handle non-wallet payment refunds (Paymob)
+        if (!order?.walletTransactionId && order?.paymentMethod !== 'WALLET') {
+          try {
+            const refundAmount = Number(existOrderProduct.customerPay || existOrderProduct.salePrice || 0);
+            const txn = await this.prisma.transactionPaymob.findFirst({
+              where: { orderId: order.id, success: true },
+            });
+            if (txn?.paymobTransactionId) {
+              // Attempt Paymob refund
+              await this.refundPaymobTransaction(
+                txn.paymobTransactionId,
+                (txn as any).amountCents || Math.round(refundAmount * 1000),
+              );
+            } else {
+              // Mark for manual refund (AmwalPay or other gateways)
+              await this.prisma.transactionPaymob.updateMany({
+                where: { orderId: order.id },
+                data: { transactionStatus: 'REFUND_PENDING' },
+              });
+            }
+          } catch (refundError) {
+            // Log but don't fail the cancellation
           }
         }
       }
@@ -4003,6 +4042,10 @@ export class OrderService {
               return 'SHIPPED';
             case 'delivered':
               return 'DELIVERED';
+            case 'ofd':
+              return 'OFD';
+            case 'received':
+              return 'RECEIVED';
             case 'cancelled':
               return 'CANCELLED';
             default:
@@ -4435,6 +4478,10 @@ export class OrderService {
             return 'SHIPPED';
           case 'delivered':
             return 'DELIVERED';
+          case 'ofd':
+            return 'OFD';
+          case 'received':
+            return 'RECEIVED';
           case 'cancelled':
             return 'CANCELLED';
           case 'refunded':
@@ -4531,6 +4578,31 @@ export class OrderService {
             }
           } catch (error) {
             // Log error but don't fail the cancellation
+          }
+        }
+
+        // Handle non-wallet payment refunds (Paymob)
+        if (!order.walletTransactionId && order.paymentMethod !== 'WALLET') {
+          try {
+            const refundAmount = Number(orderProduct.customerPay || orderProduct.salePrice || 0);
+            const txn = await this.prisma.transactionPaymob.findFirst({
+              where: { orderId: order.id, success: true },
+            });
+            if (txn?.paymobTransactionId) {
+              // Attempt Paymob refund
+              await this.refundPaymobTransaction(
+                txn.paymobTransactionId,
+                (txn as any).amountCents || Math.round(refundAmount * 1000),
+              );
+            } else {
+              // Mark for manual refund (AmwalPay or other gateways)
+              await this.prisma.transactionPaymob.updateMany({
+                where: { orderId: order.id },
+                data: { transactionStatus: 'REFUND_PENDING' },
+              });
+            }
+          } catch (refundError) {
+            // Log but don't fail the cancellation
           }
         }
       }
@@ -4655,8 +4727,55 @@ export class OrderService {
         }
       });
 
-      // Send notification to customer (you can implement this)
-      // await this.notificationService.sendTrackingUpdateNotification(orderProduct.userId, orderProductId, trackingNumber);
+      // Compute and store carrier tracking URL on OrderShipping
+      if (orderProduct.orderShippingId && carrier && trackingNumber) {
+        const carrierTrackingUrl = this.computeCarrierTrackingUrl(carrier, trackingNumber);
+        await this.prisma.orderShipping.update({
+          where: { id: orderProduct.orderShippingId },
+          data: {
+            carrierCode: carrier?.toLowerCase() || null,
+            carrierTrackingUrl: carrierTrackingUrl,
+          },
+        });
+      }
+
+      // Create delivery event
+      await this.createDeliveryEvent({
+        orderProductId: parseInt(orderProductId),
+        orderShippingId: orderProduct.orderShippingId,
+        event: 'TRACKING_ADDED',
+        actor: 'SELLER',
+        actorUserId: vendorId,
+        note: `Tracking added: ${carrier} - ${trackingNumber}`,
+        metadata: { trackingNumber, carrier, notes },
+      });
+
+      // Send notification to buyer about tracking update
+      if (orderProduct.userId) {
+        try {
+          const order = await this.prisma.order.findUnique({
+            where: { id: orderProduct.orderId },
+            select: { orderNo: true },
+          });
+          const carrierTrackingUrl = this.computeCarrierTrackingUrl(carrier, trackingNumber);
+          await this.notificationService.createNotification({
+            userId: orderProduct.userId,
+            type: 'SHIPMENT',
+            title: 'Tracking Information Added',
+            message: `Tracking number ${trackingNumber} (${carrier}) has been added for your order ${order?.orderNo || ''}`,
+            data: {
+              orderId: orderProduct.orderId,
+              orderNo: order?.orderNo,
+              orderProductId: parseInt(orderProductId),
+              trackingNumber,
+              carrier,
+              carrierTrackingUrl,
+            },
+            link: `/my-orders/${orderProductId}`,
+            icon: 'order',
+          });
+        } catch (e) { /* notification failure is non-blocking */ }
+      }
 
       return {
         status: true,
@@ -4665,6 +4784,7 @@ export class OrderService {
           orderId: orderProductId,
           trackingNumber,
           carrier,
+          carrierTrackingUrl: this.computeCarrierTrackingUrl(carrier, trackingNumber),
           addedAt: new Date()
         }
       };
@@ -4677,5 +4797,676 @@ export class OrderService {
       };
     }
   }
-  
+
+  /**
+   * Refund a Paymob transaction directly via Paymob's void/refund API.
+   * Standalone helper to avoid circular dependency with PaymentService.
+   */
+  private async refundPaymobTransaction(paymobTransactionId: string, amountCents: number): Promise<any> {
+    try {
+      const AUTH_TOKEN = await this.helperService.getAuthToken();
+      const response = await axios.post(
+        'https://oman.paymob.com/api/acceptance/void_refund/refund',
+        { transaction_id: paymobTransactionId, amount_cents: amountCents },
+        { headers: { 'Authorization': `Bearer ${AUTH_TOKEN}`, 'Content-Type': 'application/json' } }
+      );
+      return { status: true, data: response.data };
+    } catch (error: any) {
+      return { status: false, error: error?.response?.data || error.message };
+    }
+  }
+
+  // ================================================================
+  // INVOICE GENERATION
+  // ================================================================
+
+  /**
+   * Generate a printable HTML invoice for an order product.
+   * Returns HTML string that can be rendered in browser and printed as PDF.
+   */
+  async generateInvoiceHtml(req: any, query: any): Promise<string | any> {
+    try {
+      const { orderProductId } = query;
+      if (!orderProductId) {
+        return { status: false, message: 'orderProductId is required' };
+      }
+
+      const op = await this.prisma.orderProducts.findUnique({
+        where: { id: parseInt(orderProductId) },
+        include: {
+          orderProduct_order: {
+            include: { order_orderAddress: true },
+          },
+          orderProduct_product: true,
+          orderProduct_productPrice: {
+            include: {
+              adminDetail: {
+                select: { firstName: true, lastName: true, userProfile: { select: { companyName: true } } },
+              },
+            },
+          },
+          orderShippingDetail: true,
+          service: true,
+        },
+      });
+
+      if (!op) {
+        return { status: false, message: 'Order not found' };
+      }
+
+      const order = op.orderProduct_order;
+      const product = op.orderProduct_product;
+      const shipping = op.orderShippingDetail;
+      const seller = op.orderProduct_productPrice?.adminDetail;
+      const shippingAddr = order?.order_orderAddress?.find((a: any) => a.addressType === 'SHIPPING');
+      const billingAddr = order?.order_orderAddress?.find((a: any) => a.addressType === 'BILLING');
+
+      const productName = product?.productName || op.service?.serviceName || 'Service';
+      const sellerName = (seller?.userProfile as any)?.[0]?.companyName || `${seller?.firstName || ''} ${seller?.lastName || ''}`.trim() || 'Seller';
+      const unitPrice = Number(op.salePrice || 0);
+      const qty = op.orderQuantity || 1;
+      const subtotal = unitPrice * qty;
+      const discount = Number(order?.totalDiscount || 0);
+      const shippingCharge = Number(shipping?.shippingCharge || 0);
+      const total = Number(op.customerPay || subtotal);
+
+      const formatAddr = (addr: any) => {
+        if (!addr) return 'N/A';
+        return [addr.firstName, addr.lastName].filter(Boolean).join(' ') + '<br>' +
+          [addr.address, addr.town, addr.city, addr.province, addr.country, addr.postCode].filter(Boolean).join(', ') +
+          (addr.phone ? '<br>' + addr.phone : '');
+      };
+
+      return `<!DOCTYPE html>
+<html dir="ltr" lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice - ${order?.orderNo || ''}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; border-bottom: 2px solid #1a1a2e; padding-bottom: 20px; }
+  .header h1 { font-size: 28px; color: #1a1a2e; }
+  .header .meta { text-align: right; }
+  .header .meta p { margin: 2px 0; color: #666; }
+  .addresses { display: flex; gap: 40px; margin-bottom: 30px; }
+  .addresses .box { flex: 1; }
+  .addresses h3 { font-size: 12px; text-transform: uppercase; color: #999; margin-bottom: 5px; }
+  .addresses p { line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #666; border-bottom: 2px solid #ddd; }
+  td { padding: 10px 12px; border-bottom: 1px solid #eee; }
+  .text-right { text-align: right; }
+  .totals { margin-left: auto; width: 280px; }
+  .totals tr td { padding: 6px 12px; }
+  .totals .total-row { font-weight: bold; font-size: 16px; border-top: 2px solid #1a1a2e; }
+  .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 12px; }
+  @media print { body { padding: 20px; } .no-print { display: none; } }
+</style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:20px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 30px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Print / Save as PDF</button>
+  </div>
+  <div class="header">
+    <div>
+      <h1>INVOICE</h1>
+      <p style="color:#666;">Ultrasooq Marketplace</p>
+    </div>
+    <div class="meta">
+      <p><strong>Invoice #:</strong> ${order?.orderNo || 'N/A'}</p>
+      <p><strong>Date:</strong> ${order?.orderDate ? new Date(order.orderDate).toLocaleDateString('en-GB') : 'N/A'}</p>
+      <p><strong>Status:</strong> ${op.orderProductStatus}</p>
+      <p><strong>Seller:</strong> ${sellerName}</p>
+    </div>
+  </div>
+  <div class="addresses">
+    <div class="box">
+      <h3>Shipping Address</h3>
+      <p>${formatAddr(shippingAddr)}</p>
+    </div>
+    <div class="box">
+      <h3>Billing Address</h3>
+      <p>${formatAddr(billingAddr)}</p>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th class="text-right">Unit Price</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>${productName}</td>
+        <td class="text-right">${unitPrice.toFixed(3)} OMR</td>
+        <td class="text-right">${qty}</td>
+        <td class="text-right">${subtotal.toFixed(3)} OMR</td>
+      </tr>
+    </tbody>
+  </table>
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="text-right">${subtotal.toFixed(3)} OMR</td></tr>
+    ${discount > 0 ? `<tr><td>Discount</td><td class="text-right">-${discount.toFixed(3)} OMR</td></tr>` : ''}
+    ${shippingCharge > 0 ? `<tr><td>Shipping</td><td class="text-right">${shippingCharge.toFixed(3)} OMR</td></tr>` : ''}
+    <tr class="total-row"><td>Total</td><td class="text-right">${total.toFixed(3)} OMR</td></tr>
+  </table>
+  <div class="footer">
+    <p>Thank you for shopping with Ultrasooq</p>
+    <p>This is a computer-generated invoice and does not require a signature.</p>
+  </div>
+</body>
+</html>`;
+    } catch (error) {
+      return { status: false, message: 'Error generating invoice', error: getErrorMessage(error) };
+    }
+  }
+
+  // ================================================================
+  // DELIVERY MANAGEMENT METHODS
+  // ================================================================
+
+  /**
+   * Carrier tracking URL templates for known carriers
+   */
+  private static readonly CARRIER_TRACKING_URLS: Record<string, string> = {
+    aramex: 'https://www.aramex.com/us/en/track/shipments?q={tracking}',
+    dhl: 'https://www.dhl.com/en/express/tracking.html?AWB={tracking}',
+    fedex: 'https://www.fedex.com/fedextrack/?trknbr={tracking}',
+    ups: 'https://www.ups.com/track?tracknum={tracking}',
+    smsa: 'https://www.smsaexpress.com/trackingdetails?tracknumbers={tracking}',
+    zajil: 'https://www.zajil.com/en/tracking?tracking_number={tracking}',
+  };
+
+  private computeCarrierTrackingUrl(carrier: string, trackingNumber: string): string | null {
+    const template = OrderService.CARRIER_TRACKING_URLS[carrier?.toLowerCase()];
+    return template ? template.replace('{tracking}', trackingNumber) : null;
+  }
+
+  /**
+   * Buyer confirms receipt of delivered order (DELIVERED → RECEIVED)
+   */
+  async confirmReceipt(req: any, payload: any) {
+    try {
+      const userId = req?.user?.id;
+      const { orderProductId } = payload;
+
+      if (!orderProductId) {
+        return { status: false, message: 'orderProductId is required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: Number(orderProductId) },
+        include: { orderShippingDetail: true },
+      });
+
+      if (!orderProduct) {
+        return { status: false, message: 'Order product not found' };
+      }
+
+      // Verify buyer owns this order
+      if (orderProduct.userId !== userId) {
+        return { status: false, message: 'Unauthorized: you do not own this order' };
+      }
+
+      if (orderProduct.orderProductStatus !== 'DELIVERED') {
+        return { status: false, message: 'Order must be in DELIVERED status to confirm receipt' };
+      }
+
+      // Update to RECEIVED
+      await this.prisma.orderProducts.update({
+        where: { id: Number(orderProductId) },
+        data: { orderProductStatus: 'RECEIVED' },
+      });
+
+      // Create delivery event
+      await this.prisma.deliveryEvent.create({
+        data: {
+          orderProductId: Number(orderProductId),
+          orderShippingId: orderProduct.orderShippingId,
+          event: 'RECEIVED',
+          actor: 'BUYER',
+          actorUserId: userId,
+          note: 'Buyer confirmed receipt',
+        },
+      });
+
+      // Clear autoConfirmAt since buyer confirmed manually
+      if (orderProduct.orderShippingId) {
+        await this.prisma.orderShipping.update({
+          where: { id: orderProduct.orderShippingId },
+          data: { autoConfirmAt: null },
+        });
+      }
+
+      // Notify seller
+      if (orderProduct.sellerId) {
+        try {
+          await this.notificationService.createNotification({
+            userId: orderProduct.sellerId,
+            type: 'SHIPMENT',
+            title: 'Delivery Confirmed',
+            message: `Buyer has confirmed receipt of order ${orderProduct.orderNo}`,
+            data: {
+              orderId: orderProduct.orderId,
+              orderNo: orderProduct.orderNo,
+              orderProductId: orderProduct.id,
+              status: 'RECEIVED',
+            },
+            link: `/seller-orders/${orderProduct.id}`,
+            icon: 'order',
+          });
+        } catch (e) { /* notification failure should not fail the operation */ }
+      }
+
+      return { status: true, message: 'Receipt confirmed successfully' };
+    } catch (error) {
+      return { status: false, message: 'Error confirming receipt', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Get delivery event timeline for an order product
+   */
+  async getDeliveryTimeline(req: any, query: any) {
+    try {
+      const { orderProductId } = query;
+
+      if (!orderProductId) {
+        return { status: false, message: 'orderProductId is required' };
+      }
+
+      const events = await this.prisma.deliveryEvent.findMany({
+        where: { orderProductId: Number(orderProductId) },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      return { status: true, message: 'Timeline fetched successfully', data: events };
+    } catch (error) {
+      return { status: false, message: 'Error fetching timeline', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Seller uploads proof of delivery photo
+   */
+  async uploadDeliveryProof(req: any, payload: any) {
+    try {
+      const adminId = await this.helperService.getAdminId(req?.user?.id);
+      const { orderProductId, proofUrl } = payload;
+
+      if (!orderProductId || !proofUrl) {
+        return { status: false, message: 'orderProductId and proofUrl are required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: Number(orderProductId) },
+        include: { orderShippingDetail: true },
+      });
+
+      if (!orderProduct) {
+        return { status: false, message: 'Order product not found' };
+      }
+
+      if (orderProduct.sellerId !== adminId) {
+        return { status: false, message: 'Unauthorized: you are not the seller for this order' };
+      }
+
+      if (orderProduct.orderShippingId) {
+        await this.prisma.orderShipping.update({
+          where: { id: orderProduct.orderShippingId },
+          data: { proofOfDeliveryUrl: proofUrl },
+        });
+      }
+
+      // Create delivery event
+      await this.prisma.deliveryEvent.create({
+        data: {
+          orderProductId: Number(orderProductId),
+          orderShippingId: orderProduct.orderShippingId,
+          event: 'DELIVERY_PROOF_UPLOADED',
+          actor: 'SELLER',
+          actorUserId: req?.user?.id,
+          metadata: { photoUrl: proofUrl },
+        },
+      });
+
+      return { status: true, message: 'Delivery proof uploaded successfully' };
+    } catch (error) {
+      return { status: false, message: 'Error uploading delivery proof', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Get pickup code for buyer
+   */
+  async getPickupCode(req: any, query: any) {
+    try {
+      const userId = req?.user?.id;
+      const { orderProductId } = query;
+
+      if (!orderProductId) {
+        return { status: false, message: 'orderProductId is required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: Number(orderProductId) },
+      });
+
+      if (!orderProduct || orderProduct.userId !== userId) {
+        return { status: false, message: 'Order product not found or unauthorized' };
+      }
+
+      const pickupCode = await this.prisma.pickupCode.findUnique({
+        where: { orderProductId: Number(orderProductId) },
+      });
+
+      if (!pickupCode) {
+        return { status: false, message: 'No pickup code found for this order' };
+      }
+
+      return { status: true, message: 'Pickup code fetched', data: pickupCode };
+    } catch (error) {
+      return { status: false, message: 'Error fetching pickup code', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Seller verifies pickup code to complete the order
+   */
+  async confirmPickup(req: any, payload: any) {
+    try {
+      const adminId = await this.helperService.getAdminId(req?.user?.id);
+      const { orderProductId, code } = payload;
+
+      if (!orderProductId || !code) {
+        return { status: false, message: 'orderProductId and code are required' };
+      }
+
+      const pickupCode = await this.prisma.pickupCode.findUnique({
+        where: { orderProductId: Number(orderProductId) },
+      });
+
+      if (!pickupCode) {
+        return { status: false, message: 'No pickup code found' };
+      }
+
+      if (pickupCode.status !== 'PENDING') {
+        return { status: false, message: `Pickup code is ${pickupCode.status}` };
+      }
+
+      if (pickupCode.code !== code.toUpperCase()) {
+        return { status: false, message: 'Invalid pickup code' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: Number(orderProductId) },
+      });
+
+      if (!orderProduct || orderProduct.sellerId !== adminId) {
+        return { status: false, message: 'Unauthorized' };
+      }
+
+      // Mark as collected
+      await this.prisma.pickupCode.update({
+        where: { id: pickupCode.id },
+        data: {
+          status: 'COLLECTED',
+          collectedAt: new Date(),
+          collectedByUserId: req?.user?.id,
+        },
+      });
+
+      // Update order status to DELIVERED + RECEIVED (pickup is instant fulfillment)
+      await this.prisma.orderProducts.update({
+        where: { id: Number(orderProductId) },
+        data: { orderProductStatus: 'RECEIVED' },
+      });
+
+      // Create delivery events
+      await this.prisma.deliveryEvent.createMany({
+        data: [
+          {
+            orderProductId: Number(orderProductId),
+            orderShippingId: orderProduct.orderShippingId,
+            event: 'DELIVERED',
+            actor: 'SELLER',
+            actorUserId: req?.user?.id,
+            note: 'Pickup code verified — order collected',
+          },
+          {
+            orderProductId: Number(orderProductId),
+            orderShippingId: orderProduct.orderShippingId,
+            event: 'RECEIVED',
+            actor: 'SYSTEM',
+            note: 'Auto-confirmed on pickup collection',
+          },
+        ],
+      });
+
+      // Notify buyer
+      if (orderProduct.userId) {
+        try {
+          await this.notificationService.createNotification({
+            userId: orderProduct.userId,
+            type: 'SHIPMENT',
+            title: 'Pickup Completed',
+            message: `Your order ${orderProduct.orderNo} has been picked up successfully`,
+            data: {
+              orderId: orderProduct.orderId,
+              orderNo: orderProduct.orderNo,
+              orderProductId: orderProduct.id,
+              status: 'RECEIVED',
+            },
+            link: `/my-orders/${orderProduct.id}`,
+            icon: 'order',
+          });
+        } catch (e) { /* notification failure is non-blocking */ }
+      }
+
+      return { status: true, message: 'Pickup verified successfully' };
+    } catch (error) {
+      return { status: false, message: 'Error confirming pickup', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Seller gets list of pending pickups
+   */
+  async getPendingPickups(req: any, query: any) {
+    try {
+      const adminId = await this.helperService.getAdminId(req?.user?.id);
+      const page = parseInt(query?.page) || 1;
+      const limit = parseInt(query?.limit) || 20;
+      const skip = (page - 1) * limit;
+
+      const [pickups, total] = await Promise.all([
+        this.prisma.pickupCode.findMany({
+          where: {
+            status: 'PENDING',
+            orderProduct: { sellerId: adminId, status: 'ACTIVE' },
+          },
+          include: {
+            orderProduct: {
+              include: {
+                orderProduct_product: { select: { id: true, productName: true } },
+                orderProduct_order: { select: { id: true, orderNo: true } },
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.pickupCode.count({
+          where: {
+            status: 'PENDING',
+            orderProduct: { sellerId: adminId, status: 'ACTIVE' },
+          },
+        }),
+      ]);
+
+      return {
+        status: true,
+        message: 'Pending pickups fetched',
+        data: pickups,
+        totalCount: total,
+        page,
+        limit,
+      };
+    } catch (error) {
+      return { status: false, message: 'Error fetching pending pickups', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Seller sets pickup window (date/time range)
+   */
+  async setPickupWindow(req: any, payload: any) {
+    try {
+      const adminId = await this.helperService.getAdminId(req?.user?.id);
+      const { orderProductId, pickupWindowStart, pickupWindowEnd } = payload;
+
+      if (!orderProductId) {
+        return { status: false, message: 'orderProductId is required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: Number(orderProductId) },
+      });
+
+      if (!orderProduct || orderProduct.sellerId !== adminId) {
+        return { status: false, message: 'Unauthorized' };
+      }
+
+      const pickupCode = await this.prisma.pickupCode.findUnique({
+        where: { orderProductId: Number(orderProductId) },
+      });
+
+      if (!pickupCode) {
+        return { status: false, message: 'No pickup code found' };
+      }
+
+      await this.prisma.pickupCode.update({
+        where: { id: pickupCode.id },
+        data: {
+          pickupWindowStart: pickupWindowStart ? new Date(pickupWindowStart) : undefined,
+          pickupWindowEnd: pickupWindowEnd ? new Date(pickupWindowEnd) : undefined,
+        },
+      });
+
+      // Notify buyer about pickup window
+      if (orderProduct.userId) {
+        try {
+          await this.notificationService.createNotification({
+            userId: orderProduct.userId,
+            type: 'SHIPMENT',
+            title: 'Pickup Window Set',
+            message: `Your pickup window for order ${orderProduct.orderNo} has been set`,
+            data: {
+              orderId: orderProduct.orderId,
+              orderNo: orderProduct.orderNo,
+              orderProductId: orderProduct.id,
+              pickupWindowStart,
+              pickupWindowEnd,
+            },
+            link: `/my-orders/${orderProduct.id}`,
+            icon: 'order',
+          });
+        } catch (e) { /* notification failure is non-blocking */ }
+      }
+
+      return { status: true, message: 'Pickup window set successfully' };
+    } catch (error) {
+      return { status: false, message: 'Error setting pickup window', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * Generate a pickup code when a PICKUP order reaches CONFIRMED status.
+   * Called internally by status update methods.
+   */
+  async generatePickupCode(orderProductId: number, sellerId: number): Promise<any> {
+    try {
+      const randomstring = require('randomstring');
+      const code = randomstring.generate({ length: 6, charset: 'alphanumeric' }).toUpperCase();
+      const expiryDays = parseInt(process.env.PICKUP_EXPIRY_DAYS || '5');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
+      const pickupCode = await this.prisma.pickupCode.create({
+        data: {
+          orderProductId,
+          code,
+          qrPayload: JSON.stringify({ orderProductId, code, sellerId }),
+          status: 'PENDING',
+          expiresAt,
+        },
+      });
+
+      // Create delivery event
+      await this.prisma.deliveryEvent.create({
+        data: {
+          orderProductId,
+          event: 'PICKUP_READY',
+          actor: 'SYSTEM',
+          note: `Pickup code generated: ${code}`,
+          metadata: { code, expiresAt: expiresAt.toISOString() },
+        },
+      });
+
+      // Notify buyer
+      const orderProduct = await this.prisma.orderProducts.findUnique({
+        where: { id: orderProductId },
+      });
+
+      if (orderProduct?.userId) {
+        try {
+          await this.notificationService.createNotification({
+            userId: orderProduct.userId,
+            type: 'SHIPMENT',
+            title: 'Pickup Code Ready',
+            message: `Your pickup code for order ${orderProduct.orderNo} is: ${code}`,
+            data: {
+              orderId: orderProduct.orderId,
+              orderNo: orderProduct.orderNo,
+              orderProductId,
+              pickupCode: code,
+            },
+            link: `/my-orders/${orderProductId}`,
+            icon: 'order',
+          });
+        } catch (e) { /* notification failure is non-blocking */ }
+      }
+
+      return pickupCode;
+    } catch (error) {
+      console.error('Error generating pickup code:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Create a delivery event record (used by status update methods)
+   */
+  async createDeliveryEvent(data: {
+    orderProductId: number;
+    orderShippingId?: number | null;
+    event: string;
+    actor: string;
+    actorUserId?: number;
+    note?: string;
+    metadata?: any;
+  }) {
+    try {
+      await this.prisma.deliveryEvent.create({ data: data as any });
+    } catch (error) {
+      // Non-blocking — don't fail the parent operation
+      console.error('Error creating delivery event:', error);
+    }
+  }
+
 }

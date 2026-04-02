@@ -1800,25 +1800,32 @@ model OrderSaveCardToken {
 // Relations: orderProductDetail -> OrderProducts[], serviceDetail -> Service.
 // Each seller in a multi-seller order can have a separate shipping record and method.
 model OrderShipping {
-  id                 Int               @id @default(autoincrement())
-  orderId            Int?
-  sellerId           Int?
-  orderShippingType  OrderShippingType
-  serviceId          Int?
-  status             String
-  shippingDate       DateTime?
-  shippingCharge     Decimal?          @db.Decimal(10, 2)
-  deletedAt          DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  receipt            String?
-  fromTime           DateTime?
-  toTime             DateTime?
-  orderProductDetail OrderProducts[]
-  serviceDetail      Service?          @relation(fields: [serviceId], references: [id])
+  id                  Int               @id @default(autoincrement())
+  orderId             Int?
+  sellerId            Int?
+  orderShippingType   OrderShippingType
+  serviceId           Int?
+  status              String
+  shippingDate        DateTime?
+  shippingCharge      Decimal?          @db.Decimal(10, 2)
+  deletedAt           DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  receipt             String?
+  fromTime            DateTime?
+  toTime              DateTime?
+  // Delivery management fields
+  proofOfDeliveryUrl  String?           // S3 URL for delivery proof photo
+  autoConfirmAt       DateTime?         // When to auto-confirm receipt (DELIVERED + N days)
+  carrierCode         String?           // Normalized carrier: "aramex", "dhl", "fedex"
+  carrierTrackingUrl  String?           // Computed tracking URL for buyer
+  orderProductDetail  OrderProducts[]
+  serviceDetail       Service?          @relation(fields: [serviceId], references: [id])
+  deliveryEvents      DeliveryEvent[]
 
   @@index([orderId])
   @@index([sellerId])
+  @@index([autoConfirmAt])
 }
 
 // OrderSeller — Per-seller sub-order summary within a multi-seller order.
@@ -1891,6 +1898,9 @@ model OrderProducts {
   orderProduct_productPrice ProductPrice?         @relation(fields: [productPriceId], references: [id])
   sellerDetail              User?                 @relation("OrderProductsSeller", fields: [sellerId], references: [id])
   service                   Service?              @relation(fields: [serviceId], references: [id])
+  // Delivery management relations
+  deliveryEvents            DeliveryEvent[]
+  pickupCode                PickupCode?
 
   @@index([sellerId, status])
   @@index([orderId])
@@ -1918,6 +1928,49 @@ model OrderProductService {
   service               Service       @relation(fields: [serviceId], references: [id])
 
   @@index([orderProductId])
+}
+
+// DeliveryEvent — Status history timeline for order delivery tracking.
+// Records every status change with actor (SELLER/BUYER/SYSTEM), timestamp, and optional metadata.
+// Enables delivery timeline visualization and audit trail for dispute resolution.
+model DeliveryEvent {
+  id              Int            @id @default(autoincrement())
+  orderProductId  Int
+  orderShippingId Int?
+  event           String         // "CONFIRMED", "SHIPPED", "OFD", "DELIVERED", "RECEIVED", "TRACKING_ADDED", "PICKUP_READY", etc.
+  actor           String         // "SELLER", "BUYER", "SYSTEM", "CARRIER"
+  actorUserId     Int?
+  note            String?
+  metadata        Json?          // { photoUrl, trackingSnapshot, carrierStatus, pickupCode }
+  createdAt       DateTime       @default(now())
+  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
+  orderShipping   OrderShipping? @relation(fields: [orderShippingId], references: [id])
+
+  @@index([orderProductId])
+  @@index([orderShippingId])
+}
+
+// PickupCode — Verification code for in-store pickup orders.
+// Generated when PICKUP order reaches CONFIRMED status. Buyer shows QR/code at store,
+// seller verifies to complete the order. Auto-expires after configurable days.
+model PickupCode {
+  id                Int           @id @default(autoincrement())
+  orderProductId    Int           @unique
+  code              String        // 6-char alphanumeric code
+  qrPayload         String        // JSON: { orderProductId, code, sellerId }
+  status            String        @default("PENDING") // PENDING, COLLECTED, EXPIRED, CANCELLED
+  pickupWindowStart DateTime?
+  pickupWindowEnd   DateTime?
+  expiresAt         DateTime?     // Auto-cancel deadline
+  collectedAt       DateTime?
+  collectedByUserId Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  orderProduct      OrderProducts @relation(fields: [orderProductId], references: [id])
+
+  @@index([code])
+  @@index([status])
+  @@index([expiresAt])
 }
 
 // OrderAddress — Snapshot of billing/shipping address at the time of order placement.

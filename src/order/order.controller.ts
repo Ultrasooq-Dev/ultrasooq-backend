@@ -524,4 +524,85 @@ export class OrderController {
     return this.orderService.addOrderTracking(req, payload);
   }
 
+  /**
+   * Generate and return an HTML invoice for an order product (printable as PDF)
+   */
+  @UseGuards(AuthGuard)
+  @Get('/invoice')
+  async getInvoice(@Request() req, @Query() query: any, @Response() res: any) {
+    const html = await this.orderService.generateInvoiceHtml(req, query);
+    if (typeof html === 'string') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    }
+    return res.status(400).json(html);
+  }
+
+  // ================================================================
+  // DELIVERY MANAGEMENT ENDPOINTS
+  // ================================================================
+
+  /**
+   * Buyer confirms receipt of delivered order (DELIVERED → RECEIVED)
+   */
+  @UseGuards(AuthGuard)
+  @Post('/buyer/confirm-receipt')
+  confirmReceipt(@Request() req, @Body() payload: any) {
+    return this.orderService.confirmReceipt(req, payload);
+  }
+
+  /**
+   * Get delivery event timeline for an order product
+   */
+  @UseGuards(AuthGuard)
+  @Get('/delivery-timeline')
+  getDeliveryTimeline(@Request() req, @Query() query: any) {
+    return this.orderService.getDeliveryTimeline(req, query);
+  }
+
+  /**
+   * Seller uploads proof of delivery photo
+   */
+  @UseGuards(AuthGuard)
+  @Post('/vendor/upload-delivery-proof')
+  uploadDeliveryProof(@Request() req, @Body() payload: any) {
+    return this.orderService.uploadDeliveryProof(req, payload);
+  }
+
+  /**
+   * Buyer gets their pickup code and QR data
+   */
+  @UseGuards(AuthGuard)
+  @Get('/pickup-code')
+  getPickupCode(@Request() req, @Query() query: any) {
+    return this.orderService.getPickupCode(req, query);
+  }
+
+  /**
+   * Seller verifies pickup code to complete order
+   */
+  @UseGuards(AuthGuard)
+  @Post('/vendor/confirm-pickup')
+  confirmPickup(@Request() req, @Body() payload: any) {
+    return this.orderService.confirmPickup(req, payload);
+  }
+
+  /**
+   * Seller gets list of pending pickups
+   */
+  @UseGuards(AuthGuard)
+  @Get('/vendor/pending-pickups')
+  getPendingPickups(@Request() req, @Query() query: any) {
+    return this.orderService.getPendingPickups(req, query);
+  }
+
+  /**
+   * Seller sets pickup window (date/time range)
+   */
+  @UseGuards(AuthGuard)
+  @Patch('/vendor/set-pickup-window')
+  setPickupWindow(@Request() req, @Body() payload: any) {
+    return this.orderService.setPickupWindow(req, payload);
+  }
+
 }

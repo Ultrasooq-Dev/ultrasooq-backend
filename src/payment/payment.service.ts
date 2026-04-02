@@ -427,6 +427,21 @@ export class PaymentService {
    * @returns {Promise<{success: boolean, message: string} | {status: boolean, message: string, error?: any}>}
    */
   async paymobWebhook(payload: any, req: any) {
+    // Verify Paymob webhook signature
+    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+    if (hmacSecret) {
+      const crypto = require('crypto');
+      const hmacReceived = req.query?.hmac;
+      const obj = req.body?.obj;
+      if (obj && hmacReceived) {
+        const concatenated = `${obj.amount_cents}${obj.created_at}${obj.currency}${obj.error_occured}${obj.has_parent_transaction}${obj.id}${obj.integration_id}${obj.is_3d_secure}${obj.is_auth}${obj.is_capture}${obj.is_refunded}${obj.is_standalone_payment}${obj.is_voided}${obj.order?.id || obj.order}${obj.owner}${obj.pending}${obj.source_data?.pan || ''}${obj.source_data?.sub_type || ''}${obj.source_data?.type || ''}${obj.success}`;
+        const calculated = crypto.createHmac('sha512', hmacSecret).update(concatenated).digest('hex');
+        if (calculated !== hmacReceived) {
+          return { status: false, message: 'Invalid webhook signature' };
+        }
+      }
+    }
+
     try {
       try {
       } catch (e) {
@@ -2143,6 +2158,42 @@ export class PaymentService {
         status: false,
         message: 'Error creating AmwalPay wallet config',
         error: getErrorMessage(error)
+      };
+    }
+  }
+
+  /**
+   * Refund a Paymob transaction
+   * Uses Paymob's void/refund API
+   */
+  async refundPaymobTransaction(paymobTransactionId: string, amountCents: number): Promise<any> {
+    try {
+      const AUTH_TOKEN = await this.helperService.getAuthToken();
+
+      const response = await axios.post(
+        'https://oman.paymob.com/api/acceptance/void_refund/refund',
+        {
+          transaction_id: paymobTransactionId,
+          amount_cents: amountCents,
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${AUTH_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      return {
+        status: true,
+        message: 'Refund processed successfully',
+        data: response.data,
+      };
+    } catch (error: any) {
+      return {
+        status: false,
+        message: 'Refund failed',
+        error: error?.response?.data || error.message,
       };
     }
   }

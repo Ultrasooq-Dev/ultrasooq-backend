@@ -47,10 +47,11 @@ import { JwtService } from '@nestjs/jwt/dist';
 import { NotificationModule } from 'src/notification/notification.module';
 import { HelperService } from 'src/helper/helper.service';
 import { WalletModule } from 'src/wallet/wallet.module';
+import { DeliverySchedulerService } from './delivery-scheduler.service';
 
 @Module({
   imports: [AuthModule, WalletModule, NotificationModule],
   controllers: [OrderController],
-  providers: [OrderService, JwtService, HelperService]
+  providers: [OrderService, JwtService, HelperService, DeliverySchedulerService]
 })
 export class OrderModule {}
