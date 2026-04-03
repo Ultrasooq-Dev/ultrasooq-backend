@@ -2178,11 +2178,17 @@ model Room {
   creatorId      Int
   rfqId          Int?
   orderProductId Int?
+  type           String?            @db.VarChar(20)
+  channelId      String?            @db.VarChar(30)
+  name           String?
+  lastMessageAt  DateTime?
   messages       Message[]          @relation("RoomMessages")
   creator        User               @relation("CreatedRooms", fields: [creatorId], references: [id])
   participants   RoomParticipants[] @relation("RoomParticipants")
 
   @@index([creatorId])
+  @@index([channelId])
+  @@index([lastMessageAt])
 }
 
 // Message — An individual chat message within a Room.
@@ -2195,6 +2201,7 @@ model Room {
 model Message {
   id                     Int                          @id @default(autoincrement())
   content                String
+  contentType            String?                      @default("text") @db.VarChar(20)
   status                 MessageStatus                @default(UNREAD)
   createdAt              DateTime                     @default(now())
   updatedAt              DateTime                     @updatedAt
@@ -2308,14 +2315,18 @@ model RfqSuggestedProduct {
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
 model RoomParticipants {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  roomId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  room      Room     @relation("RoomParticipants", fields: [roomId], references: [id])
-  user      User     @relation("UserRooms", fields: [userId], references: [id])
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  roomId     Int
+  lastReadAt DateTime?
+  isPinned   Boolean   @default(false)
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  room       Room      @relation("RoomParticipants", fields: [roomId], references: [id])
+  user       User      @relation("UserRooms", fields: [userId], references: [id])
 
+  @@unique([userId, roomId])
   @@index([userId])
   @@index([roomId])
 }
