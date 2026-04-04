@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthService } from '../auth/auth.service';
 import { SuperAdminAuthGuard } from '../guards/SuperAdminAuthGuard';
 import { SupportService } from './support.service';
@@ -13,6 +14,7 @@ import { SupportTrackingService } from './tracking/support-tracking.service';
 
 @Module({
   imports: [
+    forwardRef(() => AnalyticsModule), // For RedisBufferService used by SupportTrackingService
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

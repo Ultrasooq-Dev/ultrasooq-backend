@@ -97,11 +97,15 @@ export class SupportController {
   async assign(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { assigneeId: number },
+    @Req() req: any,
   ) {
-    return this.prisma.supportConversation.update({
+    const adminId = req.user?.id ?? req.user?.userId;
+    const result = await this.prisma.supportConversation.update({
       where: { id },
       data: { assigneeId: body.assigneeId, status: 'assigned' },
     });
+    this.tracking.track('conversation_assigned', id, { assigneeId: body.assigneeId }, adminId);
+    return result;
   }
 
   @Patch('conversations/:id/resolve')
@@ -128,6 +132,7 @@ export class SupportController {
         status: 'read',
       },
     });
+    this.tracking.track('conversation_read', id, {}, adminId);
     return { ok: true };
   }
 
@@ -136,11 +141,15 @@ export class SupportController {
   async setPriority(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { priority: string },
+    @Req() req: any,
   ) {
-    return this.prisma.supportConversation.update({
+    const adminId = req.user?.id ?? req.user?.userId;
+    const result = await this.prisma.supportConversation.update({
       where: { id },
       data: { priority: body.priority },
     });
+    this.tracking.track('priority_changed', id, { priority: body.priority }, adminId);
+    return result;
   }
 
   // ─── Dashboard ─────────────────────────────────────────────────

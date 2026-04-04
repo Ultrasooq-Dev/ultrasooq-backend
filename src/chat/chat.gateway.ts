@@ -37,6 +37,7 @@ import { UpdateRfqPriceRequest } from './dto/updateRfqPriceRequest.dto';
 import { CreateRoomOrderDto } from './dto/create-room-for-order.dto';
 import { SendMessageForOrderDto } from './dto/send-message-for-order.dto';
 import { NotificationService } from '../notification/notification.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * @class ChatGateway
@@ -75,6 +76,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
   ) { }
 
   /**
@@ -481,6 +483,49 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
   }
 
+  // ─── Messaging-backend v2: typing, markAsRead ─────────────────────
+
+  /**
+   * @method handleTyping
+   * @description Broadcasts a typing indicator to all other participants in the room.
+   */
+  @SubscribeMessage('typing')
+  handleTyping(
+    @MessageBody() data: { roomId: number; userId: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    client.to(String(data.roomId)).emit('typing', {
+      roomId: data.roomId,
+      userId: data.userId,
+    });
+  }
+
+  /**
+   * @method handleMarkAsRead
+   * @description Marks messages as read and updates lastReadAt on RoomParticipants.
+   */
+  @SubscribeMessage('markAsRead')
+  async handleMarkAsRead(
+    @MessageBody() data: { roomId: number; userId: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      await this.chatService.markMessagesAsRead(data);
+      // Update lastReadAt on RoomParticipants
+      await this.prisma.roomParticipants.updateMany({
+        where: { roomId: data.roomId, userId: data.userId },
+        data: { lastReadAt: new Date() },
+      });
+      // Notify room that messages were read
+      client.to(String(data.roomId)).emit('messagesRead', {
+        roomId: data.roomId,
+        userId: data.userId,
+      });
+    } catch (error) {
+      client.emit('markAsReadError', { message: 'Failed to mark as read', status: 500 });
+    }
+  }
+
   /**
    * @method handleConnection
    * @description Lifecycle hook invoked when a new Socket.io client connects.
@@ -517,6 +562,11 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       });
       // Join user to their notification room
       client.join(`user-${userId}`);
+
+      // Broadcast online status to all rooms
+      for (const roomId of rooms) {
+        this.server.to(String(roomId)).emit('userOnline', { userId });
+      }
     }
   }
 
@@ -537,9 +587,18 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * @param {Socket} client - The disconnected Socket.io client.
    * @returns {void}
    */
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const userId = Array.from(this.userSocketMap.keys()).find(key => this.userSocketMap.get(key) === client.id);
     if (userId) {
+      // Broadcast offline status to all rooms before removing
+      try {
+        const roomIds = await this.chatService.getRoomsForUser(userId);
+        for (const roomId of roomIds) {
+          this.server.to(String(roomId)).emit('userOffline', { userId });
+        }
+      } catch (error) {
+        // Ignore errors during disconnect cleanup
+      }
       this.userSocketMap.delete(userId);
     }
   }

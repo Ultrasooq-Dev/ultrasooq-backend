@@ -75,6 +75,7 @@ import { BannerModule } from './banner/banner.module';
 import { SystemLogModule } from './system-log/system-log.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SupportModule } from './support/support.module';
+import { MessageTreeModule } from './message-tree/message-tree.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
@@ -149,6 +150,7 @@ import { ExternalDropshipModule } from './external-dropship/external-dropship.mo
     SystemLogModule,
     AnalyticsModule,      // Analytics: event collection, error tracking, performance, visitor sessions
     SupportModule,        // Support: chat bot, self-learning, knowledge base, admin inbox
+    MessageTreeModule,    // Message tree: dynamic sidebar config per user role
     UserModule,           // User registration, profiles, addresses, phone, branches, S3 uploads
     AuthModule,           // JWT authentication, login, signup, password reset, OTP
     CategoryModule,       // Product/service category tree management
