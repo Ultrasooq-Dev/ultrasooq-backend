@@ -17,10 +17,13 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed:categories": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts",
+    "seed:categories:force": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts --force"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.6.0",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.1.14",
     "@nestjs/config": "^4.0.3",
@@ -39,6 +42,7 @@
     "aws-sdk": "^2.1693.0",
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.73.0",
     "bwip-js": "^4.8.0",
     "cache-manager": "^7.2.8",
     "cache-manager-ioredis-yet": "^2.1.2",
@@ -115,5 +119,7 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   },
-  "prisma": {}
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts"
+  }
 }
