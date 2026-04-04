@@ -18,8 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed:categories": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts",
-    "seed:categories:force": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts --force"
+    "seed:categories": "ts-node --project prisma/tsconfig.seed.json prisma/seed-categories.ts",
+    "seed:categories:force": "ts-node --project prisma/tsconfig.seed.json prisma/seed-categories.ts --force"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.6.0",
@@ -120,6 +120,6 @@
     "testEnvironment": "node"
   },
   "prisma": {
-    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-categories.ts"
+    "seed": "ts-node --project prisma/tsconfig.seed.json prisma/seed-categories.ts"
   }
 }
