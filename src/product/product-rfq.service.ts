@@ -301,7 +301,7 @@ export class ProductRfqService {
 
             status: 'ACTIVE',
 
-            isCustomProduct: 'false',
+            isCustomProduct: { not: 'true' },
           },
         },
       };

@@ -90,7 +90,7 @@ export class LoggingInterceptor implements NestInterceptor {
                 userAgent,
               });
             } catch (logError) {
-              // Don't let logging errors break the application
+              this.logger.warn(`Failed to write system log: ${logError}`);
             }
           }
         },
@@ -127,6 +127,7 @@ export class LoggingInterceptor implements NestInterceptor {
                 userAgent,
               });
             } catch (logError) {
+              this.logger.warn(`Failed to write error log: ${logError}`);
             }
           }
         },

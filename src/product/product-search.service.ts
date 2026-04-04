@@ -87,8 +87,8 @@ export class ProductSearchService {
           : undefined,
         product_productPrice: {
           some: {
-            askForPrice: 'false',
-            isCustomProduct: 'false',
+            askForPrice: { not: 'true' },
+            isCustomProduct: { not: 'true' },
             sellType: 'NORMALSELL',
             status: 'ACTIVE',
           },
@@ -1172,8 +1172,8 @@ export class ProductSearchService {
           : undefined,
         product_productPrice: {
           some: {
-            askForPrice: 'false',
-            isCustomProduct: 'false',
+            askForPrice: { not: 'true' },
+            isCustomProduct: { not: 'true' },
             sellType: 'NORMALSELL',
             status: 'ACTIVE',
           },

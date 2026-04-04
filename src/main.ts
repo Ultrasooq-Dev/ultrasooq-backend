@@ -79,6 +79,20 @@ if (!globalThis.crypto) {
  * @intent   Single place for all global app setup before listening.
  * @dataflow NestFactory.create → enableCors → useGlobalPipes → morgan → listen
  */
+// ─── Global crash handlers ───────────────────────────────────────────────────
+// Catch unhandled async rejections and uncaught exceptions so the process
+// doesn't die silently. These fire BEFORE NestJS is even bootstrapped if the
+// error happens at module-init time.
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[FATAL] Unhandled Promise Rejection:', reason?.stack || reason);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('[FATAL] Uncaught Exception:', error.stack || error.message);
+  // Give the logger a moment to flush, then exit with failure code
+  setTimeout(() => process.exit(1), 1000);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true, // Buffer logs until logger is ready

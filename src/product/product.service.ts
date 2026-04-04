@@ -5626,9 +5626,9 @@ export class ProductService {
 
         product_productPrice: {
           some: {
-            askForPrice: 'false',
+            askForPrice: { not: 'true' },
 
-            isCustomProduct: 'false',
+            isCustomProduct: { not: 'true' },
 
             sellType: 'NORMALSELL',
 
@@ -9351,9 +9351,9 @@ export class ProductService {
 
         product_productPrice: {
           some: {
-            askForPrice: 'false',
+            askForPrice: { not: 'true' },
 
-            isCustomProduct: 'false',
+            isCustomProduct: { not: 'true' },
 
             sellType: 'NORMALSELL',
 
