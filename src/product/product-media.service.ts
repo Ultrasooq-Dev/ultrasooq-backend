@@ -394,8 +394,8 @@ export class ProductMediaService {
         status: 'ACTIVE',
         product_productPrice: {
           some: {
-            askForPrice: 'false',
-            isCustomProduct: 'false',
+            askForPrice: { not: 'true' },
+            isCustomProduct: { not: 'true' },
             sellType: 'NORMALSELL',
             status: 'ACTIVE',
           },

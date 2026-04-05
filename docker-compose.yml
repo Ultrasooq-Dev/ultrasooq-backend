@@ -34,6 +34,10 @@ services:
       - redis_data:/data
     networks:
       - ultrasooq-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -62,12 +66,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Resource limits — host has 24GB RAM, allocate generously for scraping
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '4.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
 
   # Nginx Reverse Proxy (Optional)
   nginx:

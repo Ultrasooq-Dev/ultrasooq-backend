@@ -739,8 +739,7 @@ export class CategoryService {
    * @dataflow (no params) -> this.prisma.category.findMany where menuId=1, status=ACTIVE,
    *           include ACTIVE children -> success/error/not-found envelope.
    * @depends this.prisma.category
-   * @notes  Hard-coded to menuId = 1.  If the platform introduces multiple
-   *         menus, this method will need a menuId parameter.
+   * @notes  Uses PRODUCT_ROOT_ID (1042) as the menuId for the product menu.
    */
   async getCategoryLevelOne() {
     try {
@@ -748,10 +747,11 @@ export class CategoryService {
       const cached = await this.cacheService.get(cacheKey);
       if (cached) return cached;
 
+      const PRODUCT_ROOT_ID = 1042;
       let getCategoryLevelOne = await this.prisma.category.findMany({
         where: {
           status: 'ACTIVE',
-          menuId: 1,
+          menuId: PRODUCT_ROOT_ID,
         },
         include: {
           children: {
