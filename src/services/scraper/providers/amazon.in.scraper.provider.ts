@@ -44,7 +44,7 @@ export class AmazonINScraperProvider implements ScraperProvider {
         if (!this.browser || !this.browser.connected) {
             this.logger.log('Launching new browser instance');
             this.browser = await puppeteer.launch({
-                headless: true, // Must be true for Docker
+                headless: 'shell', // Must be true for Docker
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',

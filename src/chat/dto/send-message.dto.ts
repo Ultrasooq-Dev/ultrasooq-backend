@@ -21,6 +21,7 @@
 import { IsNotEmpty, IsString, IsInt, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SaveAttachmentDto } from './save-attachment.dto';
+import { Filterable } from '../../content-filter/decorators/filterable.decorator';
 
 export class SuggestedProductItemDto {
   @IsNotEmpty()
@@ -47,6 +48,7 @@ export class SuggestedProductItemDto {
  */
 export class SendMessageDto {
   /** @description Text content of the chat message. */
+  @Filterable()
   @IsOptional()
   @IsString()
   readonly content?: string;

@@ -58,6 +58,9 @@ import { ProductRfqService } from './product-rfq.service';
 import { ProductBuyGroupService } from './product-buygroup.service';
 import { ProductFactoryService } from './product-factory.service';
 import { SpecificationService } from '../specification/specification.service';
+import { ContentFilterModule } from '../content-filter/content-filter.module';
+import { ContentFilterService } from '../content-filter/content-filter.service';
+import { ContentFilterPipe } from '../content-filter/pipes/content-filter.pipe';
 
 /**
  * @class ProductModule
@@ -76,6 +79,7 @@ import { SpecificationService } from '../specification/specification.service';
  *     ProductService acts as a facade, delegating to these sub-services.
  */
 @Module({
+  imports: [ContentFilterModule],
   controllers: [ProductController],
   providers: [
     ProductService,
@@ -93,6 +97,8 @@ import { SpecificationService } from '../specification/specification.service';
     HelperService,
     OpenRouterService,
     SpecificationService,
+    ContentFilterService,
+    ContentFilterPipe,
   ]
 })
 export class ProductModule {}

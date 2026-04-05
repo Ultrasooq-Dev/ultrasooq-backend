@@ -22,7 +22,7 @@
  *   applicable; some endpoints delegate envelope construction to the service layer.
  * - File uploads use `FileFieldsInterceptor` from `@nestjs/platform-express`.
  */
-import { Controller, Get, Post, Body, Query, HttpException, HttpStatus, Put, Patch, Delete, Param, UseGuards, UseInterceptors, UploadedFiles, Request, Res, DefaultValuePipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, HttpException, HttpStatus, Put, Patch, UseGuards, UseInterceptors, UploadedFiles, Request, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -429,67 +429,5 @@ export class ChatController {
     const limitNum = limit ? parseInt(limit, 10) : 50;
 
     return this.chatService.getVendorProductsForSuggestion(vendorId, { page: pageNum, limit: limitNum, term });
-  }
-
-  // ─── Messaging-backend v2: channels, pin/archive, RFQ products ────
-
-  @UseGuards(AuthGuard)
-  @Get('/channels/summary')
-  async getChannelSummary(@Request() req: any) {
-    return this.chatService.getChannelSummary(req.user.id);
-  }
-
-  @UseGuards(AuthGuard)
-  @Get('/channels/:channelId/conversations')
-  async getChannelConversations(
-    @Param('channelId') channelId: string,
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
-    @Request() req: any,
-  ) {
-    return this.chatService.getChannelConversations(req.user.id, channelId, page, limit);
-  }
-
-  @UseGuards(AuthGuard)
-  @Patch('/rooms/:roomId/pin')
-  async togglePin(
-    @Param('roomId', ParseIntPipe) roomId: number,
-    @Request() req: any,
-  ) {
-    return this.chatService.togglePinRoom(req.user.id, roomId);
-  }
-
-  @UseGuards(AuthGuard)
-  @Patch('/rooms/:roomId/archive')
-  async toggleArchive(
-    @Param('roomId', ParseIntPipe) roomId: number,
-    @Request() req: any,
-  ) {
-    return this.chatService.toggleArchiveRoom(req.user.id, roomId);
-  }
-
-  @UseGuards(AuthGuard)
-  @Delete('/rooms/:roomId')
-  async deleteRoom(
-    @Param('roomId', ParseIntPipe) roomId: number,
-    @Request() req: any,
-  ) {
-    return this.chatService.softDeleteRoom(req.user.id, roomId);
-  }
-
-  @UseGuards(AuthGuard)
-  @Get('/rooms/:roomId/rfq-products')
-  async getRfqProducts(@Param('roomId', ParseIntPipe) roomId: number) {
-    return this.chatService.getRfqProductsForRoom(roomId);
-  }
-
-  @UseGuards(AuthGuard)
-  @Put('/rooms/:roomId/rfq-products/:productId')
-  async updateRfqProduct(
-    @Param('roomId', ParseIntPipe) roomId: number,
-    @Param('productId', ParseIntPipe) productId: number,
-    @Body() data: { price?: number; stock?: number },
-  ) {
-    return this.chatService.updateRfqAlternative(roomId, productId, data);
   }
 }

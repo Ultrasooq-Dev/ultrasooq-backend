@@ -133,13 +133,8 @@ model User {
   productSearches                               ProductSearch[] @relation("UserProductSearches")
   productClicks                                 ProductClick[] @relation("UserProductClicks")
   refreshTokens                                 RefreshToken[]
-  externalStores                                ExternalStore[]
-  analyticsEvents                               AnalyticsEvent[] @relation("UserAnalyticsEvents")
-  errorLogs                                     ErrorLog[] @relation("UserErrorLogs")
-  performanceMetrics                            PerformanceMetric[] @relation("UserPerformanceMetrics")
-  visitorSessions                               VisitorSession[] @relation("UserVisitorSessions")
-  supportConversationsAsContact                 SupportConversation[] @relation("SupportContact")
-  supportConversationsAsAssignee                SupportConversation[] @relation("SupportAssignee")
+  contentFilterLogs                             ContentFilterLog[]
+  recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -579,6 +574,12 @@ model Category {
   categoryTags                     CategoryTag[]
   serviceCategoryMaps              ServiceCategoryMap[]    @relation("ServiceCategoryMaps")
 
+  // ── Mega Scraper relations ──
+  scrapingJobs                     ScrapingJob[]
+  categoryMappings                 CategoryMapping[]
+  crossSellAsSource                CrossSellRule[] @relation("CrossSellSource")
+  crossSellAsTarget                CrossSellRule[] @relation("CrossSellTarget")
+
   @@index([parentId])
   @@index([menuId])
 }
@@ -927,7 +928,11 @@ model Product {
   // ── Multi-category & Spec Template relations (Phase 1) ──
   productCategories               ProductCategoryMap[]
   productSpecValues               ProductSpecValue[]
-  externalStoreSubscriptions      ExternalStoreSubscription[]
+
+  // ── Mega Scraper relation ──
+  scrapedProductRaw               ScrapedProductRaw[]
+  scrapedAutoParts                ScrapedAutoPart[]
+  recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -2178,17 +2183,11 @@ model Room {
   creatorId      Int
   rfqId          Int?
   orderProductId Int?
-  type           String?            @db.VarChar(20)
-  channelId      String?            @db.VarChar(30)
-  name           String?
-  lastMessageAt  DateTime?
   messages       Message[]          @relation("RoomMessages")
   creator        User               @relation("CreatedRooms", fields: [creatorId], references: [id])
   participants   RoomParticipants[] @relation("RoomParticipants")
 
   @@index([creatorId])
-  @@index([channelId])
-  @@index([lastMessageAt])
 }
 
 // Message — An individual chat message within a Room.
@@ -2201,7 +2200,6 @@ model Room {
 model Message {
   id                     Int                          @id @default(autoincrement())
   content                String
-  contentType            String?                      @default("text") @db.VarChar(20)
   status                 MessageStatus                @default(UNREAD)
   createdAt              DateTime                     @default(now())
   updatedAt              DateTime                     @updatedAt
@@ -2315,18 +2313,14 @@ model RfqSuggestedProduct {
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
 model RoomParticipants {
-  id         Int       @id @default(autoincrement())
-  userId     Int
-  roomId     Int
-  lastReadAt DateTime?
-  isPinned   Boolean   @default(false)
-  isArchived Boolean   @default(false)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  room       Room      @relation("RoomParticipants", fields: [roomId], references: [id])
-  user       User      @relation("UserRooms", fields: [userId], references: [id])
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  roomId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  room      Room     @relation("RoomParticipants", fields: [roomId], references: [id])
+  user      User     @relation("UserRooms", fields: [userId], references: [id])
 
-  @@unique([userId, roomId])
   @@index([userId])
   @@index([roomId])
 }
@@ -3458,307 +3452,500 @@ model SystemHealthLog {
   @@map("system_health_log")
 }
 
-// AnalyticsDailyRollup — Pre-computed daily aggregates for fast dashboard queries.
-// Nightly cron summarises raw events/sessions/errors → one row per (date, metric, dimension).
-model AnalyticsDailyRollup {
-  id        Int       @id @default(autoincrement())
-  date      DateTime  @db.Date
-  metric    String    @db.VarChar(50)  // "events", "sessions", "errors", "bounced", "page_views"
-  dimension String    @default("") @db.VarChar(255) // country, eventName — empty = total
-  value     Int       @default(0)
+// ══════════════════════════════════════════════════════════════
+// Strategy Lab — Multi-asset, multi-TF, multi-strategy testing
+// ══════════════════════════════════════════════════════════════
 
-  @@unique([date, metric, dimension])
-  @@index([date])
-  @@index([metric, date])
-  @@map("analytics_daily_rollup")
-}
-
-// ─── SUPPORT BOT SYSTEM ──────────────────────────────────────────
-
-// SupportConversation — One support session from open to resolution.
-// Status flow: bot → open → assigned → pending → resolved (or snoozed)
-model SupportConversation {
-  id                 Int       @id @default(autoincrement())
-  contactId          Int                 // FK → User (customer)
-  assigneeId         Int?                // FK → User (admin/agent) — null = bot
-  status             String    @default("bot")      // bot | open | assigned | pending | resolved | snoozed
-  channel            String    @default("web_widget") // web_widget | whatsapp | email
-  priority           String    @default("normal")    // low | normal | high | urgent
-  topic              String?             // menu item: product_search | order_tracker | faq | etc.
-  metadata           Json?               // { currentPage, cartValue, tradeRole, productId, locale }
-  firstResponseAt    DateTime?
-  resolvedAt         DateTime?
-  csatRating         Int?                // 1-5
-  csatComment        String?
-  botMessagesCount   Int       @default(0)
-  humanMessagesCount Int       @default(0)
-  escalatedAt        DateTime?
-  escalationReason   String?             // low_confidence | user_request | negative_feedback
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  deletedAt          DateTime?
-
-  contact            User      @relation("SupportContact", fields: [contactId], references: [id])
-  assignee           User?     @relation("SupportAssignee", fields: [assigneeId], references: [id])
-  messages           SupportMessage[]
-  events             SupportEvent[]
-
-  @@index([contactId, status])
-  @@index([assigneeId, status])
-  @@index([status, createdAt])
-  @@index([topic])
-  @@index([priority, status])
-  @@map("support_conversation")
-}
-
-// SupportMessage — Individual message within a support conversation.
-model SupportMessage {
+// StrategyLabRun — One test run (solo or combined). Tracks config, status, and aggregate results.
+// Created when admin clicks "Run Test". Updated as the test progresses.
+// Relations: StrategyLabCombo (combos in this run), StrategyLabTrade (trades in this run).
+model StrategyLabRun {
   id              Int       @id @default(autoincrement())
-  conversationId  Int
-  senderType      String                // customer | bot | admin
-  senderId        Int?                  // FK → User (null for bot)
-  content         String    @db.Text
-  contentType     String    @default("text")  // text | menu | cards | buttons | search_results | navigate | file | status
-  metadata        Json?                 // contentType-specific: cards[], buttons[], navigateTo, fileName, confidence
-  status          String    @default("sent")  // sent | delivered | read
-  feedbackScore   Int?                  // 1=thumbs down, 5=thumbs up (bot messages only)
+  name            String?   // Optional name for the run (e.g. "XAUUSD solo M15+H1")
+  mode            String    // "solo" or "combined"
+  configJson      Json      // Full config: assets, timeframes, strategies, equity, stages, min_grade
+  statusRun       String    @default("pending") // "pending", "running", "done", "failed"
+  progress        Int       @default(0) // 0-100 percentage
+
+  // Aggregate results (filled when done)
+  totalCombos     Int       @default(0)
+  qualifiedCombos Int       @default(0)
+  totalTrades     Int       @default(0)
+  totalPnl        Float     @default(0)
+  finalEquity     Float     @default(0)
+  startingEquity  Float     @default(10000)
+  returnPct       Float     @default(0)
+  elapsedSeconds  Float     @default(0)
+
+  // Solo-specific summaries
+  gradesJson      Json?     // {"A": 5, "B": 12, "C": 8, ...}
+  assetSummary    Json?     // Per-asset aggregates
+  strategySummary Json?     // Per-strategy aggregates
+  tfSummary       Json?     // Per-TF aggregates
+
+  // Combined-specific
+  equityCurve     Json?     // [{stage, equity, time}, ...]
+  stageReports    Json?     // [{stage, trades, pnl, equity, active, paused}, ...]
+
   createdAt       DateTime  @default(now())
+  updatedAt       DateTime? @updatedAt
+  deletedAt       DateTime?
+  status          Status    @default(ACTIVE)
 
-  conversation    SupportConversation @relation(fields: [conversationId], references: [id])
+  combos          StrategyLabCombo[]
+  trades          StrategyLabTrade[]
 
-  @@index([conversationId, createdAt])
-  @@index([senderType])
-  @@map("support_message")
-}
-
-// SupportEvent — Tracking: every meaningful action for analytics.
-model SupportEvent {
-  id              Int       @id @default(autoincrement())
-  conversationId  Int
-  eventType       String    // conversation_started | message_sent | bot_response | escalated_to_admin | etc.
-  metadata        Json?     // event-specific payload
-  userId          Int?
-  createdAt       DateTime  @default(now())
-
-  conversation    SupportConversation @relation(fields: [conversationId], references: [id])
-
-  @@index([conversationId])
-  @@index([eventType, createdAt])
-  @@map("support_event")
-}
-
-// BotLearning — Self-learning: question→answer pairs that improve over time.
-model BotLearning {
-  id            Int       @id @default(autoincrement())
-  question      String    @db.Text
-  questionHash  String    @unique       // SHA-256 of normalized question (dedup)
-  answer        String    @db.Text
-  topic         String?                 // auto-categorized: product | order | shipping | payment | account
-  confidence    Float     @default(0.5) // 0-1, adjusted by feedback
-  useCount      Int       @default(0)
-  thumbsUp      Int       @default(0)
-  thumbsDown    Int       @default(0)
-  source        String    @default("admin_escalation") // admin_escalation | manual | faq
-  locale        String    @default("en") @db.VarChar(5)
-  status        String    @default("active") // active | review | disabled
-  createdBy     Int?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@index([status, confidence])
-  @@index([topic])
-  @@map("bot_learning")
-}
-
-// KnowledgeBase — Curated FAQ/help articles managed by admin.
-model KnowledgeBase {
-  id           Int       @id @default(autoincrement())
-  shortCode    String    @unique
-  title        String
-  content      String    @db.Text
-  category     String              // faq | policy | guide | tutorial
-  tags         String[]
-  locale       String    @default("en") @db.VarChar(5)
-  viewCount    Int       @default(0)
-  helpfulCount Int       @default(0)
-  status       String    @default("active")
-  createdBy    Int?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@index([category, locale, status])
-  @@map("knowledge_base")
-}
-
-// CannedResponse — Quick reply templates for admin agents.
-model CannedResponse {
-  id          Int       @id @default(autoincrement())
-  shortCode   String    @unique       // "!shipping", "!returns"
-  title       String
-  content     String    @db.Text
-  category    String?
-  locale      String    @default("en")
-  createdBy   Int
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@map("canned_response")
-}
-
-// ExternalStore — Represents an external e-commerce store that a seller connects for dropshipping.
-// Fields: name (store display name), platform (e.g. Shopify, WooCommerce), feedToken (unique token for feed URLs),
-//   userId (FK to owner User), settings (JSON for platform-specific config).
-// Relations: User (owner), ExternalStoreSubscription (products subscribed to this store).
-model ExternalStore {
-  id            Int       @id @default(autoincrement())
-  name          String
-  platform      String?
-  feedToken     String    @unique @default(uuid())
-  userId        Int
-  settings      Json?
-  status        Status    @default(ACTIVE)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
-
-  user          User      @relation(fields: [userId], references: [id])
-  subscriptions ExternalStoreSubscription[]
-
-  @@index([userId, status])
-  @@index([feedToken])
-}
-
-// ExternalStoreSubscription — Links a product to an external store for feed syndication.
-// Fields: externalStoreId (FK), productId (FK), externalProductId (ID on external platform),
-//   externalSku (SKU on external platform), status (ACTIVE/INACTIVE).
-model ExternalStoreSubscription {
-  id                Int       @id @default(autoincrement())
-  externalStoreId   Int
-  productId         Int
-  externalProductId String?
-  externalSku       String?
-  status            Status    @default(ACTIVE)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  externalStore     ExternalStore @relation(fields: [externalStoreId], references: [id])
-  product           Product       @relation(fields: [productId], references: [id])
-
-  @@unique([externalStoreId, productId])
-  @@index([externalStoreId, status])
-  @@index([productId])
-}
-
-// ─────────────────────────────────────────────────────────────
-// Analytics & Monitoring Models
-// ─────────────────────────────────────────────────────────────
-
-model AnalyticsEvent {
-  id          Int       @id @default(autoincrement())
-  sessionId   String
-  requestId   String?
-  userId      Int?
-  deviceId    String?
-  eventName   String    @db.VarChar(100)
-  eventType   String    @db.VarChar(20)
-  pageUrl     String?   @db.VarChar(2000)
-  referrer    String?   @db.VarChar(2000)
-  locale      String?   @db.VarChar(10)
-  currency    String?   @db.VarChar(10)
-  tradeRole   String?   @db.VarChar(50)
-  metadata    Json?
-  source      String    @default("frontend") @db.VarChar(20)
-  ipAddress   String?   @db.VarChar(45)
-  country     String?   @db.VarChar(3)
-  userAgent   String?
-  clockOffset Int?
-  createdAt   DateTime  @default(now())
-
-  user        User?     @relation("UserAnalyticsEvents", fields: [userId], references: [id])
-
-  @@index([eventName])
-  @@index([sessionId])
-  @@index([requestId])
-  @@index([userId])
+  @@index([mode, statusRun])
   @@index([createdAt])
-  @@index([eventType, createdAt])
-  @@index([deviceId])
-  @@index([source, createdAt])
-  @@index([country])
-  @@map("analytics_event")
+  @@map("strategy_lab_run")
 }
 
-model ErrorLog {
-  id           Int       @id @default(autoincrement())
-  fingerprint  String    @unique
-  message      String    @db.Text
-  stack        String?   @db.Text
-  source       String    @db.VarChar(20)
-  level        String    @default("error") @db.VarChar(10)
-  count        Int       @default(1)
-  userId       Int?
-  pageUrl      String?   @db.VarChar(2000)
-  endpoint     String?   @db.VarChar(500)
-  statusCode   Int?
-  metadata     Json?
-  firstSeenAt  DateTime  @default(now())
-  lastSeenAt   DateTime  @default(now())
-  resolvedAt   DateTime?
+// StrategyLabCombo — Results for one asset×TF×strategy combo within a run.
+// In solo mode: independent metrics. In combined mode: includes stage history and risk multiplier.
+model StrategyLabCombo {
+  id              Int       @id @default(autoincrement())
+  runId           Int
+  run             StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
-  user         User?     @relation("UserErrorLogs", fields: [userId], references: [id])
+  asset           String    // e.g. "XAUUSD"
+  timeframe       String    // e.g. "H1"
+  strategy        String    // e.g. "Momentum"
+  comboKey        String    // e.g. "XAUUSD_Momentum_H1"
+  tier            Int       @default(1) // Asset risk tier 1/2/3
 
-  @@index([source, lastSeenAt])
-  @@index([level])
-  @@index([resolvedAt])
-  @@index([count])
-  @@map("error_log")
+  // Metrics
+  totalTrades     Int       @default(0)
+  wins            Int       @default(0)
+  losses          Int       @default(0)
+  winRate         Float     @default(0)
+  profitFactor    Float     @default(0)
+  totalPnl        Float     @default(0)
+  maxDrawdown     Float     @default(0)
+  avgPnl          Float     @default(0)
+  bestTrade       Float     @default(0)
+  worstTrade      Float     @default(0)
+
+  // Hit counts
+  tp1Hits         Int       @default(0)
+  tp2Hits         Int       @default(0)
+  tp3Hits         Int       @default(0)
+  slHits          Int       @default(0)
+  expireHits      Int       @default(0)
+
+  // Solo grading
+  grade           String?   // "A", "B", "C", "D", "F"
+
+  // Combined staging
+  paused          Boolean   @default(false)
+  finalRiskMult   Float     @default(1.0)
+  stageHistory    Json?     // [{stage, pf, trades, pnl, action, risk_mult}, ...]
+
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  status          Status    @default(ACTIVE)
+
+  trades          StrategyLabTrade[]
+
+  @@index([runId])
+  @@index([asset, timeframe, strategy])
+  @@index([grade])
+  @@index([profitFactor])
+  @@map("strategy_lab_combo")
 }
 
-model PerformanceMetric {
-  id          Int       @id @default(autoincrement())
-  metricName  String    @db.VarChar(30)
-  metricValue Float
-  source      String    @db.VarChar(20)
-  pageUrl     String?   @db.VarChar(2000)
-  endpoint    String?   @db.VarChar(500)
-  method      String?   @db.VarChar(10)
-  userId      Int?
-  sessionId   String?
-  requestId   String?
-  createdAt   DateTime  @default(now())
+// StrategyLabTrade — Individual trade record within a lab test.
+// Full detail: entry, exit, P&L, level hits, timing, stage number.
+model StrategyLabTrade {
+  id              Int       @id @default(autoincrement())
+  runId           Int
+  run             StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  comboId         Int
+  combo           StrategyLabCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
 
-  user        User?     @relation("UserPerformanceMetrics", fields: [userId], references: [id])
+  asset           String
+  timeframe       String
+  strategy        String
+  direction       String    // "buy" or "sell"
+  entryPrice      Float
+  exitPrice       Float?
+  pnl             Float     @default(0)
+  barsHeld        Int       @default(0)
 
-  @@index([metricName, createdAt])
-  @@index([source, createdAt])
-  @@index([endpoint, createdAt])
-  @@map("performance_metric")
+  entryTime       String?   // ISO timestamp string
+  exitTime        String?
+  day             String?   // Date string (YYYY-MM-DD)
+
+  // Level hits as JSON: [["TP1", 45.20], ["SL", -30.10]]
+  hitsJson        Json?
+
+  // Combined mode extras
+  stageNumber     Int?
+  riskMult        Float?
+
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  status          Status    @default(ACTIVE)
+
+  @@index([runId])
+  @@index([comboId])
+  @@index([asset, strategy, timeframe])
+  @@map("strategy_lab_trade")
 }
 
-model VisitorSession {
-  id           Int       @id @default(autoincrement())
-  sessionId    String    @unique
-  deviceId     String?
-  userId       Int?
-  ipAddress    String?   @db.VarChar(45)
-  country      String?   @db.VarChar(3)
-  userAgent    String?
-  locale       String?   @db.VarChar(10)
-  currency     String?   @db.VarChar(10)
-  tradeRole    String?   @db.VarChar(50)
-  startedAt    DateTime  @default(now())
-  lastActiveAt DateTime  @default(now())
-  pageCount    Int       @default(0)
-  eventCount   Int       @default(0)
-  isActive     Boolean   @default(true)
+// ═══════════════════════════════════════════════════════════════
+// MEGA SCRAPER SYSTEM — Models for 10M product scraping pipeline
+// ═══════════════════════════════════════════════════════════════
 
-  user         User?     @relation("UserVisitorSessions", fields: [userId], references: [id])
+// ScrapingJob — Tracks each scraping task (one per platform+category+region combo).
+model ScrapingJob {
+  id              Int               @id @default(autoincrement())
+  platform        String            // amazon | alibaba | aliexpress | taobao
+  region          String?           // us | ae | uk | de | fr | jp | au | etc.
+  categorySource  String            // source platform category path
+  categoryId      Int?              // mapped Ultrasooq category
+  status          ScrapingJobStatus @default(QUEUED)
+  priority        Int               @default(5) // 1=highest, 10=lowest
 
-  @@index([deviceId])
+  // Progress tracking
+  totalProducts   Int               @default(0)
+  scrapedCount    Int               @default(0)
+  failedCount     Int               @default(0)
+  translatedCount Int               @default(0)
+  importedCount   Int               @default(0)
+
+  // Anti-blocking
+  retryCount      Int               @default(0)
+  lastError       String?
+  blockedAt       DateTime?
+  cooldownUntil   DateTime?
+  nodeId          String?           // which server processed this
+
+  // Source
+  sourceUrl       String
+  sourcePageStart Int               @default(1)
+  sourcePageEnd   Int?
+
+  // Output
+  exportFilePath  String?
+  batchId         String?           @unique
+
+  // Timestamps
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  scrapedProducts ScrapedProductRaw[]
+  scrapedAutoParts ScrapedAutoPart[]
+
+  @@index([platform, status])
+  @@index([status, priority])
+  @@index([batchId])
+  @@map("scraping_job")
+}
+
+// ScrapedProductRaw — Raw scraped data staging table before processing.
+model ScrapedProductRaw {
+  id              Int                  @id @default(autoincrement())
+  jobId           Int
+
+  // Raw scraped data (full JSON as-is from scraper)
+  rawData         Json
+  sourceUrl       String               @unique
+  sourcePlatform  String
+
+  // Extracted key fields for querying
+  productName     String?
+  productNameEn   String?              // translated English name
+  priceOriginal   Decimal?             @db.Decimal(10, 2)
+  priceCurrency   String?              // CNY, USD, EUR, etc.
+  priceUsd        Decimal?             @db.Decimal(10, 2) // converted to USD
+
+  // Processing pipeline status
+  status          ScrapedProductStatus @default(RAW)
+  translatedAt    DateTime?
+  mappedAt        DateTime?
+  importedAt      DateTime?
+  productId       Int?                 // FK to Product after import
+
+  // Translation cache
+  translatedData  Json?                // full translated version of rawData
+  imageTexts      Json?                // OCR-extracted text from product images
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  // Relations
+  job             ScrapingJob          @relation(fields: [jobId], references: [id])
+  product         Product?             @relation(fields: [productId], references: [id])
+
+  @@index([jobId, status])
+  @@index([sourcePlatform, status])
+  @@index([productId])
+  @@map("scraped_product_raw")
+}
+
+// CategoryMapping — Maps source platform categories to Ultrasooq categories.
+model CategoryMapping {
+  id                  Int       @id @default(autoincrement())
+  sourcePlatform      String    // amazon | alibaba | aliexpress | taobao
+  sourcePath          String    // e.g. "Electronics > Smartphones > Android"
+  sourceId            String?   // platform's own category ID
+
+  // Mapping result
+  ultrasooqCategoryId Int?
+  confidence          Float     @default(0) // AI confidence 0.0–1.0
+  isVerified          Boolean   @default(false) // human reviewed?
+  aiReasoning         String?   // AI's reasoning for the mapping
+
+  // Stats
+  productCount        Int       @default(0)
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  category            Category? @relation(fields: [ultrasooqCategoryId], references: [id])
+
+  @@unique([sourcePlatform, sourcePath])
+  @@index([ultrasooqCategoryId])
+  @@map("category_mapping")
+}
+
+enum ScrapingJobStatus {
+  QUEUED
+  RUNNING
+  PAUSED
+  BLOCKED
+  COMPLETED
+  FAILED
+}
+
+enum ScrapedProductStatus {
+  RAW
+  TRANSLATING
+  TRANSLATED
+  IMAGE_PROCESSING
+  MAPPED
+  READY
+  IMPORTED
+  FAILED
+  DUPLICATE
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO PARTS SCRAPER — Models for OEM spare parts scraping
+// ═══════════════════════════════════════════════════════════════
+
+model ScrapedAutoPart {
+  id              Int       @id @default(autoincrement())
+  jobId           Int?
+
+  // Part identification
+  partNumber      String
+  partNumberAlt   String[]  @default([])
+  name            String
+  nameOriginal    String?
+  description     String?
+
+  // Pricing
+  price           Decimal?  @db.Decimal(10, 2)
+  currency        String?
+  msrp            Decimal?  @db.Decimal(10, 2)
+
+  // Categorization
+  category        String
+  subcategory     String?
+  partGroup       String?
+
+  // Vehicle compatibility (stored as JSON array)
+  vehicles        Json      @default("[]")
+  fitmentNotes    String?
+
+  // Images and diagrams
+  images          Json?     @default("[]")
+  diagramId       String?
+  diagramPosition String?
+
+  // Source
+  sourceUrl       String    @unique
+  sourcePlatform  String
+  brand           String?
+  isGenuine       Boolean   @default(true)
+
+  // Stock
+  inStock         Boolean?
+  stockQuantity   Int?
+  leadTime        String?
+
+  // Cross-references
+  crossReferences String[]  @default([])
+  supersededBy    String?
+  interchangeWith String[]  @default([])
+
+  // Processing
+  status          ScrapedProductStatus @default(RAW)
+  translatedAt    DateTime?
+  importedAt      DateTime?
+  productId       Int?
+
+  // Raw data
+  rawData         Json?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  job             ScrapingJob? @relation(fields: [jobId], references: [id])
+  product         Product?     @relation(fields: [productId], references: [id])
+
+  @@index([partNumber])
+  @@index([sourcePlatform, status])
+  @@index([category, subcategory])
+  @@index([jobId])
+  @@index([productId])
+  @@map("scraped_auto_part")
+}
+
+model PartsDiagram {
+  id              Int       @id @default(autoincrement())
+  diagramId       String    @unique
+  name            String
+  imageUrl        String
+  svgUrl          String?
+
+  // Vehicle
+  vehicleMake     String
+  vehicleModel    String
+  vehicleYear     Int?
+  vehicleEngine   String?
+
+  // Categorization
+  category        String
+  subcategory     String?
+
+  // Parts in this diagram (JSON array of DiagramPart)
+  parts           Json      @default("[]")
+
+  // Source
+  sourceUrl       String
+  sourcePlatform  String
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([vehicleMake, vehicleModel])
+  @@index([sourcePlatform])
+  @@index([category])
+  @@map("parts_diagram")
+}
+
+model ContentFilterRule {
+  id        Int      @id @default(autoincrement())
+  term      String
+  pattern   String?
+  category  String
+  severity  String
+  language  String   @default("en")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([term, language])
+  @@index([isActive, language])
+  @@index([category])
+}
+
+model ContentFilterLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  context      String
+  field        String
+  inputText    String
+  severity     String
+  action       String
+  matchedTerms Json
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
   @@index([userId])
-  @@index([startedAt])
-  @@index([isActive])
-  @@index([lastActiveAt])
-  @@index([country])
-  @@map("visitor_session")
+  @@index([severity])
+  @@index([createdAt])
+  @@index([userId, severity])
+}
+
+model RecommendationMetric {
+  id          String   @id @default(uuid())
+  date        DateTime @db.Date
+  algorithm   String   @db.VarChar(50)
+  placement   String   @db.VarChar(50)
+  segment     String   @db.VarChar(50)
+  experiment  String?  @db.VarChar(100)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  cartAdds    Int      @default(0)
+  purchases   Int      @default(0)
+  revenue     Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, algorithm, placement, segment, experiment])
+  @@index([date])
+  @@index([algorithm])
+  @@map("recommendation_metrics")
+}
+
+model RecommendationFeedback {
+  id         String   @id @default(uuid())
+  recId      String   @db.VarChar(100)
+  userId     Int?
+  deviceId   String?  @db.VarChar(100)
+  productId  Int
+  algorithm  String   @db.VarChar(50)
+  placement  String   @db.VarChar(50)
+  position   Int
+  action     String   @db.VarChar(20)
+  experiment String?  @db.VarChar(100)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user    User?    @relation("UserRecommendationFeedback", fields: [userId], references: [id])
+  product Product  @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
+
+  @@index([createdAt])
+  @@index([recId])
+  @@index([userId])
+  @@index([algorithm, placement, createdAt])
+  @@map("recommendation_feedback")
+}
+
+model CrossSellRule {
+  id               String   @id @default(uuid())
+  sourceCategoryId Int
+  targetCategoryId Int
+  priority         Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdBy        Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sourceCategory Category @relation("CrossSellSource", fields: [sourceCategoryId], references: [id])
+  targetCategory Category @relation("CrossSellTarget", fields: [targetCategoryId], references: [id])
+
+  @@unique([sourceCategoryId, targetCategoryId])
+  @@index([sourceCategoryId])
+  @@map("cross_sell_rules")
+}
+
+model RecommendationConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique @db.VarChar(100)
+  value     Json
+  updatedBy Int
+  updatedAt DateTime @updatedAt
+
+  @@map("recommendation_config")
 }

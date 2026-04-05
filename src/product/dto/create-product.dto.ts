@@ -28,6 +28,7 @@
  */
 import { IsNotEmpty, IsOptional, IsString, IsNumber, IsArray, ValidateNested, IsInt, IsPositive } from 'class-validator';
 import { Type } from 'class-transformer';
+import { Filterable } from '../../content-filter/decorators/filterable.decorator';
 
 /**
  * @class ProductTagDto
@@ -189,6 +190,7 @@ class ProductPriceDto {
  */
 class ProductShortDescriptionDto {
   /** @description The short description text content. */
+  @Filterable()
   @IsNotEmpty()
   @IsString()
   shortDescription: string;
@@ -224,6 +226,7 @@ class ProductShortDescriptionDto {
  */
 export class CreateProductDto {
   /** @description Display name of the product. */
+  @Filterable()
   @IsNotEmpty()
   @IsString()
   productName: string;
@@ -264,16 +267,19 @@ export class CreateProductDto {
   offerPrice?: number = 0;
 
   /** @description Brief summary text for the product. */
+  @Filterable()
   @IsOptional()
   @IsString()
   shortDescription?: string;
 
   /** @description Full HTML or plain-text description. */
+  @Filterable()
   @IsOptional()
   @IsString()
   description?: string;
 
   /** @description Technical specification text. */
+  @Filterable()
   @IsOptional()
   @IsString()
   specification?: string;

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.6.0",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.1.14",
     "@nestjs/config": "^4.0.3",
@@ -40,6 +41,7 @@
     "aws-sdk": "^2.1693.0",
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.73.0",
     "bwip-js": "^4.8.0",
     "cache-manager": "^7.2.8",
     "cache-manager-ioredis-yet": "^2.1.2",
