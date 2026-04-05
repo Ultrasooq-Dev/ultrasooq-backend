@@ -134,6 +134,7 @@ model User {
   productClicks                                 ProductClick[] @relation("UserProductClicks")
   refreshTokens                                 RefreshToken[]
   contentFilterLogs                             ContentFilterLog[]
+  recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -576,6 +577,8 @@ model Category {
   // ── Mega Scraper relations ──
   scrapingJobs                     ScrapingJob[]
   categoryMappings                 CategoryMapping[]
+  crossSellAsSource                CrossSellRule[] @relation("CrossSellSource")
+  crossSellAsTarget                CrossSellRule[] @relation("CrossSellTarget")
 
   @@index([parentId])
   @@index([menuId])
@@ -929,6 +932,7 @@ model Product {
   // ── Mega Scraper relation ──
   scrapedProductRaw               ScrapedProductRaw[]
   scrapedAutoParts                ScrapedAutoPart[]
+  recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -3871,4 +3875,77 @@ model ContentFilterLog {
   @@index([severity])
   @@index([createdAt])
   @@index([userId, severity])
+}
+
+model RecommendationMetric {
+  id          String   @id @default(uuid())
+  date        DateTime @db.Date
+  algorithm   String   @db.VarChar(50)
+  placement   String   @db.VarChar(50)
+  segment     String   @db.VarChar(50)
+  experiment  String?  @db.VarChar(100)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  cartAdds    Int      @default(0)
+  purchases   Int      @default(0)
+  revenue     Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, algorithm, placement, segment, experiment])
+  @@index([date])
+  @@index([algorithm])
+  @@map("recommendation_metrics")
+}
+
+model RecommendationFeedback {
+  id         String   @id @default(uuid())
+  recId      String   @db.VarChar(100)
+  userId     Int?
+  deviceId   String?  @db.VarChar(100)
+  productId  Int
+  algorithm  String   @db.VarChar(50)
+  placement  String   @db.VarChar(50)
+  position   Int
+  action     String   @db.VarChar(20)
+  experiment String?  @db.VarChar(100)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user    User?    @relation("UserRecommendationFeedback", fields: [userId], references: [id])
+  product Product  @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
+
+  @@index([createdAt])
+  @@index([recId])
+  @@index([userId])
+  @@index([algorithm, placement, createdAt])
+  @@map("recommendation_feedback")
+}
+
+model CrossSellRule {
+  id               String   @id @default(uuid())
+  sourceCategoryId Int
+  targetCategoryId Int
+  priority         Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdBy        Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  sourceCategory Category @relation("CrossSellSource", fields: [sourceCategoryId], references: [id])
+  targetCategory Category @relation("CrossSellTarget", fields: [targetCategoryId], references: [id])
+
+  @@unique([sourceCategoryId, targetCategoryId])
+  @@index([sourceCategoryId])
+  @@map("cross_sell_rules")
+}
+
+model RecommendationConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique @db.VarChar(100)
+  value     Json
+  updatedBy Int
+  updatedAt DateTime @updatedAt
+
+  @@map("recommendation_config")
 }
