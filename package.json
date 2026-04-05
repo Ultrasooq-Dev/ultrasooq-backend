@@ -17,7 +17,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed:filter-rules": "ts-node --project prisma/tsconfig.seed.json prisma/seed-filter-rules.ts"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.6.0",

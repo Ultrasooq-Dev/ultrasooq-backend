@@ -78,6 +78,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { SpecificationModule } from './specification/specification.module';
+import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
+import { ContentFilterModule } from './content-filter/content-filter.module';
 
 @Module({
   imports: [
@@ -168,7 +170,9 @@ import { SpecificationModule } from './specification/specification.module';
     ServiceModule,        // Service (freelancer/company service offerings) CRUD
     WalletModule,
     ScraperModule,
-    BannerModule
+    BannerModule,
+    StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
+    ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
   ],
   controllers: [AppController],
   providers: [
