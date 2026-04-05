@@ -70,7 +70,8 @@ import { HelperModule } from './helper/helper.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServiceModule } from './service/service.module';
 import { WalletModule } from './wallet/wallet.module';
-import { ScraperModule } from './services/scraper/scraper.module';
+// ScraperModule disabled — use standalone scraper app on port 3002
+// import { ScraperModule } from './services/scraper/scraper.module';
 import { BannerModule } from './banner/banner.module';
 import { SystemLogModule } from './system-log/system-log.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -81,6 +82,7 @@ import { SpecificationModule } from './specification/specification.module';
 import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
 import { ContentFilterModule } from './content-filter/content-filter.module';
 import { RecommendationModule } from './recommendation/recommendation.module';
+import { SearchIntelligenceModule } from './search-intelligence/search-intelligence.module';
 
 @Module({
   imports: [
@@ -170,11 +172,12 @@ import { RecommendationModule } from './recommendation/recommendation.module';
     HelperModule,         // Shared helper/utility functions, scheduled cleanup tasks
     ServiceModule,        // Service (freelancer/company service offerings) CRUD
     WalletModule,
-    ScraperModule,
+    // ScraperModule, // disabled — standalone scraper app on port 3002
     BannerModule,
     StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
     ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
     RecommendationModule, // Recommendation engine — personalized, product-based, trending
+    SearchIntelligenceModule, // Search intelligence — query parsing, intent classification, category/brand resolution
   ],
   controllers: [AppController],
   providers: [
