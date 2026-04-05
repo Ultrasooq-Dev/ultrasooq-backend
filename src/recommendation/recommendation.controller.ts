@@ -120,4 +120,25 @@ export class RecommendationController {
     const userId = req.user.sub;
     return this.flowNudge.getNudges(userId);
   }
+
+  @Get('flow/:flow')
+  @ApiOperation({ summary: 'Get flow-specific recommendations (dropship, services, rfq, wholesale)' })
+  async getFlowRecs(
+    @Param('flow') flow: string,
+    @Query() query: RecommendationQueryDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.sub || null;
+    const locale = req.headers['accept-language']?.split(',')[0]?.split('-')[0] || 'en';
+    const tradeRole = req.user?.tradeRole || 'BUYER';
+    const validFlows = ['dropship', 'services', 'rfq', 'wholesale'];
+    const normalizedFlow = validFlows.includes(flow) ? flow : 'services';
+    return this.recommendation.getFlowRecs(
+      normalizedFlow as any,
+      userId,
+      locale,
+      tradeRole,
+      query.limit!,
+    );
+  }
 }

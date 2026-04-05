@@ -74,6 +74,19 @@ export class FlowNudgeService {
       });
     }
 
+    // Rule 4: Seller viewing products they don't carry → suggest dropship
+    // (This applies when the user is a seller, i.e., COMPANY or MEMBER role)
+    if ((profile.tradeRole === 'COMPANY' || profile.tradeRole === 'MEMBER') &&
+        !profile.shoppingFlows?.dropship) {
+      nudges.push({
+        type: 'dropship',
+        message: 'List trending products as your own with Dropship',
+        ctaText: 'Start Dropshipping',
+        ctaUrl: '/dropship',
+        confidence: 0.5,
+      });
+    }
+
     // Sort by confidence descending, return top 3
     return nudges.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
   }

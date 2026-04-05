@@ -357,6 +357,80 @@ export class RecommendationService {
       });
   }
 
+  // ──────────── 6. Flow-specific recommendations ────────────
+
+  /**
+   * Get recommendations filtered by shopping flow.
+   * Reuses existing algorithms but filters to specific product types.
+   */
+  async getFlowRecs(
+    flow: 'dropship' | 'services' | 'rfq' | 'wholesale',
+    userId: number | null,
+    locale: string,
+    tradeRole: string,
+    limit: number,
+  ): Promise<RecommendationResponse> {
+    // First get personal or trending recs (unfiltered)
+    const baseRecs = await this.getPersonal(userId, locale, tradeRole, limit * 3);
+
+    // Map flow to product type filters
+    const flowFilters: Record<string, any> = {
+      dropship: { isDropshipable: true },
+      rfq: { productType: 'R' },
+      wholesale: { productType: 'F' },
+      services: {}, // services are typically a different product type or category
+    };
+
+    const filter = flowFilters[flow] || {};
+
+    if (baseRecs.items.length === 0) {
+      return { ...baseRecs, algorithm: `${flow}_recs` };
+    }
+
+    // Re-filter hydrated products by flow criteria
+    const productIds = baseRecs.items.map((i) => i.productId);
+    const filtered = await this.prisma.product.findMany({
+      where: {
+        id: { in: productIds },
+        status: 'ACTIVE',
+        deletedAt: null,
+        ...filter,
+      },
+      select: { id: true },
+    });
+
+    const filteredSet = new Set(filtered.map((p) => p.id));
+    const filteredItems = baseRecs.items.filter((i) => filteredSet.has(i.productId)).slice(0, limit);
+
+    // If not enough flow-specific results, supplement with trending
+    if (filteredItems.length < limit) {
+      const trendingRecs = await this.getTrending(locale, tradeRole, undefined, limit * 2);
+      const trendingProductIds = trendingRecs.items.map((i) => i.productId);
+      const trendingFiltered = await this.prisma.product.findMany({
+        where: {
+          id: { in: trendingProductIds },
+          status: 'ACTIVE',
+          deletedAt: null,
+          ...filter,
+        },
+        select: { id: true },
+      });
+      const trendingFilteredSet = new Set(trendingFiltered.map((p) => p.id));
+      const existingIds = new Set(filteredItems.map((i) => i.productId));
+      const supplementItems = trendingRecs.items
+        .filter((i) => trendingFilteredSet.has(i.productId) && !existingIds.has(i.productId))
+        .slice(0, limit - filteredItems.length);
+      filteredItems.push(...supplementItems);
+    }
+
+    return {
+      items: filteredItems,
+      algorithm: `${flow}_recs`,
+      segment: `${locale}:${tradeRole}`,
+      cached: baseRecs.cached,
+    };
+  }
+
   // ──────────── Helpers ────────────
 
   private getReasonText(algorithm: string): string {
