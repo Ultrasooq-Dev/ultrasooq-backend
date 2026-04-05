@@ -121,6 +121,11 @@ export class SpecificationController {
     return this.specService.getCategoryKeywords(categoryId);
   }
 
+  @Delete('keywords/:keywordId')
+  deleteKeyword(@Param('keywordId', ParseIntPipe) keywordId: number) {
+    return this.specService.deleteCategoryKeyword(keywordId);
+  }
+
   @Post('match-categories')
   @HttpCode(HttpStatus.OK)
   matchCategories(@Body() body: { text: string }) {

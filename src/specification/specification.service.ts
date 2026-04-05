@@ -495,6 +495,21 @@ export class SpecificationService {
   }
 
   /**
+   * Delete a category keyword by ID (soft delete).
+   */
+  async deleteCategoryKeyword(keywordId: number) {
+    const keyword = await this.prisma.categoryKeyword.findUnique({
+      where: { id: keywordId },
+    });
+    if (!keyword) throw new NotFoundException(`Keyword ${keywordId} not found`);
+
+    return this.prisma.categoryKeyword.update({
+      where: { id: keywordId },
+      data: { status: 'DELETE', deletedAt: new Date() },
+    });
+  }
+
+  /**
    * Match product text against category keywords to suggest categories.
    */
   async matchCategories(text: string): Promise<{ categoryId: number; categoryName: string; matchedKeywords: string[] }[]> {
