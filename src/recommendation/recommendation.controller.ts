@@ -7,6 +7,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { RecommendationService } from './services/recommendation.service';
 import { FeedbackService } from './services/feedback.service';
 import { SearchBoostService } from './services/search-boost.service';
+import { FlowNudgeService, FlowNudge } from './services/flow-nudge.service';
 import { AuthGuard } from '../guards/AuthGuard';
 import {
   RecommendationQueryDto,
@@ -24,6 +25,7 @@ export class RecommendationController {
     private recommendation: RecommendationService,
     private feedback: FeedbackService,
     private searchBoost: SearchBoostService,
+    private flowNudge: FlowNudgeService,
   ) {}
 
   @Get('personal')
@@ -109,5 +111,13 @@ export class RecommendationController {
     // Products to boost are passed by the search service internally
     // This endpoint returns empty for now — will be called internally
     return { boosts: [], query: query.query };
+  }
+
+  @Get('flow-nudge')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Get cross-flow nudge suggestions' })
+  async getFlowNudge(@Req() req: any): Promise<any[]> {
+    const userId = req.user.sub;
+    return this.flowNudge.getNudges(userId);
   }
 }
