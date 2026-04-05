@@ -65,11 +65,6 @@ import { SpecificationService } from 'src/specification/specification.service';
                     host: config.get<string>('REDIS_HOST', 'localhost'),
                     port: config.get<number>('REDIS_PORT', 6379),
                 },
-                // Stalled job detection: check every 30s, mark stalled after 2 missed checks
-                settings: {
-                    stalledInterval: 30_000,
-                    maxStalledCount: 2,
-                },
             }),
             inject: [ConfigService],
         }),
