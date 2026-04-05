@@ -24,6 +24,7 @@ import { ChatGateway } from './chat.gateway';
 import { S3service } from 'src/user/s3.service';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationModule } from '../notification/notification.module';
+import { ContentFilterModule } from '../content-filter/content-filter.module';
 
 /**
  * @class ChatModule
@@ -44,6 +45,7 @@ import { NotificationModule } from '../notification/notification.module';
 @Module({
   imports: [
     NotificationModule,
+    ContentFilterModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

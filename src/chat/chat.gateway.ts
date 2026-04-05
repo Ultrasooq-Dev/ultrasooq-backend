@@ -37,6 +37,7 @@ import { UpdateRfqPriceRequest } from './dto/updateRfqPriceRequest.dto';
 import { CreateRoomOrderDto } from './dto/create-room-for-order.dto';
 import { SendMessageForOrderDto } from './dto/send-message-for-order.dto';
 import { NotificationService } from '../notification/notification.service';
+import { ContentFilterService } from '../content-filter/content-filter.service';
 
 /**
  * @class ChatGateway
@@ -75,6 +76,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly contentFilterService: ContentFilterService,
   ) { }
 
   /**
@@ -250,6 +252,17 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('sendMessage')
   async handleMessage(@MessageBody() sendMessageDto: SendMessageDto, @ConnectedSocket() client: Socket) {
     try {
+      if (sendMessageDto.content && typeof sendMessageDto.content === 'string') {
+        const filterResult = await this.contentFilterService.analyzeText(sendMessageDto.content, {
+          userId: sendMessageDto.userId,
+          context: 'chat',
+          field: 'content',
+        });
+        if (filterResult.action === 'REJECT') {
+          client.emit('sendMessageError', { message: filterResult.userMessage, status: 400, error: 'Content Filter Violation' });
+          return;
+        }
+      }
       const newMessage = await this.chatService.sendMessage(sendMessageDto);
       let message = {
         id: newMessage.id,
@@ -452,6 +465,17 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('sendMessageForOrder')
   async handleSendMessageForOrder(@MessageBody() sendMessageForOrderDto: SendMessageForOrderDto, @ConnectedSocket() client: Socket) {
     try {
+      if (sendMessageForOrderDto.content && typeof sendMessageForOrderDto.content === 'string') {
+        const filterResult = await this.contentFilterService.analyzeText(sendMessageForOrderDto.content, {
+          userId: sendMessageForOrderDto.userId,
+          context: 'chat',
+          field: 'content',
+        });
+        if (filterResult.action === 'REJECT') {
+          client.emit('sendMessageError', { message: filterResult.userMessage, status: 400, error: 'Content Filter Violation' });
+          return;
+        }
+      }
       const newMessage = await this.chatService.sendMessageForOrder(sendMessageForOrderDto);
       let message = {
         id: newMessage.id,
