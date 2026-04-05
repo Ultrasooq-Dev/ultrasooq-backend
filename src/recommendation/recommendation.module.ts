@@ -8,6 +8,8 @@ import { SimilarityService } from './services/similarity.service';
 import { FeedbackService } from './services/feedback.service';
 import { CollaborativeService } from './services/collaborative.service';
 import { PersonalRecommendationService } from './services/personal.service';
+import { SearchBoostService } from './services/search-boost.service';
+import { CrossSellService } from './services/crosssell.service';
 
 @Module({
   controllers: [RecommendationController],
@@ -20,7 +22,9 @@ import { PersonalRecommendationService } from './services/personal.service';
     FeedbackService,
     CollaborativeService,
     PersonalRecommendationService,
+    SearchBoostService,
+    CrossSellService,
   ],
-  exports: [RecommendationService, RecommendationRedisService],
+  exports: [RecommendationService, RecommendationRedisService, SearchBoostService],
 })
 export class RecommendationModule {}
