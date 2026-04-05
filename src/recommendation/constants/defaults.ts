@@ -1,0 +1,15 @@
+export const REC_TTL = 90_000;
+export const BATCH_SIZE = 200;
+export const BATCH_PAUSE_MS = 500;
+export const MAX_CONCURRENCY = 3;
+export const PRESSURE_LATENCY_THRESHOLD = 500;
+export const PRESSURE_CONNECTION_THRESHOLD = 18;
+export const BACKOFF_DURATION_MS = 30_000;
+export const LOCK_TTL_MULTIPLIER = 2;
+export const COBUY_TOP_PRODUCTS = 5000;
+export const SIMILAR_TOP_PRODUCTS = 2000;
+export const COLD_START_THRESHOLD = 5;
+export const COLD_START_TRENDING_BLEND = 0.8;
+export const DEFAULT_LOCALE = 'en';
+export const DEFAULT_ROLE = 'BUYER';
+export const REPEAT_VIEW_THRESHOLD = 3;
