@@ -4,6 +4,12 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "assets": [
+      {
+        "include": "content-filter/data/*.json",
+        "outDir": "dist/src"
+      }
+    ]
   }
 }

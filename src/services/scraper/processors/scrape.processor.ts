@@ -26,6 +26,7 @@ export class AmazonScrapeProcessor extends WorkerHost {
         return this.processScrapeJob(job, 'amazon');
     }
 
+<<<<<<< HEAD
     // ─── BullMQ lifecycle event handlers ─────────────────────────────────────
     @OnWorkerEvent('failed')
     async onFailed(job: Job, error: Error) {
@@ -51,6 +52,8 @@ export class AmazonScrapeProcessor extends WorkerHost {
         this.logger.error(`Worker error: ${error.message}`, error.stack);
     }
 
+=======
+>>>>>>> origin/feat/recommendation-system
     private async processScrapeJob(job: Job, platform: string): Promise<any> {
         const { jobId, categoryUrl, region, maxProducts } = job.data;
         this.logger.log(`Processing ${platform} job ${jobId}: ${categoryUrl} (region: ${region || 'default'})`);
@@ -66,6 +69,7 @@ export class AmazonScrapeProcessor extends WorkerHost {
         const targetCount = maxProducts || 1000;
 
         try {
+<<<<<<< HEAD
             // Check cooldown
             const inCooldown = await this.rotationService.isInCooldown(platform, region);
             if (inCooldown) {
@@ -73,6 +77,20 @@ export class AmazonScrapeProcessor extends WorkerHost {
                 this.logger.warn(`${platform}:${region} in cooldown, ${Math.round(remaining / 60000)}min remaining`);
                 // Re-queue with delay
                 throw new Error(`Platform in cooldown for ${Math.round(remaining / 60000)} minutes`);
+=======
+            // Check cooldown — delay job instead of failing
+            const inCooldown = await this.rotationService.isInCooldown(platform, region);
+            if (inCooldown) {
+                const remaining = await this.rotationService.getCooldownRemaining(platform, region);
+                this.logger.log(`${platform}:${region} in cooldown (${Math.round(remaining / 60000)}min) — delaying job`);
+                // Move job to delayed state instead of throwing (prevents failure count inflation)
+                await job.moveToDelayed(Date.now() + remaining + 30000, job.token); // delay + 30s buffer
+                await this.prisma.scrapingJob.update({
+                    where: { id: jobId },
+                    data: { status: 'QUEUED', cooldownUntil: new Date(Date.now() + remaining) },
+                });
+                return { scrapedCount: 0, delayed: true };
+>>>>>>> origin/feat/recommendation-system
             }
 
             // Build the search URL based on platform
@@ -114,15 +132,25 @@ export class AmazonScrapeProcessor extends WorkerHost {
             // FALLBACK: If provider returned no products, extract links directly with Puppeteer
             if (!searchResult?.products?.length) {
                 this.logger.log(`Provider returned 0 products — trying direct link extraction for ${platform}`);
+<<<<<<< HEAD
                 let fallbackBrowser: any = null;
                 try {
                     const puppeteer = require('puppeteer');
                     fallbackBrowser = await puppeteer.launch({
+=======
+                try {
+                    const puppeteer = require('puppeteer');
+                    const browser = await puppeteer.launch({
+>>>>>>> origin/feat/recommendation-system
                         headless: 'shell',
                         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
                         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
                     });
+<<<<<<< HEAD
                     const page = await fallbackBrowser.newPage();
+=======
+                    const page = await browser.newPage();
+>>>>>>> origin/feat/recommendation-system
                     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36');
                     await page.setViewport({ width: 1920, height: 1080 });
                     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -172,6 +200,7 @@ export class AmazonScrapeProcessor extends WorkerHost {
                             })),
                         };
                     }
+<<<<<<< HEAD
                 } catch (err) {
                     this.logger.warn(`Direct link extraction failed: ${err.message}`);
                 } finally {
@@ -179,6 +208,12 @@ export class AmazonScrapeProcessor extends WorkerHost {
                     if (fallbackBrowser) {
                         try { await fallbackBrowser.close(); } catch (_) {}
                     }
+=======
+
+                    await browser.close();
+                } catch (err) {
+                    this.logger.warn(`Direct link extraction failed: ${err.message}`);
+>>>>>>> origin/feat/recommendation-system
                 }
             }
 
@@ -191,8 +226,32 @@ export class AmazonScrapeProcessor extends WorkerHost {
                 return { scrapedCount: 0, failedCount: 0 };
             }
 
+<<<<<<< HEAD
             // Process each product
             const productsToScrape = searchResult.products.slice(0, targetCount);
+=======
+            // Process each product — DEDUP: skip URLs we already scraped
+            const candidateUrls = searchResult.products.slice(0, targetCount * 2).map(p => p.productUrl);
+            const existingUrls = await this.prisma.scrapedProductRaw.findMany({
+                where: { sourceUrl: { in: candidateUrls } },
+                select: { sourceUrl: true },
+            });
+            const existingSet = new Set(existingUrls.map(e => e.sourceUrl));
+            const productsToScrape = searchResult.products
+                .filter(p => !existingSet.has(p.productUrl))
+                .slice(0, targetCount);
+
+            if (productsToScrape.length === 0) {
+                this.logger.log(`All ${candidateUrls.length} URLs already scraped for ${platform} job ${jobId} — skipping`);
+                await this.prisma.scrapingJob.update({
+                    where: { id: jobId },
+                    data: { status: 'COMPLETED', completedAt: new Date(), lastError: 'All URLs already scraped (dedup)' },
+                });
+                return { scrapedCount: 0, failedCount: 0 };
+            }
+
+            this.logger.log(`${productsToScrape.length} new URLs to scrape (${existingSet.size} duplicates skipped)`);
+>>>>>>> origin/feat/recommendation-system
 
             for (const product of productsToScrape) {
                 try {
@@ -203,17 +262,59 @@ export class AmazonScrapeProcessor extends WorkerHost {
                     // Scrape individual product
                     const scrapedProduct = await this.scraperService.scrapeProduct(product.productUrl);
 
+<<<<<<< HEAD
                     // Store raw data
                     await this.prisma.scrapedProductRaw.create({
                         data: {
+=======
+                    // Extract product name from multiple sources (fallback chain)
+                    const productName = scrapedProduct.productName
+                        || (scrapedProduct as any).metadata?.title
+                        || (scrapedProduct as any).metadata?.name
+                        || product.productName
+                        || '';
+
+                    // Extract price from multiple sources
+                    const price = scrapedProduct.productPrice
+                        || scrapedProduct.offerPrice
+                        || (scrapedProduct as any).metadata?.price
+                        || null;
+
+                    // Determine currency by platform
+                    const currencyMap: Record<string, string> = {
+                        amazon: 'USD', alibaba: 'USD', aliexpress: 'USD', taobao: 'CNY',
+                        hondaparts: 'USD', rockauto: 'USD', megazip: 'USD',
+                        partsouq: 'AED', realoem: 'EUR', catcar: 'EUR',
+                        yoshiparts: 'USD', partsnext: 'USD', toyotaparts: 'USD',
+                    };
+
+                    // Store raw data — upsert to prevent duplicate constraint errors
+                    await this.prisma.scrapedProductRaw.upsert({
+                        where: { sourceUrl: product.productUrl },
+                        create: {
+>>>>>>> origin/feat/recommendation-system
                             jobId,
                             rawData: scrapedProduct as any,
                             sourceUrl: product.productUrl,
                             sourcePlatform: platform,
+<<<<<<< HEAD
                             productName: scrapedProduct.productName,
                             priceOriginal: scrapedProduct.productPrice || null,
                             priceCurrency: platform === 'amazon' ? 'USD' : platform === 'taobao' ? 'CNY' : 'USD',
                             status: platform === 'amazon' ? 'TRANSLATED' : 'RAW', // Amazon is already English
+=======
+                            productName,
+                            priceOriginal: price,
+                            priceCurrency: currencyMap[platform] || 'USD',
+                            status: platform === 'amazon' ? 'TRANSLATED' : 'RAW',
+                        },
+                        update: {
+                            rawData: scrapedProduct as any,
+                            productName: productName || undefined,
+                            priceOriginal: price || undefined,
+                            priceCurrency: currencyMap[platform] || undefined,
+                            updatedAt: new Date(),
+>>>>>>> origin/feat/recommendation-system
                         },
                     });
 

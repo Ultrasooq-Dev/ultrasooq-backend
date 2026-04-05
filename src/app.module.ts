@@ -70,18 +70,17 @@ import { HelperModule } from './helper/helper.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServiceModule } from './service/service.module';
 import { WalletModule } from './wallet/wallet.module';
-import { ScraperModule } from './services/scraper/scraper.module';
+// ScraperModule extracted to standalone app at ultrasooq/scraper (port 3002)
 import { BannerModule } from './banner/banner.module';
 import { SystemLogModule } from './system-log/system-log.module';
-import { AnalyticsModule } from './analytics/analytics.module';
-import { SupportModule } from './support/support.module';
-import { MessageTreeModule } from './message-tree/message-tree.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { SpecificationModule } from './specification/specification.module';
-import { ExternalDropshipModule } from './external-dropship/external-dropship.module';
+import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
+import { ContentFilterModule } from './content-filter/content-filter.module';
+import { RecommendationModule } from './recommendation/recommendation.module';
 
 @Module({
   imports: [
@@ -148,9 +147,6 @@ import { ExternalDropshipModule } from './external-dropship/external-dropship.mo
     SpecificationModule,
 
     SystemLogModule,
-    AnalyticsModule,      // Analytics: event collection, error tracking, performance, visitor sessions
-    SupportModule,        // Support: chat bot, self-learning, knowledge base, admin inbox
-    MessageTreeModule,    // Message tree: dynamic sidebar config per user role
     UserModule,           // User registration, profiles, addresses, phone, branches, S3 uploads
     AuthModule,           // JWT authentication, login, signup, password reset, OTP
     CategoryModule,       // Product/service category tree management
@@ -174,9 +170,11 @@ import { ExternalDropshipModule } from './external-dropship/external-dropship.mo
     HelperModule,         // Shared helper/utility functions, scheduled cleanup tasks
     ServiceModule,        // Service (freelancer/company service offerings) CRUD
     WalletModule,
-    ScraperModule,
+    // ScraperModule — extracted to standalone app (port 3002)
     BannerModule,
-    ExternalDropshipModule
+    StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
+    ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
+    RecommendationModule, // Recommendation engine — personalized, product-based, trending
   ],
   controllers: [AppController],
   providers: [

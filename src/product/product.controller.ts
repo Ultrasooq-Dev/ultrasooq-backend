@@ -36,6 +36,7 @@
  *   - The controller never mutates data directly; it is a pure pass-through to the service.
  */
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -48,6 +49,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UsePipes,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MulterFile } from './types';
@@ -62,6 +64,9 @@ import { GetOneProductPriceDto } from './dto/getOne-productPrice.dto';
 import { AddMultiplePriceForProductDTO } from './dto/addMultiple-productPrice.dto';
 import { UpdateMultiplePriceForProductDTO } from './dto/updateMultiple-productPrice.dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { CreateProductDto } from './dto/create-product.dto';
+import { ContentFilterPipe } from '../content-filter/pipes/content-filter.pipe';
+import { ContentFilterService } from '../content-filter/content-filter.service';
 
 /**
  * @class ProductController
@@ -90,6 +95,7 @@ export class ProductController {
     private readonly productService: ProductService,
     private readonly s3service: S3service,
     private readonly specificationService: SpecificationService,
+    private readonly contentFilterService: ContentFilterService,
   ) {}
 
   /**
@@ -113,8 +119,9 @@ export class ProductController {
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    */
   @UseGuards(AuthGuard)
+  @UsePipes(ContentFilterPipe)
   @Post('/create')
-  create(@Request() req, @Body() payload: any) {
+  create(@Request() req, @Body() payload: CreateProductDto) {
     return this.productService.create(payload, req);
   }
 
@@ -141,7 +148,26 @@ export class ProductController {
    */
   @UseGuards(AuthGuard)
   @Patch('/update')
-  update(@Request() req, @Body() payload: any) {
+  async update(@Request() req, @Body() payload: any) {
+    const textFields = ['productName', 'description', 'shortDescription', 'specification'];
+    for (const field of textFields) {
+      if (payload[field] && typeof payload[field] === 'string') {
+        const result = await this.contentFilterService.analyzeText(payload[field], {
+          userId: req.user?.id,
+          context: 'product',
+          field,
+        });
+        if (result.action === 'REJECT') {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: result.userMessage,
+            error: 'Content Filter Violation',
+            field,
+            severity: result.severity,
+          });
+        }
+      }
+    }
     return this.productService.update(payload, req);
   }
 
@@ -1236,7 +1262,23 @@ export class ProductController {
    */
   @UseGuards(AuthGuard)
   @Post('/addProductReview')
-  addProductReview(@Request() req, @Body() payload: any) {
+  async addProductReview(@Request() req, @Body() payload: any) {
+    if (payload.review && typeof payload.review === 'string') {
+      const result = await this.contentFilterService.analyzeText(payload.review, {
+        userId: req.user?.id,
+        context: 'review',
+        field: 'review',
+      });
+      if (result.action === 'REJECT') {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: result.userMessage,
+          error: 'Content Filter Violation',
+          field: 'review',
+          severity: result.severity,
+        });
+      }
+    }
     return this.productService.addProductReview(payload, req);
   }
 
@@ -1259,7 +1301,23 @@ export class ProductController {
    */
   @UseGuards(AuthGuard)
   @Patch('/editProductReview')
-  editProductReview(@Request() req, @Body() payload: any) {
+  async editProductReview(@Request() req, @Body() payload: any) {
+    if (payload.review && typeof payload.review === 'string') {
+      const result = await this.contentFilterService.analyzeText(payload.review, {
+        userId: req.user?.id,
+        context: 'review',
+        field: 'review',
+      });
+      if (result.action === 'REJECT') {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: result.userMessage,
+          error: 'Content Filter Violation',
+          field: 'review',
+          severity: result.severity,
+        });
+      }
+    }
     return this.productService.editProductReview(payload, req);
   }
 
