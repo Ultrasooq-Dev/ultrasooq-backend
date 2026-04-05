@@ -546,6 +546,7 @@ model Category {
   rfq                              Int?
   store                            Int?
   categoryType                     String?
+  aliases                          Json?
   categoryCustomer_fees            Fees?                   @relation("CategoryCustomer", fields: [customer], references: [id])
   menuParent                       Category?               @relation("MenuParentChild", fields: [menuId], references: [id])
   menuChild                        Category[]              @relation("MenuParentChild")
@@ -579,6 +580,10 @@ model Category {
   categoryMappings                 CategoryMapping[]
   crossSellAsSource                CrossSellRule[] @relation("CrossSellSource")
   crossSellAsTarget                CrossSellRule[] @relation("CrossSellTarget")
+  useCaseMappings                  UseCaseMapping[] @relation("CategoryUseCases")
+  accessoryAsSource                AccessoryLink[] @relation("AccessorySource")
+  accessoryAsTarget                AccessoryLink[] @relation("AccessoryTarget")
+  termDisambiguations              TermDisambiguation[] @relation("TermDisambiguation")
 
   @@index([parentId])
   @@index([menuId])
@@ -887,6 +892,7 @@ model Product {
   dropshipSettings                Json?
   // Scrap product markup (for admin bulk add from scrap)
   scrapMarkup                      Decimal?                  @db.Decimal(10, 2)
+  searchTokens                     String?
   // Full-text search vector (managed by DB trigger, not Prisma)
   search_vector                    Unsupported("tsvector")?
   cart                            Cart[]
@@ -933,6 +939,7 @@ model Product {
   scrapedProductRaw               ScrapedProductRaw[]
   scrapedAutoParts                ScrapedAutoPart[]
   recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
+  compatibilityRules              CompatibilityRule[] @relation("ProductCompatibility")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -1619,6 +1626,7 @@ model Brand {
   updatedAt             DateTime          @updatedAt
   addedBy               Int?
   brandType             String?
+  aliases               Json?
   brandExistingProducts ExistingProduct[]
   brandProducts         Product[]
 }
@@ -4001,4 +4009,79 @@ model RecommendationConfig {
   updatedAt DateTime @updatedAt
 
   @@map("recommendation_config")
+}
+
+// ── Search Intelligence: Knowledge Graph Models ──────────────────────────────
+
+model UseCaseMapping {
+  id           Int      @id @default(autoincrement())
+  categoryId   Int
+  useCase      String   @db.VarChar(100)
+  impliedSpecs Json
+  impliedTags  Json?
+  weight       Decimal  @default(0.8) @db.Decimal(3,2)
+  source       String   @default("manual") @db.VarChar(20)
+  status       Status   @default(ACTIVE)
+  deletedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  category     Category @relation("CategoryUseCases", fields: [categoryId], references: [id])
+  @@unique([categoryId, useCase])
+  @@index([categoryId])
+  @@index([useCase])
+  @@map("use_case_mappings")
+}
+
+model CompatibilityRule {
+  id           Int      @id @default(autoincrement())
+  productId    Int
+  vehicleMake  String?  @db.VarChar(100)
+  vehicleModel String?  @db.VarChar(100)
+  yearFrom     Int?
+  yearTo       Int?
+  deviceBrand  String?  @db.VarChar(100)
+  deviceModel  String?  @db.VarChar(100)
+  compatType   String   @db.VarChar(20)
+  status       Status   @default(ACTIVE)
+  deletedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  product      Product  @relation("ProductCompatibility", fields: [productId], references: [id])
+  @@index([productId])
+  @@index([vehicleMake, vehicleModel])
+  @@index([deviceBrand, deviceModel])
+  @@map("compatibility_rules")
+}
+
+model AccessoryLink {
+  id                  Int      @id @default(autoincrement())
+  sourceCategoryId    Int
+  accessoryCategoryId Int
+  strength            Decimal  @default(0.8) @db.Decimal(3,2)
+  bidirectional       Boolean  @default(false)
+  status              Status   @default(ACTIVE)
+  deletedAt           DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  sourceCategory      Category @relation("AccessorySource", fields: [sourceCategoryId], references: [id])
+  accessoryCategory   Category @relation("AccessoryTarget", fields: [accessoryCategoryId], references: [id])
+  @@unique([sourceCategoryId, accessoryCategoryId])
+  @@index([sourceCategoryId])
+  @@map("accessory_links")
+}
+
+model TermDisambiguation {
+  id              Int      @id @default(autoincrement())
+  term            String   @db.VarChar(100)
+  categoryId      Int
+  resolvedMeaning String   @db.VarChar(200)
+  priority        Int      @default(0)
+  status          Status   @default(ACTIVE)
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  category        Category @relation("TermDisambiguation", fields: [categoryId], references: [id])
+  @@index([term])
+  @@index([categoryId])
+  @@map("term_disambiguations")
 }
