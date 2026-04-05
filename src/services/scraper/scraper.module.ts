@@ -1,4 +1,4 @@
-import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { ScraperService } from './scraper.service';
@@ -29,10 +29,10 @@ import { ScraperMonitorService } from './services/scraper-monitor.service';
 import { ScraperExportService } from './services/scraper-export.service';
 import { ScraperOrchestratorService } from './services/scraper-orchestrator.service';
 
-// BullMQ Processors (workers that execute scraping jobs)
+// BullMQ Processors
 import { AmazonScrapeProcessor, TaobaoScrapeProcessor, AlibabaScrapeProcessor, AliExpressScrapeProcessor } from './processors/scrape.processor';
 
-// Shared / helper services
+// Shared services
 import { ProductService } from 'src/product/product.service';
 import { UserService } from 'src/user/user.service';
 import { AuthService } from 'src/auth/auth.service';
@@ -50,20 +50,13 @@ import { ProductBuyGroupService } from 'src/product/product-buygroup.service';
 import { ProductFactoryService } from 'src/product/product-factory.service';
 import { SpecificationService } from 'src/specification/specification.service';
 
-/**
- * Module for web scraping services
- * Provides scraping capabilities for various e-commerce platforms
- * including the mega-scraper BullMQ queue system.
- */
 @Module({
     imports: [
-        // Register all BullMQ queues used by the mega-scraper system.
-        // The connection uses REDIS_HOST / REDIS_PORT env vars (defaults to localhost:6379).
         BullModule.forRootAsync({
-            useFactory: (config: ConfigService) => ({
+            useFactory: (configService: ConfigService) => ({
                 connection: {
-                    host: config.get<string>('REDIS_HOST', 'localhost'),
-                    port: config.get<number>('REDIS_PORT', 6379),
+                    host: configService.get<string>('REDIS_HOST', 'localhost'),
+                    port: configService.get<number>('REDIS_PORT', 6379),
                 },
             }),
             inject: [ConfigService],
@@ -77,30 +70,16 @@ import { SpecificationService } from 'src/specification/specification.service';
             { name: 'translate-image' },
             { name: 'import-products' },
             { name: 'export-files' },
-            { name: 'scrape-hondaparts' },
-            { name: 'scrape-rockauto' },
-            { name: 'scrape-megazip' },
-            { name: 'scrape-partsouq' },
-            { name: 'scrape-realoem' },
-            { name: 'scrape-catcar' },
-            { name: 'scrape-yoshiparts' },
-            { name: 'scrape-partsnext' },
-            { name: 'scrape-toyotaparts' },
         ),
     ],
     controllers: [ScraperController],
     providers: [
-        // Core scraper service
         ScraperService,
-
-        // Platform providers
         AmazonINScraperProvider,
         TaobaoScraperProvider,
         AlibabaScraperProvider,
         AmazonGlobalScraperProvider,
         AliExpressScraperProvider,
-
-        // Auto parts providers
         HondaPartsScraperProvider,
         RockAutoScraperProvider,
         MegaZipScraperProvider,
@@ -110,8 +89,6 @@ import { SpecificationService } from 'src/specification/specification.service';
         YoshiPartsProvider,
         PartsNextProvider,
         ToyotaPartsProvider,
-
-        // Mega-scraper services
         ScraperQueueService,
         ScraperRotationService,
         TranslationService,
@@ -119,14 +96,10 @@ import { SpecificationService } from 'src/specification/specification.service';
         ScraperMonitorService,
         ScraperExportService,
         ScraperOrchestratorService,
-
-        // BullMQ Processors (workers)
         AmazonScrapeProcessor,
         TaobaoScrapeProcessor,
         AlibabaScrapeProcessor,
         AliExpressScrapeProcessor,
-
-        // Shared / helper services
         ProductService,
         UserService,
         AuthService,
@@ -146,9 +119,7 @@ import { SpecificationService } from 'src/specification/specification.service';
     ],
     exports: [ScraperService, ScraperQueueService, ScraperMonitorService, ScraperOrchestratorService],
 })
-export class ScraperModule implements OnModuleInit, OnModuleDestroy {
-    private readonly logger = new Logger(ScraperModule.name);
-
+export class ScraperModule implements OnModuleInit {
     constructor(
         private readonly scraperService: ScraperService,
         private readonly amazonProvider: AmazonINScraperProvider,
@@ -160,16 +131,13 @@ export class ScraperModule implements OnModuleInit, OnModuleDestroy {
         private readonly rockAutoProvider: RockAutoScraperProvider,
         private readonly megaZipProvider: MegaZipScraperProvider,
         private readonly partsOuqProvider: PartsOuqProvider,
-        private readonly realOEMProvider: RealOEMProvider,
+        private readonly realOemProvider: RealOEMProvider,
         private readonly catCarProvider: CatCarProvider,
         private readonly yoshiPartsProvider: YoshiPartsProvider,
         private readonly partsNextProvider: PartsNextProvider,
         private readonly toyotaPartsProvider: ToyotaPartsProvider,
     ) {}
 
-    /**
-     * Register all providers when module initializes
-     */
     onModuleInit() {
         this.scraperService.registerProviders([
             this.amazonProvider,
@@ -181,32 +149,11 @@ export class ScraperModule implements OnModuleInit, OnModuleDestroy {
             this.rockAutoProvider,
             this.megaZipProvider,
             this.partsOuqProvider,
-            this.realOEMProvider,
+            this.realOemProvider,
             this.catCarProvider,
             this.yoshiPartsProvider,
             this.partsNextProvider,
             this.toyotaPartsProvider,
         ]);
-    }
-
-    /**
-     * Close all browser instances when module is destroyed (shutdown/restart).
-     * Prevents Puppeteer/Browserbase session leaks.
-     */
-    async onModuleDestroy() {
-        this.logger.log('Closing all scraper browser instances...');
-        const providers = [
-            this.taobaoProvider,
-            this.alibabaProvider,
-            this.aliExpressProvider,
-        ];
-        await Promise.allSettled(
-            providers.map(async (p) => {
-                if (typeof (p as any).close === 'function') {
-                    await (p as any).close();
-                }
-            }),
-        );
-        this.logger.log('All scraper browser instances closed');
     }
 }

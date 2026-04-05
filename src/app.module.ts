@@ -70,7 +70,7 @@ import { HelperModule } from './helper/helper.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServiceModule } from './service/service.module';
 import { WalletModule } from './wallet/wallet.module';
-// ScraperModule extracted to standalone app at ultrasooq/scraper (port 3002)
+import { ScraperModule } from './services/scraper/scraper.module';
 import { BannerModule } from './banner/banner.module';
 import { SystemLogModule } from './system-log/system-log.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -170,7 +170,7 @@ import { RecommendationModule } from './recommendation/recommendation.module';
     HelperModule,         // Shared helper/utility functions, scheduled cleanup tasks
     ServiceModule,        // Service (freelancer/company service offerings) CRUD
     WalletModule,
-    // ScraperModule — extracted to standalone app (port 3002)
+    ScraperModule,
     BannerModule,
     StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
     ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
