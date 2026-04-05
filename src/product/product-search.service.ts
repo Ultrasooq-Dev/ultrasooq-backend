@@ -1967,4 +1967,103 @@ export class ProductSearchService {
       };
     }
   }
+
+  /**
+   * Fast tsvector search with relevance ranking.
+   * Uses the existing search_vector column + GIN index.
+   * Complements the existing smartSearch with a faster path.
+   */
+  async tsvectorSearch(
+    term: string,
+    page: number,
+    limit: number,
+    filters: {
+      brandId?: number;
+      categoryIds?: number[];
+      priceMin?: number;
+      priceMax?: number;
+      sortType?: string;
+    },
+  ): Promise<{ data: any[]; totalCount: number }> {
+    if (!term || term.length < 2) return { data: [], totalCount: 0 };
+
+    const skip = (page - 1) * limit;
+
+    // Build tsquery — prefix matching with AND logic
+    const tsQuery = term
+      .split(/\s+/)
+      .filter(w => w.length > 1)
+      .map(w => `${w}:*`)
+      .join(' & ');
+
+    if (!tsQuery) return { data: [], totalCount: 0 };
+
+    // Build dynamic WHERE conditions
+    const conditions: string[] = [
+      `p."search_vector" @@ to_tsquery('simple', $1)`,
+      `p.status = 'ACTIVE'`,
+      `p."deletedAt" IS NULL`,
+      `p."productType" IN ('P', 'F')`,
+    ];
+    const params: any[] = [tsQuery];
+    let paramIdx = 2;
+
+    if (filters.brandId) {
+      conditions.push(`p."brandId" = $${paramIdx}`);
+      params.push(filters.brandId);
+      paramIdx++;
+    }
+    if (filters.categoryIds && filters.categoryIds.length > 0) {
+      conditions.push(`p."categoryId" = ANY($${paramIdx}::int[])`);
+      params.push(filters.categoryIds);
+      paramIdx++;
+    }
+    if (filters.priceMin !== undefined && filters.priceMin !== null) {
+      conditions.push(`p."offerPrice" >= $${paramIdx}`);
+      params.push(filters.priceMin);
+      paramIdx++;
+    }
+    if (filters.priceMax !== undefined && filters.priceMax !== null) {
+      conditions.push(`p."offerPrice" <= $${paramIdx}`);
+      params.push(filters.priceMax);
+      paramIdx++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Sort
+    let orderClause = `ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) DESC`;
+    if (filters.sortType === 'price_asc') orderClause = `p."offerPrice" ASC`;
+    else if (filters.sortType === 'price_desc') orderClause = `p."offerPrice" DESC`;
+    else if (filters.sortType === 'newest') orderClause = `p."createdAt" DESC`;
+    else if (filters.sortType === 'popularity') orderClause = `p."productViewCount" DESC NULLS LAST`;
+
+    try {
+      // Count
+      const countResult = await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(
+        `SELECT COUNT(*)::bigint as count FROM "Product" p WHERE ${whereClause}`,
+        ...params,
+      );
+      const totalCount = Number(countResult[0]?.count || 0);
+
+      if (totalCount === 0) return { data: [], totalCount: 0 };
+
+      // Fetch with ranking
+      const products = await this.prisma.$queryRawUnsafe(
+        `SELECT p.id, p."productName", p."productPrice", p."offerPrice", p."categoryId", p."brandId",
+                p."skuNo", p.status, p."productType", p."productViewCount", p."createdAt",
+                ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) as rank
+         FROM "Product" p
+         WHERE ${whereClause}
+         ORDER BY ${orderClause}
+         LIMIT ${limit} OFFSET ${skip}`,
+        ...params,
+      );
+
+      return { data: products as any[], totalCount };
+    } catch (error) {
+      this.logger.warn(`tsvectorSearch failed: ${error.message}`);
+      return { data: [], totalCount: 0 };
+    }
+  }
 }
