@@ -70,6 +70,7 @@ import { ContentFilterService } from '../content-filter/content-filter.service';
 import { ProductSearchService } from './product-search.service';
 import { QueryParserService } from '../search-intelligence/services/query-parser.service';
 import { IntentClassifierService } from '../search-intelligence/services/intent-classifier.service';
+import { DidYouMeanService } from '../search-intelligence/services/did-you-mean.service';
 
 /**
  * @class ProductController
@@ -102,6 +103,7 @@ export class ProductController {
     private readonly productSearchService: ProductSearchService,
     private readonly queryParser: QueryParserService,
     private readonly intentClassifier: IntentClassifierService,
+    private readonly didYouMean: DidYouMeanService,
   ) {}
 
   /**
@@ -1102,12 +1104,23 @@ export class ProductController {
           sortType: sort,
         };
 
-        const searchResult = await this.productSearchService.tsvectorSearch(
+        let searchResult = await this.productSearchService.tsvectorSearch(
           sq.term,
           parsedPage,
           parsedLimit,
           filters,
         );
+
+        // Fallback: if zero results and category filter was applied, retry without category
+        if (searchResult.totalCount === 0 && filters.categoryIds?.length > 0) {
+          const fallbackFilters = { ...filters, categoryIds: undefined };
+          searchResult = await this.productSearchService.tsvectorSearch(
+            sq.term,
+            parsedPage,
+            parsedLimit,
+            fallbackFilters,
+          );
+        }
 
         return {
           query: {
@@ -1127,6 +1140,13 @@ export class ProductController {
       }),
     );
 
+    const totalCount = enriched.type === 'single'
+      ? results[0]?.totalCount || 0
+      : results.reduce((sum, r) => sum + r.totalCount, 0);
+
+    // "Did you mean?" suggestion when results are sparse
+    const didYouMean = await this.didYouMean.suggest(query || '', totalCount);
+
     return {
       status: true,
       parsed: {
@@ -1135,7 +1155,8 @@ export class ProductController {
         queryCount: enriched.subQueries.length,
       },
       data: enriched.type === 'single' ? results[0]?.results || [] : results,
-      totalCount: enriched.type === 'single' ? results[0]?.totalCount || 0 : results.reduce((sum, r) => sum + r.totalCount, 0),
+      totalCount,
+      didYouMean,
     };
   }
 

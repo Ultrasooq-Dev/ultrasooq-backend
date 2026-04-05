@@ -6,6 +6,8 @@ import { AttributeExtractorService } from './services/attribute-extractor.servic
 import { SearchTokensBuilderService } from './services/search-tokens-builder.service';
 import { BrandResolverService } from './services/brand-resolver.service';
 import { KnowledgeGraphService } from './services/knowledge-graph.service';
+import { RankFusionService } from './services/rank-fusion.service';
+import { DidYouMeanService } from './services/did-you-mean.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
@@ -18,6 +20,8 @@ import { PrismaModule } from '../prisma/prisma.module';
     SearchTokensBuilderService,
     BrandResolverService,
     KnowledgeGraphService,
+    RankFusionService,
+    DidYouMeanService,
   ],
   exports: [
     QueryParserService,
@@ -27,6 +31,8 @@ import { PrismaModule } from '../prisma/prisma.module';
     SearchTokensBuilderService,
     BrandResolverService,
     KnowledgeGraphService,
+    RankFusionService,
+    DidYouMeanService,
   ],
 })
 export class SearchIntelligenceModule {}
