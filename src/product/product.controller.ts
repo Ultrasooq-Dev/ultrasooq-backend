@@ -63,10 +63,13 @@ import { UpdatedProductPriceDto } from './dto/update-productPrice.dto';
 import { GetOneProductPriceDto } from './dto/getOne-productPrice.dto';
 import { AddMultiplePriceForProductDTO } from './dto/addMultiple-productPrice.dto';
 import { UpdateMultiplePriceForProductDTO } from './dto/updateMultiple-productPrice.dto';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ContentFilterPipe } from '../content-filter/pipes/content-filter.pipe';
 import { ContentFilterService } from '../content-filter/content-filter.service';
+import { ProductSearchService } from './product-search.service';
+import { QueryParserService } from '../search-intelligence/services/query-parser.service';
+import { IntentClassifierService } from '../search-intelligence/services/intent-classifier.service';
 
 /**
  * @class ProductController
@@ -96,6 +99,9 @@ export class ProductController {
     private readonly s3service: S3service,
     private readonly specificationService: SpecificationService,
     private readonly contentFilterService: ContentFilterService,
+    private readonly productSearchService: ProductSearchService,
+    private readonly queryParser: QueryParserService,
+    private readonly intentClassifier: IntentClassifierService,
   ) {}
 
   /**
@@ -1056,6 +1062,81 @@ export class ProductController {
       userId ? parseInt(userId) : undefined,
       deviceId,
     );
+  }
+
+  /**
+   * @method unifiedSearch
+   * @description Unified intelligent search with multi-product query parsing, spec extraction,
+   *   and tsvector-based relevance ranking. Supports multi-item queries (e.g. "iPhone 15 and Samsung S24").
+   *
+   * @usage `GET /product/search/unified?q=iPhone+15+128GB&page=1&limit=20&sort=price_asc`
+   */
+  @Get('/search/unified')
+  @ApiOperation({ summary: 'Unified intelligent search with multi-product and spec parsing' })
+  async unifiedSearch(
+    @Query('q') query: string,
+    @Query('page') page: number,
+    @Query('limit') limit: number,
+    @Query('sort') sort: string,
+    @Query('brandIds') brandIds: string,
+    @Query('priceMin') priceMin: number,
+    @Query('priceMax') priceMax: number,
+    @Query('categoryIds') categoryIds: string,
+    @Request() req,
+  ) {
+    const parsedPage = parseInt(String(page)) || 1;
+    const parsedLimit = parseInt(String(limit)) || 20;
+
+    const parsed = this.queryParser.parse(query || '');
+    const enriched = this.intentClassifier.enrich(parsed);
+
+    const results = await Promise.all(
+      enriched.subQueries.map(async (sq) => {
+        const filters = {
+          brandId: sq.resolvedBrandId || (brandIds ? parseInt(brandIds) : undefined),
+          categoryIds: sq.resolvedCategoryIds.length > 0
+            ? sq.resolvedCategoryIds
+            : categoryIds ? categoryIds.split(',').map(id => parseInt(id)) : undefined,
+          priceMin: sq.priceMin || (priceMin ? parseFloat(String(priceMin)) : undefined),
+          priceMax: sq.priceMax || (priceMax ? parseFloat(String(priceMax)) : undefined),
+          sortType: sort,
+        };
+
+        const searchResult = await this.productSearchService.tsvectorSearch(
+          sq.term,
+          parsedPage,
+          parsedLimit,
+          filters,
+        );
+
+        return {
+          query: {
+            term: sq.term,
+            intent: sq.intent,
+            quantity: sq.quantity,
+            brand: sq.resolvedBrandId,
+            categories: sq.resolvedCategoryIds,
+            specs: sq.specs,
+            priceMin: sq.priceMin,
+            priceMax: sq.priceMax,
+            useCaseHint: sq.useCaseHint,
+          },
+          results: searchResult.data,
+          totalCount: searchResult.totalCount,
+        };
+      }),
+    );
+
+    return {
+      status: true,
+      parsed: {
+        type: enriched.type,
+        language: enriched.language,
+        queryCount: enriched.subQueries.length,
+      },
+      data: enriched.type === 'single' ? results[0]?.results || [] : results,
+      totalCount: enriched.type === 'single' ? results[0]?.totalCount || 0 : results.reduce((sum, r) => sum + r.totalCount, 0),
+    };
   }
 
   /**

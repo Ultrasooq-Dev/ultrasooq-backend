@@ -61,6 +61,7 @@ import { SpecificationService } from '../specification/specification.service';
 import { ContentFilterModule } from '../content-filter/content-filter.module';
 import { ContentFilterService } from '../content-filter/content-filter.service';
 import { ContentFilterPipe } from '../content-filter/pipes/content-filter.pipe';
+import { SearchIntelligenceModule } from '../search-intelligence/search-intelligence.module';
 
 /**
  * @class ProductModule
@@ -79,7 +80,7 @@ import { ContentFilterPipe } from '../content-filter/pipes/content-filter.pipe';
  *     ProductService acts as a facade, delegating to these sub-services.
  */
 @Module({
-  imports: [ContentFilterModule],
+  imports: [ContentFilterModule, SearchIntelligenceModule],
   controllers: [ProductController],
   providers: [
     ProductService,
