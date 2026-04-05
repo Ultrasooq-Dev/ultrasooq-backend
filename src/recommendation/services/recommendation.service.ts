@@ -201,7 +201,76 @@ export class RecommendationService {
     };
   }
 
-  // ──────────── 4. Core hydration ────────────
+  // ──────────── 4. Cart-based recommendations ────────────
+
+  async getCartRecs(userId: number, locale: string, tradeRole: string, limit: number): Promise<RecommendationResponse> {
+    // Get user's cart products
+    const cartItems = await this.prisma.cart.findMany({
+      where: { userId, status: 'ACTIVE', deletedAt: null },
+      select: { productId: true },
+    });
+    const cartProductIds = (cartItems.map((c) => c.productId).filter(Boolean)) as number[];
+
+    if (cartProductIds.length === 0) {
+      return this.getPersonal(userId, locale, tradeRole, limit);
+    }
+
+    // Aggregate cross-sell + co-bought across all cart items
+    const allRecIds: number[] = [];
+    for (const productId of cartProductIds) {
+      const crosssellIds = await this.recRedis.getIdList(this.recRedis.keys.crosssell(productId));
+      if (crosssellIds) allRecIds.push(...crosssellIds);
+      const coboughtIds = await this.recRedis.getIdList(this.recRedis.keys.cobought(productId));
+      if (coboughtIds) allRecIds.push(...coboughtIds);
+    }
+
+    // Deduplicate, remove cart items
+    const seen = new Set(cartProductIds);
+    const uniqueIds: number[] = [];
+    for (const id of allRecIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        uniqueIds.push(id);
+      }
+    }
+
+    const sliced = uniqueIds.slice(0, limit);
+    const items = await this.hydrateProducts(sliced, 'crosssell', 'cart');
+    return { items, algorithm: 'crosssell', segment: `${locale}:${tradeRole}`, cached: true };
+  }
+
+  // ──────────── 5. Post-purchase recommendations ────────────
+
+  async getPostPurchaseRecs(orderId: number, userId: number, locale: string, tradeRole: string, limit: number): Promise<RecommendationResponse> {
+    const orderProducts = await this.prisma.orderProducts.findMany({
+      where: { orderId, userId },
+      select: { productId: true },
+    });
+    const orderedProductIds = (orderProducts.map((o) => o.productId).filter(Boolean)) as number[];
+
+    const allRecIds: number[] = [];
+    for (const productId of orderedProductIds) {
+      const coboughtIds = await this.recRedis.getIdList(this.recRedis.keys.cobought(productId));
+      if (coboughtIds) allRecIds.push(...coboughtIds);
+      const crosssellIds = await this.recRedis.getIdList(this.recRedis.keys.crosssell(productId));
+      if (crosssellIds) allRecIds.push(...crosssellIds);
+    }
+
+    const seen = new Set(orderedProductIds);
+    const uniqueIds: number[] = [];
+    for (const id of allRecIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        uniqueIds.push(id);
+      }
+    }
+
+    const sliced = uniqueIds.slice(0, limit);
+    const items = await this.hydrateProducts(sliced, 'cobought', 'post_purchase');
+    return { items, algorithm: 'cobought', segment: `${locale}:${tradeRole}`, cached: true };
+  }
+
+  // ──────────── 6. Core hydration ────────────
 
   private async hydrateProducts(
     productIds: number[],

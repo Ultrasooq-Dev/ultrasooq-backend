@@ -10,8 +10,11 @@ import { CollaborativeService } from './services/collaborative.service';
 import { PersonalRecommendationService } from './services/personal.service';
 import { SearchBoostService } from './services/search-boost.service';
 import { CrossSellService } from './services/crosssell.service';
+import { AuthModule } from '../auth/auth.module';
+import { AuthGuard } from '../guards/AuthGuard';
 
 @Module({
+  imports: [AuthModule],
   controllers: [RecommendationController],
   providers: [
     RecommendationRedisService,
@@ -24,6 +27,7 @@ import { CrossSellService } from './services/crosssell.service';
     PersonalRecommendationService,
     SearchBoostService,
     CrossSellService,
+    AuthGuard,
   ],
   exports: [RecommendationService, RecommendationRedisService, SearchBoostService],
 })

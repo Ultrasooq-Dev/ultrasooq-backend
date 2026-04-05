@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, Min, Max, IsIn } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsIn, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -32,4 +32,25 @@ export class TrendingQueryDto extends RecommendationQueryDto {
   @Type(() => Number)
   @IsInt()
   categoryId?: number;
+}
+
+export class SearchBoostQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  query?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  categoryId?: number;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number = 20;
 }
