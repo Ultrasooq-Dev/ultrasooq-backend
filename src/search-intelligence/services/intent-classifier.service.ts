@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CategoryIndexService } from './category-index.service';
+import { BrandResolverService } from './brand-resolver.service';
 import { ParsedQuery, ParsedSubQuery } from '../interfaces/parsed-query.interface';
 
 export interface EnrichedSubQuery extends ParsedSubQuery {
@@ -16,7 +17,10 @@ export interface EnrichedQuery extends Omit<ParsedQuery, 'subQueries'> {
 export class IntentClassifierService {
   private readonly logger = new Logger(IntentClassifierService.name);
 
-  constructor(private categoryIndex: CategoryIndexService) {}
+  constructor(
+    private categoryIndex: CategoryIndexService,
+    private brandResolver: BrandResolverService,
+  ) {}
 
   enrich(parsed: ParsedQuery): EnrichedQuery {
     const enrichedSubs = parsed.subQueries.map(sq => this.enrichSubQuery(sq));
@@ -26,13 +30,19 @@ export class IntentClassifierService {
   private enrichSubQuery(sq: ParsedSubQuery): EnrichedSubQuery {
     const words = sq.term.split(/\s+/);
 
-    // Try to resolve brand from each word
+    // Try to resolve brand using BrandResolverService (multi-word, alias-aware)
     let resolvedBrandId: number | null = null;
-    for (const word of words) {
-      const brandId = this.categoryIndex.resolveBrand(word);
-      if (brandId) {
-        resolvedBrandId = brandId;
-        break;
+    const brandMatch = this.brandResolver.resolveFromQuery(words);
+    if (brandMatch) {
+      resolvedBrandId = brandMatch.brand.id;
+    } else {
+      // Fallback: try CategoryIndexService for each word
+      for (const word of words) {
+        const brandId = this.categoryIndex.resolveBrand(word);
+        if (brandId) {
+          resolvedBrandId = brandId;
+          break;
+        }
       }
     }
 
