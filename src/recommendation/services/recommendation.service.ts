@@ -96,7 +96,7 @@ export class RecommendationService {
     limit = 12,
   ): Promise<RecommendationResponse> {
     let ids: number[] | null = null;
-    let algorithm = type;
+    let algorithm: string = type;
     let cached = true;
 
     switch (type) {
