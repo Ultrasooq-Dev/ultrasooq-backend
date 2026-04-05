@@ -7,6 +7,7 @@ import { TrendingService } from './services/trending.service';
 import { SimilarityService } from './services/similarity.service';
 import { FeedbackService } from './services/feedback.service';
 import { CollaborativeService } from './services/collaborative.service';
+import { PersonalRecommendationService } from './services/personal.service';
 
 @Module({
   controllers: [RecommendationController],
@@ -18,6 +19,7 @@ import { CollaborativeService } from './services/collaborative.service';
     SimilarityService,
     FeedbackService,
     CollaborativeService,
+    PersonalRecommendationService,
   ],
   exports: [RecommendationService, RecommendationRedisService],
 })
