@@ -135,9 +135,15 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(',')
-      : ['http://localhost:4001', 'http://localhost:3001', 'http://localhost:3000'],
+      : true,  // Allow all origins in dev mode
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-test-user-id', 'Cache-Control', 'Pragma'],
+    allowedHeaders: [
+      'Content-Type', 'Authorization', 'Accept', 'Accept-Language',
+      'Cache-Control', 'Pragma',
+      'x-test-user-id', 'x-device-id', 'x-api-key', 'x-scraper-key',
+      'X-Request-Id', 'X-Session-Id', 'X-Track-Page',
+      'X-Track-Events', 'X-Track-Vitals',
+    ],
     credentials: true,
   });
 
