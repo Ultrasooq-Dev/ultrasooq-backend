@@ -1983,30 +1983,56 @@ export class ProductSearchService {
       priceMin?: number;
       priceMax?: number;
       sortType?: string;
+      productType?: string;
+      sellType?: string;
+      hasDiscount?: boolean;
+      isCustomProduct?: boolean;
     },
   ): Promise<{ data: any[]; totalCount: number }> {
-    if (!term || term.length < 2) return { data: [], totalCount: 0 };
-
     const skip = (page - 1) * limit;
 
-    // Build tsquery — prefix matching with AND logic
-    const tsQuery = term
-      .split(/\s+/)
-      .filter(w => w.length > 1)
-      .map(w => `${w}:*`)
-      .join(' & ');
+    // Determine if this is search mode (has term) or browse mode (filters only)
+    const cleanTerm = (term || '').trim();
+    const hasFilters = !!(filters.productType || filters.sellType || filters.hasDiscount || filters.isCustomProduct || filters.brandId || (filters.categoryIds && filters.categoryIds.length > 0));
 
-    if (!tsQuery) return { data: [], totalCount: 0 };
+    // Need either a search term or at least one filter
+    if (!cleanTerm && !hasFilters) return { data: [], totalCount: 0 };
+
+    // Build tsquery only when we have a search term
+    let tsQuery = '';
+    const isBrowseMode = !cleanTerm;
+    if (cleanTerm && cleanTerm.length >= 2) {
+      tsQuery = cleanTerm
+        .split(/\s+/)
+        .filter(w => w.length > 1)
+        .map(w => `${w}:*`)
+        .join(' & ');
+    }
+
+    // If term was provided but too short / couldn't build tsquery, and no filters → empty
+    if (!tsQuery && !hasFilters) return { data: [], totalCount: 0 };
 
     // Build dynamic WHERE conditions
     const conditions: string[] = [
-      `p."search_vector" @@ to_tsquery('simple', $1)`,
       `p.status = 'ACTIVE'`,
       `p."deletedAt" IS NULL`,
-      `p."productType" IN ('P', 'F')`,
     ];
-    const params: any[] = [tsQuery];
-    let paramIdx = 2;
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    // Add tsvector match only in search mode
+    if (tsQuery) {
+      conditions.push(`p."search_vector" @@ to_tsquery('simple', $${paramIdx})`);
+      params.push(tsQuery);
+      paramIdx++;
+    }
+
+    // Product type filter — if specified use exact match, otherwise default to P/F/R
+    if (filters.productType) {
+      conditions.push(`p."productType" = '${filters.productType}'`);
+    } else {
+      conditions.push(`p."productType" IN ('P', 'F', 'R')`);
+    }
 
     if (filters.brandId) {
       conditions.push(`p."brandId" = $${paramIdx}`);
@@ -2029,16 +2055,36 @@ export class ProductSearchService {
       paramIdx++;
     }
 
+    // Sell type filter — joins ProductPrice table
+    if (filters.sellType) {
+      conditions.push(`EXISTS (SELECT 1 FROM "ProductPrice" pp WHERE pp."productId" = p.id AND pp."sellType" = '${filters.sellType}' AND pp."deletedAt" IS NULL)`);
+    }
+
+    // Discount filter — offerPrice < productPrice
+    if (filters.hasDiscount) {
+      conditions.push(`p."offerPrice" < p."productPrice" AND p."offerPrice" > 0`);
+    }
+
+    // Custom product filter
+    if (filters.isCustomProduct) {
+      conditions.push(`p."isCustomProduct" = true`);
+    }
+
     const whereClause = conditions.join(' AND ');
 
-    // Sort
-    let orderClause = `ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) DESC`;
+    // Sort — in browse mode, default to popularity (trending); in search mode, default to relevance
+    let orderClause: string;
     if (filters.sortType === 'price_asc') orderClause = `p."offerPrice" ASC`;
     else if (filters.sortType === 'price_desc') orderClause = `p."offerPrice" DESC`;
     else if (filters.sortType === 'newest') orderClause = `p."createdAt" DESC`;
     else if (filters.sortType === 'popularity') orderClause = `p."productViewCount" DESC NULLS LAST`;
+    else if (tsQuery) orderClause = `ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) DESC`;
+    else orderClause = `p."productViewCount" DESC NULLS LAST, p."createdAt" DESC`;
 
     try {
+      // Debug: log the generated SQL
+      this.logger.log(`[tsvectorSearch] mode=${isBrowseMode ? 'browse' : 'search'}, where=${whereClause}, params=${JSON.stringify(params)}, order=${orderClause}`);
+
       // Count
       const countResult = await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(
         `SELECT COUNT(*)::bigint as count FROM "Product" p WHERE ${whereClause}`,
@@ -2048,11 +2094,17 @@ export class ProductSearchService {
 
       if (totalCount === 0) return { data: [], totalCount: 0 };
 
-      // Fetch with ranking
+      // Fetch with ranking — includes sellType + isCustomProduct for filter chips
+      const rankExpr = tsQuery
+        ? `ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) as rank`
+        : `COALESCE(p."productViewCount", 0) as rank`;
       const products = await this.prisma.$queryRawUnsafe(
         `SELECT p.id, p."productName", p."productPrice", p."offerPrice", p."categoryId", p."brandId",
                 p."skuNo", p.status, p."productType", p."productViewCount", p."createdAt",
-                ts_rank_cd(p."search_vector", to_tsquery('simple', $1)) as rank
+                p."isCustomProduct",
+                ${rankExpr},
+                (SELECT pp."sellType" FROM "ProductPrice" pp WHERE pp."productId" = p.id AND pp."deletedAt" IS NULL LIMIT 1) as "sellType",
+                CASE WHEN p."offerPrice" < p."productPrice" AND p."offerPrice" > 0 THEN true ELSE false END as "hasDiscount"
          FROM "Product" p
          WHERE ${whereClause}
          ORDER BY ${orderClause}
@@ -2062,8 +2114,9 @@ export class ProductSearchService {
 
       return { data: products as any[], totalCount };
     } catch (error) {
-      this.logger.warn(`tsvectorSearch failed: ${error.message}`);
-      return { data: [], totalCount: 0 };
+      this.logger.error(`[tsvectorSearch] ERROR: ${error.message} | WHERE: ${whereClause} | PARAMS: ${JSON.stringify(params)}`);
+      // Temporarily expose error in response for debugging
+      return { data: [], totalCount: 0, _debug: { error: error.message, where: whereClause, params } } as any;
     }
   }
 }

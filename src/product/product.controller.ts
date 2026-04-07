@@ -1084,12 +1084,57 @@ export class ProductController {
     @Query('priceMin') priceMin: number,
     @Query('priceMax') priceMax: number,
     @Query('categoryIds') categoryIds: string,
+    @Query('productType') productType: string,
+    @Query('sellType') sellType: string,
+    @Query('hasDiscount') hasDiscount: string,
+    @Query('isCustomProduct') isCustomProduct: string,
     @Request() req,
   ) {
     const parsedPage = parseInt(String(page)) || 1;
     const parsedLimit = parseInt(String(limit)) || 20;
+    const cleanQuery = (query || '').trim();
 
-    const parsed = this.queryParser.parse(query || '');
+    // ── Browse mode: no search term but filters present → use getAllProduct ──
+    const hasChipFilters = !!(productType || sellType || hasDiscount === 'true' || isCustomProduct === 'true');
+    if (!cleanQuery && hasChipFilters) {
+      // Reuse the existing getAllProduct which uses Prisma ORM (reliable, tested)
+      // Signature: (page, limit, req, term, sort, brandIds, priceMin, priceMax, userId, categoryIds, userType)
+      const browseResult = await this.productService.getAllProduct(
+        parsedPage,
+        parsedLimit,
+        req,
+        '',                                                    // term (empty for browse)
+        sort === 'price_asc' ? 'asc' : 'desc',                // sort
+        brandIds || null,                                       // brandIds
+        priceMin || null,                                       // priceMin
+        priceMax || null,                                       // priceMax
+        null,                                                   // userId
+        categoryIds || null,                                    // categoryIds
+        null,                                                   // userType
+      );
+
+      let data = browseResult?.data ?? [];
+      const _browseDebug = { browseStatus: browseResult?.status, browseDataLen: data.length, browseTC: browseResult?.totalCount, browseError: browseResult?.error, browseMsg: browseResult?.message };
+
+      // Apply chip filters client-side (getAllProduct doesn't support these natively)
+      if (productType) data = data.filter((p: any) => p.productType === productType);
+      if (hasDiscount === 'true') data = data.filter((p: any) => Number(p.offerPrice) > 0 && Number(p.offerPrice) < Number(p.productPrice));
+      if (isCustomProduct === 'true') data = data.filter((p: any) => p.isCustomProduct === true);
+
+      // Sort by views for trending feel
+      data.sort((a: any, b: any) => (b.productViewCount ?? 0) - (a.productViewCount ?? 0));
+
+      return {
+        status: true,
+        parsed: { type: 'browse', language: 'en', queryCount: 0 },
+        data: data.slice(0, parsedLimit),
+        totalCount: data.length,
+        didYouMean: null,
+        _browseDebug,
+      };
+    }
+
+    const parsed = this.queryParser.parse(cleanQuery);
     const enriched = this.intentClassifier.enrich(parsed);
 
     const results = await Promise.all(
@@ -1102,6 +1147,10 @@ export class ProductController {
           priceMin: sq.priceMin || (priceMin ? parseFloat(String(priceMin)) : undefined),
           priceMax: sq.priceMax || (priceMax ? parseFloat(String(priceMax)) : undefined),
           sortType: sort,
+          productType: productType || undefined,
+          sellType: sellType || undefined,
+          hasDiscount: hasDiscount === 'true' ? true : undefined,
+          isCustomProduct: isCustomProduct === 'true' ? true : undefined,
         };
 
         let searchResult = await this.productSearchService.tsvectorSearch(
