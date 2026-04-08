@@ -1178,9 +1178,12 @@ export class CartService {
    * @param {any} rfqCartId - The RFQ cart row ID (string or number).
    * @returns {Promise<{status: boolean, message: string, data: object, error?: string}>}
    */
-  async rfqCartDelete(rfqCartId: any) {
+  async rfqCartDelete(rfqCartId: number | string) {
     try {
-      const rfqCartID = parseInt(rfqCartId);
+      const rfqCartID = typeof rfqCartId === 'number' ? rfqCartId : parseInt(rfqCartId, 10);
+      if (isNaN(rfqCartID)) {
+        return { status: false, message: 'Invalid rfqCartId', data: [] };
+      }
 
       let existCart = await this.prisma.rFQCart.findUnique({
         where: { id: rfqCartID },

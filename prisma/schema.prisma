@@ -940,6 +940,7 @@ model Product {
   scrapedAutoParts                ScrapedAutoPart[]
   recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
   compatibilityRules              CompatibilityRule[] @relation("ProductCompatibility")
+  productVariants                 ProductVariant[] @relation("ProductVariants")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -1017,6 +1018,7 @@ model ProductPrice {
   productStateDetail              States?              @relation(fields: [productStateId], references: [id])
   productPrice_productPriceReview ProductPriceReview[]
   productPrice_productSellerImage ProductSellerImage[]
+  productPriceVariants            ProductVariant[] @relation("ProductPriceVariants")
 
   @@index([productId, status])
   @@index([adminId, status])
@@ -1039,6 +1041,9 @@ model ProductVariant {
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+
+  product        Product?       @relation("ProductVariants", fields: [productId], references: [id], onDelete: SetNull)
+  productPrice   ProductPrice?  @relation("ProductPriceVariants", fields: [productPriceId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([productPriceId])
@@ -3959,6 +3964,9 @@ model RecommendationMetric {
   @@map("recommendation_metrics")
 }
 
+// NOTE: RecommendationFeedback uses UUID (String) as its own PK but references
+// Product.id (Int) and User.id (Int) as FKs. When joining with RecommendationMetric
+// (also UUID PK), aggregate by productId (Int) — don't join on the UUID PKs directly.
 model RecommendationFeedback {
   id         String   @id @default(uuid())
   recId      String   @db.VarChar(100)
