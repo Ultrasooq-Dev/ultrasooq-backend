@@ -300,10 +300,12 @@ if (sq.specs && Object.keys(sq.specs).length > 0) {
 
 ## Status Tracking
 
-| Fix | Status | Date |
-|-----|--------|------|
-| Brand resolution → applied | ⬜ Pending | |
-| Spec extraction → applied | ⬜ Pending | |
-| Immediate search_vector rebuild | ⬜ Pending | |
-| Auto-correct threshold | ⬜ Pending | |
-| Autocomplete ranking | ⬜ Pending | |
+| Fix | Status | Date | Notes |
+|-----|--------|------|-------|
+| Brand resolution → applied | ✅ Done | 2026-04-08 | Already connected in controller (sq.resolvedBrandId) |
+| Spec extraction → applied | ⬜ Deferred | | Needs tsvectorSearch spec filter SQL support |
+| Immediate search_vector rebuild | ⬜ Deferred | | Needs product lifecycle hooks in service |
+| Auto-correct threshold | ✅ Done | 2026-04-08 | autoCorrect() method added, wired in unified search |
+| Autocomplete ranking | ✅ Verified | 2026-04-08 | Already sorts by similarity/search_count DESC |
+| Search + chip filtering | ✅ Fixed | 2026-04-08 | Multi-chip now filters client-side after search |
+| matchesChip shared function | ✅ Fixed | 2026-04-08 | Extracted from browse block, used by both modes |

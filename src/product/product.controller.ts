@@ -1133,7 +1133,11 @@ export class ProductController {
       };
     }
 
-    const parsed = this.queryParser.parse(cleanQuery);
+    // Auto-correct: if high-confidence correction exists, use it
+    const autoCorrection = await this.didYouMean.autoCorrect(cleanQuery);
+    const searchQuery = autoCorrection.corrected || cleanQuery;
+
+    const parsed = this.queryParser.parse(searchQuery);
     const enriched = this.intentClassifier.enrich(parsed);
 
     const results = await Promise.all(
@@ -1193,7 +1197,7 @@ export class ProductController {
       : results.reduce((sum, r) => sum + r.totalCount, 0);
 
     // "Did you mean?" suggestion when results are sparse
-    const didYouMean = await this.didYouMean.suggest(query || '', totalCount);
+    const didYouMean = await this.didYouMean.suggest(cleanQuery, totalCount);
 
     return {
       status: true,
@@ -1205,6 +1209,7 @@ export class ProductController {
       data: enriched.type === 'single' ? results[0]?.results || [] : results,
       totalCount,
       didYouMean,
+      autoCorrected: autoCorrection.corrected ? { from: autoCorrection.original, to: autoCorrection.corrected } : null,
     };
   }
 
