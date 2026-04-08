@@ -147,18 +147,70 @@ export class AnalyticsAdminController {
       const sessions = sessionRows[0] || {};
       const errors = errorRows[0] || {};
 
+      const totalErrors = (core.serverErrors || 0) + (core.clientErrors || 0);
+
+      // Daily events breakdown (hourly buckets for the period)
+      const dailyEventsRows: any[] = await safeQuery(
+        this.prisma,
+        `SELECT DATE_TRUNC('day', "createdAt")::date AS "date",
+                COUNT(*)::int AS "count"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+         GROUP BY DATE_TRUNC('day', "createdAt")
+         ORDER BY "date" ASC`,
+        [from, to],
+        [],
+        this.logger,
+        'overview:dailyEvents',
+      );
+
+      // Top event types (by HTTP method + status pattern)
+      const topEventsRows: any[] = await safeQuery(
+        this.prisma,
+        `SELECT method AS "name", COUNT(*)::int AS "count"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND method IS NOT NULL
+         GROUP BY method
+         ORDER BY "count" DESC
+         LIMIT 10`,
+        [from, to],
+        [],
+        this.logger,
+        'overview:topEvents',
+      );
+
+      // Top pages (most visited paths)
+      const topPagesRows: any[] = await safeQuery(
+        this.prisma,
+        `SELECT path AS "page", COUNT(*)::int AS "count"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND path IS NOT NULL
+         GROUP BY path
+         ORDER BY "count" DESC
+         LIMIT 10`,
+        [from, to],
+        [],
+        this.logger,
+        'overview:topPages',
+      );
+
       return {
         status: true,
         data: {
-          totalRequests: core.totalRequests || 0,
-          totalSessions: sessions.totalSessions || 0,
-          unresolvedErrors: errors.unresolvedErrors || (core.serverErrors || 0),
-          avgLatency: 0, // metadata.delay is JSON text, not a numeric column
-          productViews: products.productViews || 0,
-          productClicks: products.productClicks || 0,
-          productSearches: products.productSearches || 0,
-          serverErrors: core.serverErrors || 0,
-          clientErrors: core.clientErrors || 0,
+          kpis: {
+            totalEvents: core.totalRequests || 0,
+            totalSessions: sessions.totalSessions || 0,
+            bounceRate: 0,
+            unresolvedErrors: errors.unresolvedErrors || (core.serverErrors || 0),
+            totalErrors,
+            avgApiLatencyMs: 0,
+          },
+          dailyEvents: dailyEventsRows,
+          topEvents: topEventsRows,
+          topPages: topPagesRows,
+          topCountries: [],
         },
       };
     } catch (error: any) {
@@ -166,9 +218,14 @@ export class AnalyticsAdminController {
       return {
         status: true,
         data: {
-          totalRequests: 0, totalSessions: 0, unresolvedErrors: 0,
-          avgLatency: 0, productViews: 0, productClicks: 0,
-          productSearches: 0, serverErrors: 0, clientErrors: 0,
+          kpis: {
+            totalEvents: 0, totalSessions: 0, bounceRate: 0,
+            unresolvedErrors: 0, totalErrors: 0, avgApiLatencyMs: 0,
+          },
+          dailyEvents: [],
+          topEvents: [],
+          topPages: [],
+          topCountries: [],
         },
       };
     }
@@ -227,19 +284,53 @@ export class AnalyticsAdminController {
         from, to,
       );
 
+      // Aggregate KPI totals
+      const kpiRows: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT
+           (SELECT COALESCE(SUM("viewCount"), 0)::int FROM "ProductView" WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2) AS "totalViews",
+           (SELECT COUNT(*)::int FROM "ProductClick" WHERE "createdAt" >= $1 AND "createdAt" <= $2) AS "totalClicks",
+           (SELECT COUNT(*)::int FROM "ProductSearch" WHERE "createdAt" >= $1 AND "createdAt" <= $2) AS "totalSearches"`,
+        from, to,
+      );
+      const kpi = kpiRows[0] || { totalViews: 0, totalClicks: 0, totalSearches: 0 };
+
+      // Total count for pagination
+      const countRows: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(DISTINCT "productId")::int AS total
+         FROM "ProductView"
+         WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2`,
+        from, to,
+      );
+      const total = countRows[0]?.total || 0;
+      const currentLimit = limit || 20;
+      const pages = Math.max(1, Math.ceil(total / currentLimit));
+
+      // Merge viewed products with click/search data for unified list
+      const products = topViewed.map((v: any) => ({
+        productId: v.productId,
+        name_en: v.name_en,
+        name_ar: v.name_ar,
+        views: v.totalViews || 0,
+        clicks: topClicked.find((c: any) => c.productId === v.productId)?.totalClicks || 0,
+        searches: 0,
+      }));
+
       return {
         status: true,
         data: {
-          topViewed,
-          topClicked,
-          topSearched,
-          page: page || 1,
-          limit: limit || 20,
+          kpis: {
+            totalViews: kpi.totalViews || 0,
+            totalClicks: kpi.totalClicks || 0,
+            totalSearches: kpi.totalSearches || 0,
+          },
+          products,
+          total,
+          pages,
         },
       };
     } catch (error: any) {
       this.logger.error(`[products] ${error.message}`);
-      return { status: true, data: { topViewed: [], topClicked: [], topSearched: [], page: 1, limit: 20 } };
+      return { status: true, data: { kpis: { totalViews: 0, totalClicks: 0, totalSearches: 0 }, products: [], total: 0, pages: 1 } };
     }
   }
 
@@ -280,17 +371,23 @@ export class AnalyticsAdminController {
         from, to,
       );
 
-      const stages = [
+      const steps = [
         { name: 'View', count: viewRows[0]?.count || 0 },
         { name: 'Add to Cart', count: cartRows[0]?.count || 0 },
         { name: 'Checkout', count: orderRows[0]?.count || 0 },
         { name: 'Delivered', count: deliveredRows[0]?.count || 0 },
       ];
 
-      return { status: true, data: { stages, flow: flow || 'default' } };
+      const viewCount = steps[0].count;
+      const deliveredCount = steps[3].count;
+      const conversionRate = viewCount > 0
+        ? Math.round((deliveredCount / viewCount) * 10000) / 100
+        : 0;
+
+      return { status: true, data: { steps, conversionRate } };
     } catch (error: any) {
       this.logger.error(`[funnel] ${error.message}`);
-      return { status: true, data: { stages: [], flow: flow || 'default' } };
+      return { status: true, data: { steps: [], conversionRate: 0 } };
     }
   }
 
@@ -354,25 +451,52 @@ export class AnalyticsAdminController {
 
       const stats = statsRows[0] || { totalSearches: 0, totalClicked: 0, uniqueTerms: 0 };
 
+      const overallCtr = stats.totalSearches > 0
+        ? Math.round((stats.totalClicked / stats.totalSearches) * 1000) / 10
+        : 0;
+
+      // Reshape topQueries → terms (field names the admin expects)
+      const terms = topQueries.map((q: any) => ({
+        term: q.searchTerm,
+        searches: q.totalSearches || 0,
+        clicks: q.clickedCount || 0,
+        ctr: q.ctr ? Number(q.ctr) : 0,
+      }));
+
+      // Reshape noResults → zeroResults
+      const zeroResults = noResults.map((q: any) => ({
+        term: q.searchTerm,
+        count: q.searchCount || 0,
+      }));
+
+      // Total count for pagination
+      const totalCountRows: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(DISTINCT "searchTerm")::int AS total
+         FROM "ProductSearch"
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2`,
+        from, to,
+      );
+      const totalTerms = totalCountRows[0]?.total || 0;
+      const pages = Math.max(1, Math.ceil(totalTerms / limit));
+
       return {
         status: true,
         data: {
-          topQueries,
-          noResults,
-          totalSearches: stats.totalSearches,
-          totalClicked: stats.totalClicked,
-          uniqueTerms: stats.uniqueTerms,
-          overallCtr: stats.totalSearches > 0
-            ? Math.round((stats.totalClicked / stats.totalSearches) * 1000) / 10
-            : 0,
-          page: page || 1,
+          kpis: {
+            totalSearches: stats.totalSearches || 0,
+            uniqueTerms: stats.uniqueTerms || 0,
+            overallCtr,
+          },
+          terms,
+          zeroResults,
+          pages,
         },
       };
     } catch (error: any) {
       this.logger.error(`[search] ${error.message}`);
       return {
         status: true,
-        data: { topQueries: [], noResults: [], totalSearches: 0, totalClicked: 0, uniqueTerms: 0, overallCtr: 0, page: 1 },
+        data: { kpis: { totalSearches: 0, uniqueTerms: 0, overallCtr: 0 }, terms: [], zeroResults: [], pages: 1 },
       };
     }
   }
@@ -437,8 +561,9 @@ export class AnalyticsAdminController {
       );
 
       // If ErrorLog doesn't exist, fall back to system_log errors
+      let finalErrors = errors;
       if (errors.length === 0) {
-        const sysErrors: any[] = await this.prisma.$queryRawUnsafe(
+        finalErrors = await this.prisma.$queryRawUnsafe(
           `SELECT id, message, context AS source, level, path,
                   "statusCode", "createdAt" AS "lastSeenAt", "errorStack" AS stack
            FROM system_log
@@ -448,13 +573,50 @@ export class AnalyticsAdminController {
            LIMIT $3 OFFSET $4`,
           from, to, limit, offset,
         );
-        return { status: true, data: { errors: sysErrors, page: page || 1, source: 'system_log' } };
       }
 
-      return { status: true, data: { errors, page: page || 1, source: 'ErrorLog' } };
+      // Total error count for pagination
+      const totalRows: any[] = await safeQuery(
+        this.prisma,
+        `SELECT COUNT(*)::int AS total FROM "ErrorLog" ${conditions}`,
+        params,
+        [{ total: 0 }],
+        this.logger,
+        'errors:total',
+      );
+      let total = totalRows[0]?.total || 0;
+
+      // If ErrorLog didn't have data, count from system_log
+      if (total === 0) {
+        const sysCountRows: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT COUNT(*)::int AS total FROM system_log
+           WHERE "createdAt" >= $1 AND "createdAt" <= $2 AND level = 'ERROR'`,
+          from, to,
+        );
+        total = sysCountRows[0]?.total || 0;
+      }
+
+      const pages = Math.max(1, Math.ceil(total / limit));
+
+      // Error trend (daily counts)
+      const trend: any[] = await safeQuery(
+        this.prisma,
+        `SELECT DATE_TRUNC('day', "lastSeenAt")::date AS "date",
+                COUNT(*)::int AS "count"
+         FROM "ErrorLog"
+         WHERE "lastSeenAt" >= $1 AND "lastSeenAt" <= $2
+         GROUP BY DATE_TRUNC('day', "lastSeenAt")
+         ORDER BY "date" ASC`,
+        [from, to],
+        [],
+        this.logger,
+        'errors:trend',
+      );
+
+      return { status: true, data: { errors: finalErrors, total, pages, trend, release: null } };
     } catch (error: any) {
       this.logger.error(`[errors] ${error.message}`);
-      return { status: true, data: { errors: [], page: 1 } };
+      return { status: true, data: { errors: [], total: 0, pages: 1, trend: [], release: null } };
     }
   }
 
@@ -520,17 +682,37 @@ export class AnalyticsAdminController {
         from, to,
       );
 
+      // Latency trend (hourly buckets)
+      const latencyTrend: any[] = await safeQuery(
+        this.prisma,
+        `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
+                COUNT(*)::int AS "requests"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+         GROUP BY DATE_TRUNC('hour', "createdAt")
+         ORDER BY "hour" ASC
+         LIMIT 168`,
+        [from, to],
+        [],
+        this.logger,
+        'performance:latencyTrend',
+      );
+
       return {
         status: true,
         data: {
-          webVitals: vitals,
-          apiLatency,
-          slowEndpoints,
+          metrics: {
+            webVitals: vitals,
+            apiLatency,
+          },
+          slowestEndpoints: slowEndpoints,
+          slowPrismaQueries: [],
+          latencyTrend,
         },
       };
     } catch (error: any) {
       this.logger.error(`[performance] ${error.message}`);
-      return { status: true, data: { webVitals: [], apiLatency: [], slowEndpoints: [] } };
+      return { status: true, data: { metrics: { webVitals: [], apiLatency: [] }, slowestEndpoints: [], slowPrismaQueries: [], latencyTrend: [] } };
     }
   }
 
@@ -590,16 +772,24 @@ export class AnalyticsAdminController {
         'health-history:rollup',
       );
 
+      const allHealthy = dbHealthy && redisHealthy;
+      const healthyCount = [dbHealthy, redisHealthy, true].filter(Boolean).length;
+      const totalComponents = 3;
+      const uptimePercent = Math.round((healthyCount / totalComponents) * 1000) / 10;
+
       return {
         status: true,
         data: {
-          components: {
-            database: { healthy: dbHealthy, name: 'PostgreSQL' },
-            cache: { healthy: redisHealthy, name: 'Redis' },
-            api: { healthy: true, name: 'NestJS API' },
+          summary: {
+            status: allHealthy ? 'healthy' : 'degraded',
+            uptime: `${uptimePercent}%`,
+            components: {
+              database: { healthy: dbHealthy, name: 'PostgreSQL' },
+              cache: { healthy: redisHealthy, name: 'Redis' },
+              api: { healthy: true, name: 'NestJS API' },
+            },
           },
-          apiTrend,
-          rollup,
+          history: apiTrend,
         },
       };
     } catch (error: any) {
@@ -607,13 +797,16 @@ export class AnalyticsAdminController {
       return {
         status: true,
         data: {
-          components: {
-            database: { healthy: false, name: 'PostgreSQL' },
-            cache: { healthy: false, name: 'Redis' },
-            api: { healthy: true, name: 'NestJS API' },
+          summary: {
+            status: 'unhealthy',
+            uptime: '0%',
+            components: {
+              database: { healthy: false, name: 'PostgreSQL' },
+              cache: { healthy: false, name: 'Redis' },
+              api: { healthy: true, name: 'NestJS API' },
+            },
           },
-          apiTrend: [],
-          rollup: [],
+          history: [],
         },
       };
     }
@@ -657,21 +850,56 @@ export class AnalyticsAdminController {
            AND "statusCode" >= 500`,
       );
 
+      const activeVisitors = sessionRows[0]?.activeSessions || 0;
+
+      // Recent active sessions list
+      const activeSessionsList: any[] = await safeQuery(
+        this.prisma,
+        `SELECT "sessionId", "userId", "lastActiveAt", "startedAt", "pageUrl"
+         FROM "VisitorSession"
+         WHERE "lastActiveAt" > NOW() - INTERVAL '5 minutes'
+           AND "isActive" = true
+         ORDER BY "lastActiveAt" DESC
+         LIMIT 20`,
+        [],
+        [],
+        this.logger,
+        'realtime:activeSessionsList',
+      );
+
+      // Recent events from system_log
+      const recentEvents: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT id, path, method, "statusCode", "createdAt"
+         FROM system_log
+         WHERE "createdAt" > NOW() - INTERVAL '5 minutes'
+         ORDER BY "createdAt" DESC
+         LIMIT 20`,
+      );
+
       return {
         status: true,
         data: {
-          activeSessions: sessionRows[0]?.activeSessions || 0,
+          activeVisitors,
           eventsPerMinute,
-          totalRecentEvents: totalEvents,
-          recentErrors: errorRows[0]?.recentErrors || 0,
-          timestamp: new Date().toISOString(),
+          kpis: {
+            activeVisitors,
+            eventsPerMinute,
+          },
+          activeSessions: activeSessionsList,
+          recentEvents,
         },
       };
     } catch (error: any) {
       this.logger.error(`[realtime] ${error.message}`);
       return {
         status: true,
-        data: { activeSessions: 0, eventsPerMinute: 0, totalRecentEvents: 0, recentErrors: 0, timestamp: new Date().toISOString() },
+        data: {
+          activeVisitors: 0,
+          eventsPerMinute: 0,
+          kpis: { activeVisitors: 0, eventsPerMinute: 0 },
+          activeSessions: [],
+          recentEvents: [],
+        },
       };
     }
   }
@@ -738,10 +966,24 @@ export class AnalyticsAdminController {
         );
       }
 
-      return { status: true, data: { journey: journeyData, userId: userId || null, sessionId: sessionId || null } };
+      // Fetch recent sessions list
+      const sessions: any[] = await safeQuery(
+        this.prisma,
+        `SELECT "sessionId", "userId", "startedAt", "lastActiveAt", "pageUrl", "isActive"
+         FROM "VisitorSession"
+         WHERE "startedAt" >= $1 AND "startedAt" <= $2
+         ORDER BY "startedAt" DESC
+         LIMIT 50`,
+        [from, to],
+        [],
+        this.logger,
+        'user-journey:sessions',
+      );
+
+      return { status: true, data: { sessions, events: journeyData } };
     } catch (error: any) {
       this.logger.error(`[user-journey] ${error.message}`);
-      return { status: true, data: { journey: [], userId: null, sessionId: null } };
+      return { status: true, data: { sessions: [], events: [] } };
     }
   }
 
