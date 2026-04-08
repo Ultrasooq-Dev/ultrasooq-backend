@@ -70,6 +70,15 @@ export class ProductSearchService {
         myProduct = undefined;
       }
 
+      // Allow sellType override via query param (for browse mode filters)
+      const querySellType = req?.query?.sellType;
+      const allSellTypes = req?.query?.allSellTypes === 'true';
+      const sellTypeFilter = querySellType
+        ? { sellType: querySellType }
+        : allSellTypes
+          ? {} // No sellType filter — show all types
+          : { sellType: 'NORMALSELL' }; // Default: retail only
+
       let whereCondition: any = {
         productType: {
           in: ['P', 'F'],
@@ -89,7 +98,7 @@ export class ProductSearchService {
           some: {
             askForPrice: { not: 'true' },
             isCustomProduct: { not: 'true' },
-            sellType: 'NORMALSELL',
+            ...sellTypeFilter,
             status: 'ACTIVE',
           },
         },
