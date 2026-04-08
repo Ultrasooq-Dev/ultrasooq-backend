@@ -64,7 +64,7 @@ const PHRASE_MAP: Array<{ pattern: RegExp; replacement: string; category: string
   { pattern: /(?:second|extra|dual|external)\s+(?:monitor|screen|display)/i, replacement: 'external monitor', category: 'wfh' },
 
   // ── Kids / Baby ─────────────────────────────────────────────────────────────
-  { pattern: /(?:safe|child[- ]?proof)\s+(?:for|my)\s+(?:kids?|child(?:ren)?|baby)/i, replacement: 'child safety products', category: 'kids' },
+  { pattern: /(?:safe|child[- ]?proof)\s+(?:for\s+)?(?:my\s+)?(?:kids?|child(?:ren)?|baby)/i, replacement: 'child safety products', category: 'kids' },
   { pattern: /(?:educational|learning)\s+(?:toy|game|tablet)\s+(?:for|my)\s+(?:kids?|child(?:ren)?)/i, replacement: 'educational toys children', category: 'kids' },
   { pattern: /(?:entertain|keep\s+busy)\s+(?:my\s+)?(?:kids?|child(?:ren)?)/i, replacement: 'kids activity toys', category: 'kids' },
 
