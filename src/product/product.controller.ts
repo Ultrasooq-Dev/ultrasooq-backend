@@ -134,8 +134,9 @@ export class ProductController {
   async create(@Request() req, @Body() payload: CreateProductDto) {
     const result = await this.productService.create(payload, req);
     // Rebuild search_vector immediately so new product is searchable
-    if (result?.data?.id) {
-      this.searchTokensBuilder.buildAndSave(result.data.id).catch(() => {});
+    const newProductId = (result?.data as any)?.id;
+    if (newProductId) {
+      this.searchTokensBuilder.buildAndSave(Number(newProductId)).catch(() => {});
     }
     return result;
   }
@@ -185,9 +186,9 @@ export class ProductController {
     }
     const result = await this.productService.update(payload, req);
     // Rebuild search_vector immediately after update
-    const productId = payload.productId || result?.data?.id;
-    if (productId) {
-      this.searchTokensBuilder.buildAndSave(productId).catch(() => {});
+    const updatedProductId = payload.productId || result?.data?.id;
+    if (updatedProductId) {
+      this.searchTokensBuilder.buildAndSave(Number(updatedProductId)).catch(() => {});
     }
     return result;
   }
