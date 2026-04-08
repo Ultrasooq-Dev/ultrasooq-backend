@@ -74,7 +74,11 @@ export class RecommendationAdminController {
       update: { value: body.value, updatedBy: parseInt(adminId || '0', 10) },
       create: { key: body.key, value: body.value, updatedBy: parseInt(adminId || '0', 10) },
     });
-    return result;
+    // Invalidate relevant Redis config cache
+    if (body.key === 'weights') await this.recRedis.setJson(this.recRedis.keys.configWeights, null, 1);
+    if (body.key === 'decay') await this.recRedis.setJson(this.recRedis.keys.configDecay, null, 1);
+    if (body.key === 'toggles') await this.recRedis.setJson(this.recRedis.keys.configToggles, null, 1);
+    return { ...result, cacheInvalidated: true };
   }
 
   @Get('health')
@@ -133,7 +137,7 @@ export class RecommendationAdminController {
     targetCategoryId: number;
     priority?: number;
   }, @Query('adminId') adminId?: string) {
-    return this.prisma.crossSellRule.create({
+    const rule = await this.prisma.crossSellRule.create({
       data: {
         sourceCategoryId: body.sourceCategoryId,
         targetCategoryId: body.targetCategoryId,
@@ -141,5 +145,8 @@ export class RecommendationAdminController {
         createdBy: parseInt(adminId || '0', 10),
       },
     });
+    // Invalidate cross-sell cache for affected category
+    await this.recRedis.setJson(this.recRedis.keys.crosssell(String(body.sourceCategoryId)), null, 1);
+    return { ...rule, cacheInvalidated: true };
   }
 }

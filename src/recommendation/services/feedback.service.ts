@@ -23,6 +23,16 @@ export class FeedbackService {
     userId: number | null,
     deviceId: string | null,
   ): Promise<void> {
+    // Deduplicate: skip if same recId+action recorded within 5 seconds
+    const dedupKey = `rec:dedup:${data.recId}:${data.action}:${userId || deviceId}`;
+    try {
+      const exists = await this.recRedis.getJson(dedupKey);
+      if (exists) return; // Duplicate — skip
+      await this.recRedis.setJson(dedupKey, 1, 5); // 5-second dedup window
+    } catch {
+      // If dedup check fails, proceed anyway
+    }
+
     const algo = data.algorithm || this.extractAlgorithm(data.recId);
     const today = new Date().toISOString().slice(0, 10);
 

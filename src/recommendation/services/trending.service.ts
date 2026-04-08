@@ -47,6 +47,12 @@ export class TrendingService {
       return;
     }
 
+    // Auto-extend lock every 10 minutes if job is still running
+    const lockExtender = setInterval(async () => {
+      const extended = await this.recRedis.extendLock(JOB_NAME, TRENDING_LOCK_TTL);
+      if (extended) this.logger.log('Trending lock extended — job still running');
+    }, 10 * 60 * 1000);
+
     try {
       const segments = await this.getActiveSegments();
       this.logger.log(`Found ${segments.length} segments to process`);
@@ -74,6 +80,7 @@ export class TrendingService {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.error(`Trending service failed: ${err.message}`, err.stack);
     } finally {
+      clearInterval(lockExtender);
       await this.recRedis.releaseLock(JOB_NAME);
     }
   }
