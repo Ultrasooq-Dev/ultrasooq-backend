@@ -2107,7 +2107,6 @@ export class ProductSearchService {
       const products = await this.prisma.$queryRawUnsafe(
         `SELECT p.id, p."productName", p."productPrice", p."offerPrice", p."categoryId", p."brandId",
                 p."skuNo", p.status, p."productType", p."productViewCount", p."createdAt",
-                p."isCustomProduct",
                 ${rankExpr},
                 (SELECT pp."sellType" FROM "ProductPrice" pp WHERE pp."productId" = p.id AND pp."deletedAt" IS NULL LIMIT 1) as "sellType",
                 CASE WHEN p."offerPrice" < p."productPrice" AND p."offerPrice" > 0 THEN true ELSE false END as "hasDiscount"
