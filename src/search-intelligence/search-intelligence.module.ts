@@ -9,6 +9,9 @@ import { KnowledgeGraphService } from './services/knowledge-graph.service';
 import { RankFusionService } from './services/rank-fusion.service';
 import { DidYouMeanService } from './services/did-you-mean.service';
 import { SearchMiningService } from './services/search-mining.service';
+import { NaturalLanguageRewriterService } from './services/natural-language-rewriter.service';
+import { DisambiguationService } from './services/disambiguation.service';
+import { SearchAnalyticsService } from './services/search-analytics.service';
 import { SearchAdminController } from './search-admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -26,6 +29,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     RankFusionService,
     DidYouMeanService,
     SearchMiningService,
+    NaturalLanguageRewriterService,
+    DisambiguationService,
+    SearchAnalyticsService,
   ],
   exports: [
     QueryParserService,
@@ -38,6 +44,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     RankFusionService,
     DidYouMeanService,
     SearchMiningService,
+    NaturalLanguageRewriterService,
+    DisambiguationService,
+    SearchAnalyticsService,
   ],
 })
 export class SearchIntelligenceModule {}

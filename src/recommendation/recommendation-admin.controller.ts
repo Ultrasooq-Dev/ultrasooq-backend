@@ -146,7 +146,7 @@ export class RecommendationAdminController {
       },
     });
     // Invalidate cross-sell cache for affected category
-    await this.recRedis.setJson(this.recRedis.keys.crosssell(String(body.sourceCategoryId)), null, 1);
+    await this.recRedis.setJson(this.recRedis.keys.crosssell(Number(body.sourceCategoryId)), null, 1);
     return { ...rule, cacheInvalidated: true };
   }
 }

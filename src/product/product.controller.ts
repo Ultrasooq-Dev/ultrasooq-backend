@@ -72,6 +72,9 @@ import { QueryParserService } from '../search-intelligence/services/query-parser
 import { IntentClassifierService } from '../search-intelligence/services/intent-classifier.service';
 import { DidYouMeanService } from '../search-intelligence/services/did-you-mean.service';
 import { SearchTokensBuilderService } from '../search-intelligence/services/search-tokens-builder.service';
+import { NaturalLanguageRewriterService } from '../search-intelligence/services/natural-language-rewriter.service';
+import { DisambiguationService } from '../search-intelligence/services/disambiguation.service';
+import { SearchAnalyticsService } from '../search-intelligence/services/search-analytics.service';
 
 /**
  * @class ProductController
@@ -106,6 +109,9 @@ export class ProductController {
     private readonly intentClassifier: IntentClassifierService,
     private readonly didYouMean: DidYouMeanService,
     private readonly searchTokensBuilder: SearchTokensBuilderService,
+    private readonly nlRewriter: NaturalLanguageRewriterService,
+    private readonly disambiguation: DisambiguationService,
+    private readonly searchAnalytics: SearchAnalyticsService,
   ) {}
 
   /**
@@ -1147,19 +1153,37 @@ export class ProductController {
       };
     }
 
+    const startTime = Date.now();
+
+    // ── Phase 3: Natural language rewrite (converts conversational → product terms) ──
+    const { rewritten, wasRewritten } = this.nlRewriter.rewrite(cleanQuery);
+    const rewrittenQuery = wasRewritten ? rewritten : cleanQuery;
+
     // Auto-correct: if high-confidence correction exists, use it
-    const autoCorrection = await this.didYouMean.autoCorrect(cleanQuery);
-    const searchQuery = autoCorrection.corrected || cleanQuery;
+    const autoCorrection = await this.didYouMean.autoCorrect(rewrittenQuery);
+    const searchQuery = autoCorrection.corrected || rewrittenQuery;
 
     const parsed = this.queryParser.parse(searchQuery);
     const enriched = this.intentClassifier.enrich(parsed);
 
+    // Extract userId from JWT token if present (for disambiguation personalization)
+    const userId = req?.user?.id ? parseInt(req.user.id) : undefined;
+
     const results = await Promise.all(
       enriched.subQueries.map(async (sq) => {
+        // ── Phase 3: Disambiguation — boost category by user browsing history ──
+        let resolvedCategoryIds = sq.resolvedCategoryIds;
+        if (sq.intent === 'natural_language' || sq.intent === 'direct_match') {
+          const disambResult = await this.disambiguation.disambiguate(sq.term, userId);
+          if (disambResult.bestGuess && resolvedCategoryIds.length === 0) {
+            resolvedCategoryIds = [disambResult.bestGuess];
+          }
+        }
+
         const filters = {
           brandId: sq.resolvedBrandId || (brandIds ? parseInt(brandIds) : undefined),
-          categoryIds: sq.resolvedCategoryIds.length > 0
-            ? sq.resolvedCategoryIds
+          categoryIds: resolvedCategoryIds.length > 0
+            ? resolvedCategoryIds
             : categoryIds ? categoryIds.split(',').map(id => parseInt(id)) : undefined,
           priceMin: sq.priceMin || (priceMin ? parseFloat(String(priceMin)) : undefined),
           priceMax: sq.priceMax || (priceMax ? parseFloat(String(priceMax)) : undefined),
@@ -1194,7 +1218,7 @@ export class ProductController {
             intent: sq.intent,
             quantity: sq.quantity,
             brand: sq.resolvedBrandId,
-            categories: sq.resolvedCategoryIds,
+            categories: resolvedCategoryIds,
             specs: sq.specs,
             priceMin: sq.priceMin,
             priceMax: sq.priceMax,
@@ -1213,17 +1237,32 @@ export class ProductController {
     // "Did you mean?" suggestion when results are sparse
     const didYouMean = await this.didYouMean.suggest(cleanQuery, totalCount);
 
+    // ── Phase 3: Log search analytics (fire-and-forget) ──
+    const responseTimeMs = Date.now() - startTime;
+    this.searchAnalytics.logSearch({
+      query: cleanQuery,
+      parsedType: enriched.type,
+      language: enriched.language,
+      resultCount: totalCount,
+      userId,
+      intent: enriched.subQueries[0]?.intent,
+      didYouMean: didYouMean ?? undefined,
+      responseTimeMs,
+    }).catch(() => {}); // Fire-and-forget, never block the response
+
     return {
       status: true,
       parsed: {
         type: enriched.type,
         language: enriched.language,
         queryCount: enriched.subQueries.length,
+        wasRewritten,
       },
       data: enriched.type === 'single' ? results[0]?.results || [] : results,
       totalCount,
       didYouMean,
       autoCorrected: autoCorrection.corrected ? { from: autoCorrection.original, to: autoCorrection.corrected } : null,
+      rewritten: wasRewritten ? { from: cleanQuery, to: rewritten } : null,
     };
   }
 
