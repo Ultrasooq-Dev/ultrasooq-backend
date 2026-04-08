@@ -14,11 +14,17 @@ import { DisambiguationService } from './services/disambiguation.service';
 import { SearchAnalyticsService } from './services/search-analytics.service';
 import { SearchAdminController } from './search-admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AuthService } from '../auth/auth.service';
+import { JwtService } from '@nestjs/jwt';
+import { SuperAdminAuthGuard } from '../guards/SuperAdminAuthGuard';
 
 @Module({
   imports: [PrismaModule],
   controllers: [SearchAdminController],
   providers: [
+    AuthService,
+    JwtService,
+    SuperAdminAuthGuard,
     QueryParserService,
     IntentClassifierService,
     CategoryIndexService,
