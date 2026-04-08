@@ -2091,9 +2091,6 @@ export class ProductSearchService {
     else orderClause = `p."productViewCount" DESC NULLS LAST, p."createdAt" DESC`;
 
     try {
-      // Debug: log the generated SQL
-      this.logger.log(`[tsvectorSearch] mode=${isBrowseMode ? 'browse' : 'search'}, where=${whereClause}, params=${JSON.stringify(params)}, order=${orderClause}`);
-
       // Count
       const countResult = await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(
         `SELECT COUNT(*)::bigint as count FROM "Product" p WHERE ${whereClause}`,
@@ -2123,9 +2120,8 @@ export class ProductSearchService {
 
       return { data: products as any[], totalCount };
     } catch (error) {
-      this.logger.error(`[tsvectorSearch] ERROR: ${error.message} | WHERE: ${whereClause} | PARAMS: ${JSON.stringify(params)}`);
-      // Temporarily expose error in response for debugging
-      return { data: [], totalCount: 0, _debug: { error: error.message, where: whereClause, params } } as any;
+      this.logger.warn(`tsvectorSearch failed: ${error.message}`);
+      return { data: [], totalCount: 0 };
     }
   }
 }

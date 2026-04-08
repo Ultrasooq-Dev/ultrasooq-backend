@@ -1113,8 +1113,8 @@ export class ProductController {
         null,                                                   // userType
       );
 
-      let data = browseResult?.data ?? [];
-      const _browseDebug = { browseStatus: browseResult?.status, browseDataLen: data.length, browseTC: browseResult?.totalCount, browseError: browseResult?.error, browseMsg: browseResult?.message };
+      const br = browseResult as any;
+      let data = br?.data ?? [];
 
       // Apply chip filters client-side (getAllProduct doesn't support these natively)
       if (productType) data = data.filter((p: any) => p.productType === productType);
@@ -1130,7 +1130,6 @@ export class ProductController {
         data: data.slice(0, parsedLimit),
         totalCount: data.length,
         didYouMean: null,
-        _browseDebug,
       };
     }
 
