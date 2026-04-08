@@ -23,6 +23,7 @@
  */
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
+import { AnalyticsAdminController } from './analytics-admin.controller';
 import { AdminService } from './admin.service';
 import { AuthService } from 'src/auth/auth.service';
 import { JwtService } from '@nestjs/jwt';
@@ -53,7 +54,7 @@ import { NotificationService } from 'src/notification/notification.service';
  *     not via Dependency Injection.
  */
 @Module({
-  controllers: [AdminController],
+  controllers: [AdminController, AnalyticsAdminController],
   providers: [AdminService, AuthService, JwtService, NotificationService]
 })
 export class AdminModule {}
