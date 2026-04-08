@@ -27,10 +27,11 @@ export class SearchTokensBuilderService {
     shortDescription?: string | null;
     brand?: { brandName?: string | null; aliases?: unknown } | null;
     category?: { name?: string | null; aliases?: unknown } | null;
+    productTags?: Array<{ productTagsTag?: { tagName?: string | null } | null }> | null;
   }): string {
     const parts: string[] = [];
 
-    // 1. Product name
+    // 1. Product name (highest weight — appears first in tsvector)
     if (product.productName) parts.push(product.productName.trim());
 
     // 2. SKU
@@ -63,6 +64,14 @@ export class SearchTokensBuilderService {
       }
     }
 
+    // 6. Product tags — improves search discoverability
+    if (product.productTags?.length) {
+      for (const pt of product.productTags) {
+        const tagName = pt.productTagsTag?.tagName;
+        if (tagName) parts.push(tagName.trim());
+      }
+    }
+
     return parts.filter(Boolean).join(' ');
   }
 
@@ -80,7 +89,6 @@ export class SearchTokensBuilderService {
         brand: {
           select: {
             brandName: true,
-            // aliases field added by Task 1 migration; may not exist yet — handled safely
             aliases: true,
           },
         },
@@ -89,6 +97,10 @@ export class SearchTokensBuilderService {
             name: true,
             aliases: true,
           },
+        },
+        productTags: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { productTagsTag: { select: { tagName: true } } },
         },
       },
     });
@@ -139,6 +151,10 @@ export class SearchTokensBuilderService {
             name: true,
             aliases: true,
           },
+        },
+        productTags: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { productTagsTag: { select: { tagName: true } } },
         },
       },
     });

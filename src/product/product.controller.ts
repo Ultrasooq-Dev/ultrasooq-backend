@@ -71,6 +71,7 @@ import { ProductSearchService } from './product-search.service';
 import { QueryParserService } from '../search-intelligence/services/query-parser.service';
 import { IntentClassifierService } from '../search-intelligence/services/intent-classifier.service';
 import { DidYouMeanService } from '../search-intelligence/services/did-you-mean.service';
+import { SearchTokensBuilderService } from '../search-intelligence/services/search-tokens-builder.service';
 
 /**
  * @class ProductController
@@ -104,6 +105,7 @@ export class ProductController {
     private readonly queryParser: QueryParserService,
     private readonly intentClassifier: IntentClassifierService,
     private readonly didYouMean: DidYouMeanService,
+    private readonly searchTokensBuilder: SearchTokensBuilderService,
   ) {}
 
   /**
@@ -129,8 +131,13 @@ export class ProductController {
   @UseGuards(AuthGuard)
   @UsePipes(ContentFilterPipe)
   @Post('/create')
-  create(@Request() req, @Body() payload: CreateProductDto) {
-    return this.productService.create(payload, req);
+  async create(@Request() req, @Body() payload: CreateProductDto) {
+    const result = await this.productService.create(payload, req);
+    // Rebuild search_vector immediately so new product is searchable
+    if (result?.data?.id) {
+      this.searchTokensBuilder.buildAndSave(result.data.id).catch(() => {});
+    }
+    return result;
   }
 
   /**
@@ -176,7 +183,13 @@ export class ProductController {
         }
       }
     }
-    return this.productService.update(payload, req);
+    const result = await this.productService.update(payload, req);
+    // Rebuild search_vector immediately after update
+    const productId = payload.productId || result?.data?.id;
+    if (productId) {
+      this.searchTokensBuilder.buildAndSave(productId).catch(() => {});
+    }
+    return result;
   }
 
   /**

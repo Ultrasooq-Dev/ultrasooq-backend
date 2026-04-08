@@ -309,3 +309,5 @@ if (sq.specs && Object.keys(sq.specs).length > 0) {
 | Autocomplete ranking | ✅ Verified | 2026-04-08 | Already sorts by similarity/search_count DESC |
 | Search + chip filtering | ✅ Fixed | 2026-04-08 | Multi-chip now filters client-side after search |
 | matchesChip shared function | ✅ Fixed | 2026-04-08 | Extracted from browse block, used by both modes |
+| Tags in search_vector | ✅ Fixed | 2026-04-08 | buildTokens now includes productTags.tagName |
+| Immediate search_vector rebuild | ✅ Fixed | 2026-04-08 | buildAndSave called after product create/update |
