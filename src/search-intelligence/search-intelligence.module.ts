@@ -8,10 +8,13 @@ import { BrandResolverService } from './services/brand-resolver.service';
 import { KnowledgeGraphService } from './services/knowledge-graph.service';
 import { RankFusionService } from './services/rank-fusion.service';
 import { DidYouMeanService } from './services/did-you-mean.service';
+import { SearchMiningService } from './services/search-mining.service';
+import { SearchAdminController } from './search-admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
+  controllers: [SearchAdminController],
   providers: [
     QueryParserService,
     IntentClassifierService,
@@ -22,6 +25,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     KnowledgeGraphService,
     RankFusionService,
     DidYouMeanService,
+    SearchMiningService,
   ],
   exports: [
     QueryParserService,
@@ -33,6 +37,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     KnowledgeGraphService,
     RankFusionService,
     DidYouMeanService,
+    SearchMiningService,
   ],
 })
 export class SearchIntelligenceModule {}
