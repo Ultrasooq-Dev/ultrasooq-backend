@@ -727,13 +727,23 @@ export class AnalyticsAdminController {
         ...apiLatency.map((a: any) => ({ name: `API ${a.statusGroup}`, value: Number(a.avgDuration) || 0, unit: 'ms', source: 'apiLatency', requestCount: a.requestCount })),
       ];
 
+      // Convert all Decimal strings to numbers for frontend
       return {
         status: true,
         data: {
           metrics: metricsArray,
-          slowestEndpoints: slowEndpoints,
+          slowestEndpoints: slowEndpoints.map((ep: any) => ({
+            ...ep,
+            avgMs: Number(ep.avgMs) || 0,
+            maxMs: Number(ep.maxMs) || 0,
+            requestCount: Number(ep.requestCount) || 0,
+          })),
           slowPrismaQueries: [],
-          latencyTrend,
+          latencyTrend: (latencyTrend as any[]).map((t: any) => ({
+            ...t,
+            avgMs: Number(t.avgMs) || 0,
+            requests: Number(t.requests) || 0,
+          })),
         },
       };
     } catch (error: any) {
