@@ -698,13 +698,16 @@ export class AnalyticsAdminController {
         'performance:latencyTrend',
       );
 
+      // metrics as array: each entry is { name, value, unit, source }
+      const metricsArray = [
+        ...vitals.map((v: any) => ({ name: v.metricName || v.name, value: v.avg || v.value, unit: 'ms', source: 'webVitals' })),
+        ...apiLatency.map((a: any) => ({ name: `API ${a.statusGroup || a.status || 'requests'}`, value: a.avgDuration || a.requestCount, unit: a.avgDuration ? 'ms' : 'count', source: 'apiLatency' })),
+      ];
+
       return {
         status: true,
         data: {
-          metrics: {
-            webVitals: vitals,
-            apiLatency,
-          },
+          metrics: metricsArray,
           slowestEndpoints: slowEndpoints,
           slowPrismaQueries: [],
           latencyTrend,
@@ -712,7 +715,7 @@ export class AnalyticsAdminController {
       };
     } catch (error: any) {
       this.logger.error(`[performance] ${error.message}`);
-      return { status: true, data: { metrics: { webVitals: [], apiLatency: [] }, slowestEndpoints: [], slowPrismaQueries: [], latencyTrend: [] } };
+      return { status: true, data: { metrics: [], slowestEndpoints: [], slowPrismaQueries: [], latencyTrend: [] } };
     }
   }
 
@@ -777,18 +780,15 @@ export class AnalyticsAdminController {
       const totalComponents = 3;
       const uptimePercent = Math.round((healthyCount / totalComponents) * 1000) / 10;
 
+      // summary as array of components for frontend .map()
       return {
         status: true,
         data: {
-          summary: {
-            status: allHealthy ? 'healthy' : 'degraded',
-            uptime: `${uptimePercent}%`,
-            components: {
-              database: { healthy: dbHealthy, name: 'PostgreSQL' },
-              cache: { healthy: redisHealthy, name: 'Redis' },
-              api: { healthy: true, name: 'NestJS API' },
-            },
-          },
+          summary: [
+            { name: 'PostgreSQL', component: 'database', healthy: dbHealthy, status: dbHealthy ? 'healthy' : 'unhealthy', uptime: `${uptimePercent}%` },
+            { name: 'Redis', component: 'cache', healthy: redisHealthy, status: redisHealthy ? 'healthy' : 'unhealthy', uptime: `${uptimePercent}%` },
+            { name: 'NestJS API', component: 'api', healthy: true, status: 'healthy', uptime: `${uptimePercent}%` },
+          ],
           history: apiTrend,
         },
       };
@@ -797,13 +797,10 @@ export class AnalyticsAdminController {
       return {
         status: true,
         data: {
-          summary: {
-            status: 'unhealthy',
-            uptime: '0%',
-            components: {
-              database: { healthy: false, name: 'PostgreSQL' },
-              cache: { healthy: false, name: 'Redis' },
-              api: { healthy: true, name: 'NestJS API' },
+          summary: [
+            { name: 'PostgreSQL', component: 'database', healthy: false, status: 'unhealthy', uptime: '0%' },
+            { name: 'Redis', component: 'cache', healthy: false, status: 'unhealthy', uptime: '0%' },
+            { name: 'NestJS API', component: 'api', healthy: true, status: 'healthy', uptime: '0%' },
             },
           },
           history: [],
