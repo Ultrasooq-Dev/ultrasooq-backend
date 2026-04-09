@@ -74,9 +74,15 @@ function numericize<T>(val: T): T {
   if (val instanceof Date) return val;
   if (Array.isArray(val)) return val.map(numericize) as unknown as T;
   if (typeof val === 'object') {
+    // Prisma 7 Decimal objects have a toNumber() method — convert directly
+    if (typeof (val as any).toNumber === 'function') {
+      return (val as any).toNumber() as unknown as T;
+    }
     const out: any = {};
     for (const [k, v] of Object.entries(val as any)) {
-      if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && v.length < 16) {
+      if (v !== null && typeof v === 'object' && typeof (v as any).toNumber === 'function') {
+        out[k] = (v as any).toNumber();
+      } else if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && v.length < 16) {
         out[k] = Number(v);
       } else {
         out[k] = numericize(v);
