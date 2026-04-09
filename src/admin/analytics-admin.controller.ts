@@ -770,8 +770,8 @@ export class AnalyticsAdminController {
         );
       } catch (e: any) { this.logger.warn(`[performance:slowEndpoints] ${e.message}`); }
 
-      // Latency trend (hourly buckets, excludes scraper)
-      const latencyTrend: any[] = await safeQuery(
+      // Backend latency trend (hourly buckets, excludes scraper)
+      const backendTrend: any[] = await safeQuery(
         this.prisma,
         `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
                 COUNT(*)::int AS "requests",
@@ -786,8 +786,40 @@ export class AnalyticsAdminController {
         [from, to],
         [],
         this.logger,
-        'performance:latencyTrend',
+        'performance:backendTrend',
       );
+
+      // Frontend TTFB trend (hourly buckets from PerformanceMetric)
+      const frontendTrend: any[] = await safeQuery(
+        this.prisma,
+        `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
+                ROUND(AVG("metricValue")::numeric, 1) AS "avgMs"
+         FROM "PerformanceMetric"
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND "metricName" = 'TTFB'
+         GROUP BY DATE_TRUNC('hour', "createdAt")
+         ORDER BY "hour" ASC
+         LIMIT 168`,
+        [from, to],
+        [],
+        this.logger,
+        'performance:frontendTrend',
+      );
+
+      // Merge into combined trend — { date, backend, frontend, requests }
+      const feByHour = new Map(frontendTrend.map((r: any) => [
+        r.hour ? new Date(r.hour).toISOString().slice(0, 13) : '', Number(r.avgMs) || 0,
+      ]));
+      const latencyTrend = backendTrend.map((t: any) => {
+        const hourKey = t.hour ? new Date(t.hour).toISOString().slice(0, 13) : '';
+        return {
+          date: t.hour ? new Date(t.hour).toISOString().slice(0, 10) : '',
+          hour: hourKey,
+          backend: Number(t.avgMs) || 0,
+          frontend: feByHour.get(hourKey) ?? 0,
+          requests: Number(t.requests) || 0,
+        };
+      });
 
       // Build metrics array — frontend expects { name, avg, percentiles: { p50, p95 } }
       const avgMs = Number(overallLatency[0]?.avgMs) || 0;
@@ -819,11 +851,7 @@ export class AnalyticsAdminController {
             count: Number(ep.requestCount) || 0,
           })),
           slowPrismaQueries: [],
-          latencyTrend: (latencyTrend as any[]).map((t: any) => ({
-            date: t.hour ? new Date(t.hour).toISOString().slice(0, 10) : '',
-            avgMs: Number(t.avgMs) || 0,
-            requests: Number(t.requests) || 0,
-          })),
+          latencyTrend,
         },
       };
     } catch (error: any) {
@@ -895,77 +923,39 @@ export class AnalyticsAdminController {
       const uptimePercent = Math.round((healthyCount / totalComponents) * 1000) / 10;
 
       // Compute current response times
-      let backendAvgMs = 0;
+      let apiAvgMs = 0;
       let dbAvgMs = 0;
       try {
         const latency: any[] = await this.rawQuery(
           `SELECT
-             ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "backendAvgMs",
+             ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "apiAvgMs",
              ROUND(AVG(CASE WHEN path LIKE '/api/v1/product%' OR path LIKE '/api/v1/category%' OR path LIKE '/api/v1/order%'
                THEN NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric END),1) AS "dbAvgMs"
            FROM system_log
            WHERE "createdAt" > NOW() - INTERVAL '1 hour' AND metadata->>'delay' IS NOT NULL`,
         );
-        backendAvgMs = Number(latency[0]?.backendAvgMs) || 0;
+        apiAvgMs = Number(latency[0]?.apiAvgMs) || 0;
         dbAvgMs = Number(latency[0]?.dbAvgMs) || 0;
       } catch {}
 
-      // Frontend web vitals — TTFB per hour from PerformanceMetric
-      const frontendTrend: any[] = await safeQuery(
-        this.prisma,
-        `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
-                ROUND(AVG("metricValue")::numeric, 1) AS "avgMs"
-         FROM "PerformanceMetric"
-         WHERE "createdAt" >= $1 AND "createdAt" <= $2
-           AND "metricName" = 'TTFB'
-         GROUP BY DATE_TRUNC('hour', "createdAt")
-         ORDER BY "hour" ASC
-         LIMIT 168`,
-        [from, to],
-        [],
-        this.logger,
-        'health-history:frontendTrend',
-      );
-
-      // Current frontend avg (TTFB last hour)
-      let frontendAvgMs = 0;
-      try {
-        const feLatency: any[] = await safeQuery(
-          this.prisma,
-          `SELECT ROUND(AVG("metricValue")::numeric, 1) AS "avgMs"
-           FROM "PerformanceMetric"
-           WHERE "createdAt" > NOW() - INTERVAL '1 hour' AND "metricName" = 'TTFB'`,
-          [],
-          [{ avgMs: 0 }],
-          this.logger,
-          'health-history:frontendAvg',
-        );
-        frontendAvgMs = Number(feLatency[0]?.avgMs) || 0;
-      } catch {}
-
-      // Build per-hour lookups
+      // Build per-hour DB latency lookup
       const dbByHour = new Map(dbTrend.map((r: any) => [new Date(r.hour).toISOString(), Number(r.avgMs) || 0]));
-      const feByHour = new Map(frontendTrend.map((r: any) => [new Date(r.hour).toISOString(), Number(r.avgMs) || 0]));
 
       return {
         status: true,
         data: {
           summary: [
-            { name: 'frontend', currentStatus: 'healthy', avgResponseMs: frontendAvgMs, uptimePercent },
-            { name: 'backend', currentStatus: 'healthy', avgResponseMs: backendAvgMs, uptimePercent },
+            { name: 'api', currentStatus: 'healthy', avgResponseMs: apiAvgMs, uptimePercent },
             { name: 'database', currentStatus: dbHealthy ? 'healthy' : 'down', avgResponseMs: dbAvgMs, uptimePercent },
             { name: 'redis', currentStatus: redisHealthy ? 'healthy' : 'down', avgResponseMs: redisHealthy ? 1 : null, uptimePercent },
           ],
-          // History entries for all components per hour
           history: apiTrend.flatMap((row: any) => {
             const checkedAt = row.hour ? new Date(row.hour).toISOString() : null;
-            const beMs = Number(row.avgMs) || 0;
+            const apiMs = Number(row.avgMs) || 0;
             const dbMs = checkedAt ? (dbByHour.get(checkedAt) ?? 0) : 0;
-            const feMs = checkedAt ? (feByHour.get(checkedAt) ?? 0) : 0;
             const hasErrors = Number(row.errors) > 0;
             return [
-              { checkedAt, component: 'frontend', status: 'healthy', responseMs: feMs, details: {} },
-              { checkedAt, component: 'backend', status: hasErrors ? 'degraded' : 'healthy', responseMs: beMs, details: { requests: Number(row.requests), errors: Number(row.errors) } },
+              { checkedAt, component: 'api', status: hasErrors ? 'degraded' : 'healthy', responseMs: apiMs, details: { requests: Number(row.requests), errors: Number(row.errors) } },
               { checkedAt, component: 'database', status: dbHealthy ? 'healthy' : 'down', responseMs: dbMs, details: {} },
               { checkedAt, component: 'redis', status: redisHealthy ? 'healthy' : 'down', responseMs: redisHealthy ? 1 : 0, details: {} },
             ];
@@ -978,8 +968,7 @@ export class AnalyticsAdminController {
         status: true,
         data: {
           summary: [
-            { name: 'frontend', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
-            { name: 'backend', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
+            { name: 'api', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
             { name: 'database', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
             { name: 'redis', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
           ],
