@@ -801,8 +801,7 @@ export class AnalyticsAdminController {
             { name: 'PostgreSQL', component: 'database', healthy: false, status: 'unhealthy', uptime: '0%' },
             { name: 'Redis', component: 'cache', healthy: false, status: 'unhealthy', uptime: '0%' },
             { name: 'NestJS API', component: 'api', healthy: true, status: 'healthy', uptime: '0%' },
-            },
-          },
+          ],
           history: [],
         },
       };
