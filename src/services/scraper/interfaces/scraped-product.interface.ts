@@ -42,6 +42,15 @@ export interface ScrapedProduct {
   
   // Additional metadata
   metadata?: Record<string, any>;
+
+  // Mega scraper extensions
+  sourceRegion?: string;           // e.g. 'us', 'uk', 'de'
+  variants?: ScrapedVariant[];
+  seller?: ScrapedSeller;
+  shipping?: ScrapedShipping;
+  relatedProducts?: string[];      // URLs
+  originalLanguage?: string;       // e.g. 'zh-CN', 'en'
+  categoryPath?: string;           // source platform category path
 }
 
 export interface ScrapedImage {
@@ -74,4 +83,99 @@ export interface ScrapedProductSummary {
   reviewCount?: number;
   inStock?: boolean;
   brandName?: string;
+}
+
+export interface ScrapedVariant {
+  name: string;            // e.g. "Color", "Storage", "Size"
+  options: string[];       // e.g. ["Black", "White", "Blue"]
+  priceModifier?: number;  // price difference for this variant
+}
+
+export interface ScrapedSeller {
+  name: string;
+  rating?: number;
+  totalSales?: number;
+  storeName?: string;
+  storeUrl?: string;
+  location?: string;
+  isVerified?: boolean;
+  tradeAssurance?: boolean; // Alibaba specific
+}
+
+export interface ScrapedShipping {
+  freeShipping?: boolean;
+  estimatedDays?: number;
+  shippingCost?: number;
+  shippingFrom?: string;   // country
+  methods?: string[];      // e.g. ["Standard", "Express"]
+}
+
+// Extended search result with category info
+export interface ScrapedCategoryTree {
+  id?: string;
+  name: string;
+  path: string;            // "Electronics > Smartphones > Android"
+  childCount?: number;
+  productCount?: number;
+  children?: ScrapedCategoryTree[];
+  url?: string;
+}
+
+// Scraping job configuration
+export interface ScrapeJobConfig {
+  platform: 'amazon' | 'alibaba' | 'aliexpress' | 'taobao';
+  region?: string;
+  categoryUrl: string;
+  categoryPath: string;
+  pageStart?: number;
+  pageEnd?: number;
+  maxProducts?: number;
+  priority?: number;
+  sessionConfig?: {
+    useBrowserbase?: boolean;
+    userAgent?: string;
+    viewport?: { width: number; height: number };
+    proxy?: string;
+  };
+}
+
+// Anti-blocking configuration
+export interface RotationConfig {
+  platform: string;
+  maxProductsPerSession: number;
+  cooldownMs: number;
+  requestJitterMs: [number, number]; // [min, max]
+  userAgents: string[];
+  viewports: Array<{ width: number; height: number }>;
+}
+
+// Monitor health report
+export interface ScraperHealthReport {
+  overall: {
+    totalTarget: number;
+    totalScraped: number;
+    totalTranslated: number;
+    totalImported: number;
+    percentComplete: number;
+    estimatedCompletionDate: string;
+  };
+  platforms: Record<string, {
+    target: number;
+    scraped: number;
+    translated: number;
+    imported: number;
+    blocked: boolean;
+    currentRate: number;   // products/hour
+    queueDepth: number;
+  }>;
+  queues: Record<string, {
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+  }>;
+  errors: {
+    last24h: { blocks: number; failures: number; retries: number };
+    topErrors: Array<{ message: string; count: number; platform: string }>;
+  };
 }

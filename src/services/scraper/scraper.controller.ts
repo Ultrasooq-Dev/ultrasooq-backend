@@ -9,6 +9,24 @@ import { ScrapedProductMapper } from './utils/scraped-product.mapper';
 import { AuthGuard } from 'src/guards/AuthGuard';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// Mega-scraper services
+import { ScraperQueueService } from './services/scraper-queue.service';
+import { ScraperMonitorService } from './services/scraper-monitor.service';
+import { TranslationService } from './services/translation.service';
+import { CategoryMappingService } from './services/category-mapping.service';
+import { ScraperExportService } from './services/scraper-export.service';
+import { ScraperOrchestratorService } from './services/scraper-orchestrator.service';
+
+// Mega-scraper DTOs
+import {
+    StartScrapeDto,
+    ScrapeProgressDto,
+    ScrapeFixDto,
+    ExportBatchDto,
+    ImportToDbDto,
+    CategoryMapDto,
+} from './dto/scrape-job.dto';
+
 /**
  * Controller for web scraping operations
  * This is a sample controller - integrate it into your existing product/admin controllers
@@ -23,6 +41,12 @@ export class ScraperController {
         private readonly scraperService: ScraperService,
         private readonly productService: ProductService,
         private readonly prisma: PrismaService,
+        private readonly queueService: ScraperQueueService,
+        private readonly monitorService: ScraperMonitorService,
+        private readonly translationService: TranslationService,
+        private readonly categoryMappingService: CategoryMappingService,
+        private readonly exportService: ScraperExportService,
+        private readonly orchestratorService: ScraperOrchestratorService,
     ) {}
 
     /**
@@ -1097,5 +1121,594 @@ export class ScraperController {
                 HttpStatus.BAD_REQUEST
             );
         }
+    }
+
+    // =========================================================================
+    // MEGA SCRAPER ENDPOINTS
+    // =========================================================================
+
+    /**
+     * Start a mega-scraping job for a specific platform + category.
+     * Creates a ScrapingJob record in the DB and enqueues it for processing.
+     */
+    @Post('mega/start')
+    @ApiOperation({ summary: 'Start a mega-scraping job' })
+    @ApiResponse({ status: 201, description: 'Job created and enqueued' })
+    @ApiResponse({ status: 400, description: 'Invalid parameters' })
+    async startMegaScrape(@Body() dto: StartScrapeDto, @Request() req: any) {
+        try {
+            // Create ScrapingJob record (fields must match prisma schema)
+            const job = await this.prisma.scrapingJob.create({
+                data: {
+                    platform: dto.platform,
+                    region: dto.region || null,
+                    categorySource: dto.categoryPath,
+                    sourceUrl: dto.categoryUrl,
+                    sourcePageStart: 1,
+                    status: 'QUEUED',
+                    priority: dto.priority || 5,
+                },
+            });
+
+            // Add to BullMQ queue
+            const queueJob = await this.queueService.addScrapeJob(
+                {
+                    jobId: job.id,
+                    platform: dto.platform,
+                    region: dto.region,
+                    categoryUrl: dto.categoryUrl,
+                    categoryPath: dto.categoryPath,
+                    pageStart: 1,
+                    maxProducts: dto.maxProducts || 1000,
+                },
+                dto.priority || 5,
+            );
+
+            this.logger.log(
+                `Mega scrape job ${job.id} created for ${dto.platform} — queue job ${queueJob.id}`,
+            );
+
+            return {
+                success: true,
+                jobId: job.id,
+                queueJobId: queueJob.id,
+                platform: dto.platform,
+                status: 'QUEUED',
+            };
+        } catch (error) {
+            this.logger.error(`Failed to start mega scrape: ${error.message}`);
+            throw new HttpException(
+                `Failed to start scraping job: ${error.message}`,
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+    }
+
+    /**
+     * Get progress for a specific job or platform.
+     */
+    @Get('mega/progress')
+    @ApiOperation({ summary: 'Get mega-scrape progress' })
+    @ApiResponse({ status: 200, description: 'Returns job/platform progress' })
+    async getMegaProgress(@Query() dto: ScrapeProgressDto) {
+        try {
+            if (dto.jobId) {
+                const progress = await this.monitorService.getJobProgress(dto.jobId);
+                if (!progress) {
+                    throw new HttpException('Job not found', HttpStatus.NOT_FOUND);
+                }
+                return { success: true, job: progress };
+            }
+
+            // Return general health overview
+            const report = await this.monitorService.getHealthReport();
+            return { success: true, report };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to get progress: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Full health report across all platforms, queues, and error rates.
+     */
+    @Get('mega/health')
+    @ApiOperation({ summary: 'Get comprehensive mega-scraper health report' })
+    @ApiResponse({ status: 200, description: 'Returns health report for all platforms and queues' })
+    async getHealth() {
+        try {
+            const report = await this.monitorService.getHealthReport();
+            return { success: true, ...report };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to get health report: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Pause all jobs for a specific platform queue.
+     */
+    @Post('mega/pause')
+    @ApiOperation({ summary: 'Pause mega-scrape jobs for a platform' })
+    @ApiResponse({ status: 200, description: 'Platform paused' })
+    async pauseScrape(@Body() body: { target: string }) {
+        try {
+            if (!body.target) {
+                throw new HttpException('target (platform name) is required', HttpStatus.BAD_REQUEST);
+            }
+            await this.queueService.pausePlatform(body.target);
+            this.logger.log(`Paused mega-scrape queue: ${body.target}`);
+            return { success: true, message: `Platform ${body.target} paused` };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to pause: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Resume a previously paused platform queue.
+     */
+    @Post('mega/resume')
+    @ApiOperation({ summary: 'Resume mega-scrape jobs for a platform' })
+    @ApiResponse({ status: 200, description: 'Platform resumed' })
+    async resumeScrape(@Body() body: { target: string }) {
+        try {
+            if (!body.target) {
+                throw new HttpException('target (platform name) is required', HttpStatus.BAD_REQUEST);
+            }
+            await this.queueService.resumePlatform(body.target);
+            this.logger.log(`Resumed mega-scrape queue: ${body.target}`);
+            return { success: true, message: `Platform ${body.target} resumed` };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to resume: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Apply a recovery strategy to a blocked/failed job.
+     */
+    @Post('mega/fix')
+    @ApiOperation({ summary: 'Fix a blocked mega-scrape job' })
+    @ApiResponse({ status: 200, description: 'Recovery strategy applied' })
+    async fixBlockedJob(@Body() dto: ScrapeFixDto) {
+        try {
+            const job = await this.prisma.scrapingJob.findUnique({
+                where: { id: dto.jobId },
+            });
+
+            if (!job) {
+                throw new HttpException('Job not found', HttpStatus.NOT_FOUND);
+            }
+
+            // Apply the requested recovery strategy
+            switch (dto.strategy) {
+                case 'new_session':
+                    // Re-queue with a fresh session flag
+                    await this.queueService.addScrapeJob(
+                        {
+                            jobId: job.id,
+                            platform: job.platform,
+                            region: dto.newRegion || job.region || undefined,
+                            categoryUrl: job.sourceUrl,
+                            categoryPath: job.categorySource,
+                            pageStart: job.sourcePageStart || 1,
+                        },
+                        job.priority || 5,
+                    );
+                    break;
+
+                case 'change_region':
+                    if (!dto.newRegion) {
+                        throw new HttpException('newRegion is required for change_region strategy', HttpStatus.BAD_REQUEST);
+                    }
+                    await this.prisma.scrapingJob.update({
+                        where: { id: dto.jobId },
+                        data: { region: dto.newRegion, status: 'QUEUED' },
+                    });
+                    await this.queueService.addScrapeJob(
+                        {
+                            jobId: job.id,
+                            platform: job.platform,
+                            region: dto.newRegion,
+                            categoryUrl: job.sourceUrl,
+                            categoryPath: job.categorySource,
+                            pageStart: job.sourcePageStart || 1,
+                        },
+                        job.priority || 5,
+                    );
+                    break;
+
+                case 'reduce_rate':
+                    await this.prisma.scrapingJob.update({
+                        where: { id: dto.jobId },
+                        data: { status: 'QUEUED' },
+                    });
+                    // Re-queue with lower priority (higher number = lower priority)
+                    await this.queueService.addScrapeJob(
+                        {
+                            jobId: job.id,
+                            platform: job.platform,
+                            region: job.region || undefined,
+                            categoryUrl: job.sourceUrl,
+                            categoryPath: job.categorySource,
+                            pageStart: job.sourcePageStart || 1,
+                        },
+                        Math.min((job.priority || 5) + 2, 10),
+                    );
+                    break;
+
+                case 'skip':
+                    // Mark as failed — job is being abandoned
+                    await this.prisma.scrapingJob.update({
+                        where: { id: dto.jobId },
+                        data: { status: 'FAILED', lastError: 'Manually skipped via fix endpoint' },
+                    });
+                    break;
+
+                case 'wait':
+                    // Mark as paused, will be manually resumed later
+                    await this.prisma.scrapingJob.update({
+                        where: { id: dto.jobId },
+                        data: { status: 'PAUSED', cooldownUntil: dto.waitMinutes
+                            ? new Date(Date.now() + dto.waitMinutes * 60_000)
+                            : null },
+                    });
+                    break;
+            }
+
+            this.logger.log(`Applied fix strategy "${dto.strategy}" to job ${dto.jobId}`);
+            return { success: true, jobId: dto.jobId, strategy: dto.strategy };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to fix job: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Get statistics for all BullMQ queues or a specific platform.
+     */
+    @Get('mega/queue')
+    @ApiOperation({ summary: 'Get mega-scraper queue statistics' })
+    @ApiQuery({ name: 'action', required: false, description: 'Action: stats (default)' })
+    @ApiQuery({ name: 'platform', required: false, description: 'Filter by platform' })
+    @ApiResponse({ status: 200, description: 'Returns queue statistics' })
+    async getQueueStats(
+        @Query('action') action?: string,
+        @Query('platform') platform?: string,
+    ) {
+        try {
+            const stats = await this.queueService.getQueueStats();
+
+            if (platform) {
+                const key = `scrape:${platform}`;
+                return { success: true, platform, stats: stats[key] || null };
+            }
+
+            return { success: true, stats };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to get queue stats: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Trigger translation for a batch of scraped products.
+     */
+    @Post('mega/translate')
+    @ApiOperation({ summary: 'Translate a batch of scraped products' })
+    @ApiResponse({ status: 200, description: 'Translation results' })
+    async translateBatch(
+        @Body() body: { productIds?: number[]; batchSize?: number },
+    ) {
+        try {
+            let ids = body.productIds;
+
+            // If no specific IDs provided, find untranslated products
+            if (!ids || ids.length === 0) {
+                const batchSize = body.batchSize || 50;
+                const untranslated = await this.prisma.scrapedProductRaw.findMany({
+                    where: {
+                        translatedAt: null,
+                        productNameEn: null,
+                    },
+                    select: { id: true },
+                    take: batchSize,
+                    orderBy: { createdAt: 'asc' },
+                });
+                ids = untranslated.map((p) => p.id);
+            }
+
+            if (ids.length === 0) {
+                return { success: true, message: 'No products to translate', translated: 0, failed: 0 };
+            }
+
+            const result = await this.translationService.translateBatch(ids);
+            return { success: true, ...result };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to translate batch: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * OCR and translate text from a product image.
+     */
+    @Post('mega/translate-image')
+    @ApiOperation({ summary: 'OCR and translate image text' })
+    @ApiResponse({ status: 200, description: 'Extracted and translated text' })
+    async translateImage(
+        @Body() body: { imageUrl: string; productId?: number },
+    ) {
+        try {
+            if (!body.imageUrl) {
+                throw new HttpException('imageUrl is required', HttpStatus.BAD_REQUEST);
+            }
+            if (!body.productId) {
+                throw new HttpException('productId is required', HttpStatus.BAD_REQUEST);
+            }
+
+            // Queue an image translation job
+            await this.queueService.addImageTranslateJob({
+                productId: body.productId,
+                imageUrls: [body.imageUrl],
+            });
+
+            return {
+                success: true,
+                message: 'Image translation job queued',
+                imageUrl: body.imageUrl,
+                productId: body.productId,
+            };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to translate image: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Fetch and store a source platform's category tree.
+     */
+    @Post('mega/categories/import')
+    @ApiOperation({ summary: 'Import source category tree from a platform' })
+    @ApiResponse({ status: 200, description: 'Categories loaded' })
+    async importCategories(@Body() body: { platform: string }) {
+        try {
+            if (!body.platform) {
+                throw new HttpException('platform is required', HttpStatus.BAD_REQUEST);
+            }
+
+            // Load the Ultrasooq category tree for mapping
+            await this.categoryMappingService.loadUltrasooqCategories();
+
+            return {
+                success: true,
+                message: `Ultrasooq categories loaded for ${body.platform} mapping`,
+                platform: body.platform,
+            };
+        } catch (error) {
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(
+                `Failed to import categories: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * AI-map a source platform category path to an Ultrasooq category.
+     */
+    @Post('mega/categories/map')
+    @ApiOperation({ summary: 'Map a source category to Ultrasooq category' })
+    @ApiResponse({ status: 200, description: 'Category mapping result' })
+    async mapCategory(@Body() dto: CategoryMapDto) {
+        try {
+            const result = await this.categoryMappingService.mapCategory(
+                dto.platform,
+                dto.sourcePath,
+            );
+
+            return { success: true, ...result };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to map category: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Export a batch of scraped products to a JSON file.
+     */
+    @Post('mega/export')
+    @ApiOperation({ summary: 'Export scraped products to file' })
+    @ApiResponse({ status: 200, description: 'Export result with file path and count' })
+    async exportBatch(@Body() dto: ExportBatchDto) {
+        try {
+            const result = await this.exportService.exportBatch(
+                dto.platform,
+                dto.region,
+            );
+
+            return { success: true, ...result };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to export batch: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    /**
+     * Bulk import products from an exported file into the database.
+     */
+    @Post('mega/import')
+    @ApiOperation({ summary: 'Import products from export file to DB' })
+    @ApiResponse({ status: 200, description: 'Import result with counts' })
+    async importToDb(@Body() dto: ImportToDbDto) {
+        try {
+            const result = await this.exportService.importBatchToDb(dto.batchId);
+
+            return { success: true, ...result };
+        } catch (error) {
+            throw new HttpException(
+                `Failed to import to database: ${error.message}`,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // WORKFLOW ORCHESTRATOR ENDPOINTS
+    // ═══════════════════════════════════════════
+
+    /**
+     * Start the full 10M mega scrape workflow.
+     * Crash-proof, auto-resuming state machine.
+     */
+    @Post('mega/workflow/start')
+    @ApiOperation({ summary: 'Start the mega scrape workflow' })
+    @ApiResponse({ status: 200, description: 'Workflow started or already running' })
+    async startWorkflow() {
+        return this.orchestratorService.startWorkflow();
+    }
+
+    /**
+     * Pause the mega scrape workflow — all queues paused, state preserved.
+     */
+    @Post('mega/workflow/pause')
+    @ApiOperation({ summary: 'Pause the mega scrape workflow' })
+    @ApiResponse({ status: 200, description: 'Workflow paused' })
+    async pauseWorkflow() {
+        return this.orchestratorService.pauseWorkflow();
+    }
+
+    /**
+     * Open a visible browser for Taobao QR login.
+     * User scans QR code, cookies are saved for the scraper.
+     */
+    @Post('mega/taobao-login')
+    @ApiOperation({ summary: 'Open Taobao login browser — scan QR to authenticate' })
+    async taobaoLogin() {
+        try {
+            const puppeteer = require('puppeteer');
+            const fs = require('fs');
+            const path = require('path');
+
+            this.logger.log('Opening visible browser for Taobao QR login...');
+
+            const browser = await puppeteer.launch({
+                headless: false, // VISIBLE browser for user to interact
+                args: [
+                    '--window-size=1280x900',
+                    '--disable-blink-features=AutomationControlled',
+                ],
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+            });
+
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1280, height: 900 });
+            await page.setUserAgent(
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            );
+
+            // Navigate to Taobao login
+            await page.goto('https://login.taobao.com/', { waitUntil: 'networkidle2', timeout: 30000 });
+
+            this.logger.log('Browser opened — waiting for user to scan QR code (up to 120 seconds)...');
+
+            // Wait for login success (URL changes away from login page)
+            let loggedIn = false;
+            for (let i = 0; i < 60; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                const url = page.url();
+                if (!url.includes('login.taobao') && !url.includes('login.tmall')) {
+                    loggedIn = true;
+                    break;
+                }
+                // Also check for login cookies
+                const cookies = await page.cookies();
+                const hasSession = cookies.some(c => c.name === '_tb_token_' || c.name === 'cookie2' || c.name === 'sgcookie');
+                if (hasSession) {
+                    loggedIn = true;
+                    break;
+                }
+            }
+
+            if (!loggedIn) {
+                await browser.close();
+                return { success: false, message: 'Login timed out after 120 seconds' };
+            }
+
+            // Save cookies to file for scraper to reuse
+            const cookies = await page.cookies();
+            const cookiePath = path.join(process.cwd(), 'taobao-cookies.json');
+            fs.writeFileSync(cookiePath, JSON.stringify(cookies, null, 2));
+
+            this.logger.log(`Taobao login successful! ${cookies.length} cookies saved to ${cookiePath}`);
+
+            await browser.close();
+
+            return {
+                success: true,
+                message: `Logged in! ${cookies.length} cookies saved.`,
+                cookieFile: cookiePath,
+                cookieCount: cookies.length,
+            };
+        } catch (error) {
+            this.logger.error(`Taobao login failed: ${error.message}`);
+            return { success: false, message: error.message };
+        }
+    }
+
+    /**
+     * Resume a paused mega scrape workflow.
+     */
+    @Post('mega/workflow/resume')
+    @ApiOperation({ summary: 'Resume the mega scrape workflow' })
+    @ApiResponse({ status: 200, description: 'Workflow resumed' })
+    async resumeWorkflow() {
+        return this.orchestratorService.resumeWorkflow();
+    }
+
+    /**
+     * Get workflow status and health report.
+     */
+    @Get('mega/workflow/status')
+    @ApiOperation({ summary: 'Get workflow status and health' })
+    @ApiResponse({ status: 200, description: 'Workflow checkpoint and health report' })
+    async getWorkflowStatus() {
+        return this.orchestratorService.getWorkflowStatus();
+    }
+
+    /**
+     * Reset workflow state completely — use with caution.
+     */
+    @Post('mega/workflow/reset')
+    @ApiOperation({ summary: 'Reset workflow state' })
+    @ApiResponse({ status: 200, description: 'Workflow state cleared' })
+    async resetWorkflow() {
+        return this.orchestratorService.resetWorkflow();
     }
 }

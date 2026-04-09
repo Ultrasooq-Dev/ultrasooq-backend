@@ -5,6 +5,11 @@ import {
     ScrapedProduct,
     ScrapedSearchResult,
     ScrapedProductSummary,
+    ScrapedImage,
+    ScrapedSpecification,
+    ScrapedVariant,
+    ScrapedSeller,
+    ScrapedShipping,
 } from '../interfaces/scraped-product.interface';
 import { BrowserbaseHelper } from '../utils/browserbase.helper';
 
@@ -33,7 +38,8 @@ export class TaobaoScraperProvider implements ScraperProvider {
                 candidate = 'http://' + candidate;
             }
             const hostname = new URL(candidate).hostname.toLowerCase();
-            return hostname === 'taobao.com' || hostname.endsWith('.taobao.com');
+            return hostname === 'taobao.com' || hostname.endsWith('.taobao.com') ||
+                   hostname === '1688.com' || hostname.endsWith('.1688.com');
         } catch (error) {
             this.logger.warn(`Error checking URL: ${error.message}`);
             return false;
@@ -122,7 +128,7 @@ export class TaobaoScraperProvider implements ScraperProvider {
         if (!this.browser || !this.browser.connected) {
             this.logger.log('Launching local browser instance');
             this.browser = await puppeteer.launch({
-                headless: true,
+                headless: 'shell',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -172,17 +178,39 @@ export class TaobaoScraperProvider implements ScraperProvider {
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => false,
             });
-            
+
             // Override plugins
             Object.defineProperty(navigator, 'plugins', {
                 get: () => [1, 2, 3, 4, 5],
             });
-            
+
             // Override languages
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['zh-CN', 'zh', 'en'],
             });
         });
+
+        // Load saved Taobao cookies if they exist
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const cookiePaths = [
+                path.join(process.cwd(), 'taobao-cookies.json'),
+                path.join(__dirname, '..', '..', '..', '..', 'taobao-cookies.json'),
+            ];
+            for (const cookiePath of cookiePaths) {
+                if (fs.existsSync(cookiePath)) {
+                    const cookies = JSON.parse(fs.readFileSync(cookiePath, 'utf-8'));
+                    if (Array.isArray(cookies) && cookies.length > 0) {
+                        await page.setCookie(...cookies);
+                        this.logger.log(`Loaded ${cookies.length} Taobao cookies from ${cookiePath}`);
+                    }
+                    break;
+                }
+            }
+        } catch (e) {
+            this.logger.warn(`Could not load Taobao cookies: ${e.message}`);
+        }
 
         return page;
     }
@@ -600,7 +628,9 @@ export class TaobaoScraperProvider implements ScraperProvider {
             // Check current page URL - if we're on login page, we need to handle login first
             const currentUrl = page.url();
             const isOnLoginPage = currentUrl.includes('login');
-            const isOnSearchPage = currentUrl.includes('s.taobao.com/search');
+            const isOnSearchPage = currentUrl.includes('s.taobao.com/search') ||
+                                   currentUrl.includes('world.taobao.com') ||
+                                   currentUrl.includes('search.taobao.com');
             
             // If we're on login page, attempt login
             if (isOnLoginPage) {
@@ -673,7 +703,7 @@ export class TaobaoScraperProvider implements ScraperProvider {
 
             // Final check - ensure we're on the search page before extracting products
             const finalUrl = page.url();
-            if (!finalUrl.includes('s.taobao.com/search')) {
+            if (!finalUrl.includes('s.taobao.com/search') && !finalUrl.includes('world.taobao.com') && !finalUrl.includes('search.taobao.com')) {
                 this.logger.error(`⚠️ Not on search page! Current URL: ${finalUrl}`);
                 this.logger.error('Attempting to navigate to search page one more time...');
                 try {
@@ -685,7 +715,7 @@ export class TaobaoScraperProvider implements ScraperProvider {
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     
                     const verifyUrl = page.url();
-                    if (!verifyUrl.includes('s.taobao.com/search')) {
+                    if (!verifyUrl.includes('s.taobao.com/search') && !verifyUrl.includes('world.taobao.com') && !verifyUrl.includes('search.taobao.com')) {
                         throw new Error(`Still not on search page after navigation. URL: ${verifyUrl}`);
                     }
                     this.logger.log('✅ Now on search page');
@@ -2085,41 +2115,674 @@ export class TaobaoScraperProvider implements ScraperProvider {
      */
     async scrapeProduct(url: string): Promise<ScrapedProduct> {
         this.logger.log(`Scraping product from Taobao: ${url}`);
-        this.logger.warn('Taobao scraping may be blocked by anti-bot measures. This is a basic implementation.');
+        this.logger.warn('Taobao scraping may be blocked by anti-bot measures.');
 
-        const page = await this.createPage();
+        let page = await this.createPage();
 
         try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+            // ── Navigation with retry logic ──────────────────────────────
+            let pageLoaded = false;
+            let lastError: Error | null = null;
+            const maxRetries = 3;
 
-            // Wait for page to load
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    this.logger.log(`Attempt ${attempt}/${maxRetries} to load product page`);
+
+                    const waitStrategy = attempt === 1 ? 'networkidle2' :
+                                         attempt === 2 ? 'domcontentloaded' :
+                                         'load';
+
+                    if (attempt > 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+
+                    await page.goto(url, {
+                        waitUntil: waitStrategy as any,
+                        timeout: 60000,
+                        referer: 'https://www.taobao.com/',
+                    });
+
+                    pageLoaded = true;
+                    this.logger.log(`Product page loaded on attempt ${attempt}`);
+                    break;
+                } catch (error: any) {
+                    lastError = error;
+                    this.logger.warn(`Attempt ${attempt} failed: ${error.message}`);
+
+                    if (error.message.includes('ERR_EMPTY_RESPONSE') ||
+                        error.message.includes('net::ERR') ||
+                        error.message.includes('Connection closed')) {
+                        if (attempt < maxRetries) {
+                            const waitTime = attempt * 5000;
+                            this.logger.log(`Waiting ${waitTime}ms before retry...`);
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                            try { if (!page.isClosed()) await page.close(); } catch (_) {}
+                            page = await this.createPage();
+                        }
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+
+            if (!pageLoaded && lastError) {
+                throw new Error(`Failed to load product page after ${maxRetries} attempts: ${lastError.message}`);
+            }
+
+            // Wait for initial render
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // ── Handle login / verification challenges ───────────────────
+            const currentUrl = page.url();
+            if (currentUrl.includes('login')) {
+                this.logger.log('Redirected to login page — attempting login...');
+                const loginOk = await this.ensureLoggedIn(page);
+                if (loginOk) {
+                    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000, referer: 'https://www.taobao.com/' });
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+            } else {
+                const hasChallenge = await this.hasVerificationChallenge(page);
+                if (hasChallenge) {
+                    this.logger.warn('Verification challenge detected — waiting for Browserbase CAPTCHA solving...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+                await this.ensureLoggedIn(page);
+            }
+
+            // Scroll to trigger lazy-loaded content
+            for (let i = 0; i < 3; i++) {
+                await page.evaluate(() => window.scrollBy(0, 600));
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            await page.evaluate(() => window.scrollTo(0, 0));
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // ── Intercept network responses for product API data ─────────
+            const networkProductData: any[] = [];
+            page.on('response', async (response) => {
+                const rUrl = response.url();
+                if (rUrl.includes('detail') || rUrl.includes('item') || rUrl.includes('mtop.taobao')) {
+                    try {
+                        const ct = response.headers()['content-type'] || '';
+                        if (ct.includes('json') || ct.includes('javascript') || ct.includes('text')) {
+                            const text = await response.text().catch(() => '');
+                            if (text && (text.includes('itemDO') || text.includes('itemDetail') || text.includes('skuList') || text.includes('apiStack'))) {
+                                try {
+                                    const json = JSON.parse(text);
+                                    networkProductData.push(json);
+                                } catch (_) { /* not pure JSON */ }
+                            }
+                        }
+                    } catch (_) {}
+                }
+            });
+
+            // Trigger a small scroll to fire any lazy API calls
+            await page.evaluate(() => window.scrollBy(0, 300));
             await new Promise(resolve => setTimeout(resolve, 3000));
 
-            // This is a placeholder - actual implementation would need proper selectors
+            // ── 1. Try embedded JSON extraction (primary strategy) ───────
+            const jsonData = await page.evaluate(() => {
+                const result: any = {};
+
+                // Strategy A: g_page_config — classic Taobao
+                try {
+                    const gpc = (window as any).g_page_config;
+                    if (gpc) result.g_page_config = gpc;
+                } catch (_) {}
+
+                // Strategy B: g_config
+                try {
+                    const gc = (window as any).g_config;
+                    if (gc) result.g_config = gc;
+                } catch (_) {}
+
+                // Strategy C: __INITIAL_DATA__ — newer SSR pages
+                try {
+                    const initData = (window as any).__INITIAL_DATA__;
+                    if (initData) result.__INITIAL_DATA__ = initData;
+                } catch (_) {}
+
+                // Strategy D: scan script tags for embedded JSON objects
+                const scripts = document.querySelectorAll('script');
+                for (const script of Array.from(scripts)) {
+                    const text = script.textContent || '';
+
+                    // g_page_config in script text
+                    if (text.includes('g_page_config')) {
+                        const match = text.match(/g_page_config\s*=\s*(\{[\s\S]*?\});/);
+                        if (match) {
+                            try { result.g_page_config_script = JSON.parse(match[1]); } catch (_) {}
+                        }
+                    }
+
+                    // __INITIAL_DATA__ in script text
+                    if (text.includes('__INITIAL_DATA__')) {
+                        const match = text.match(/__INITIAL_DATA__\s*=\s*(\{[\s\S]*?\});/);
+                        if (match) {
+                            try { result.__INITIAL_DATA___script = JSON.parse(match[1]); } catch (_) {}
+                        }
+                    }
+
+                    // itemDO or itemDetail deep in script
+                    if (text.includes('itemDO') || text.includes('itemDetail')) {
+                        const doMatch = text.match(/"itemDO"\s*:\s*(\{[^}]+\})/);
+                        if (doMatch) {
+                            try { result.itemDO = JSON.parse(doMatch[1]); } catch (_) {}
+                        }
+                        const detailMatch = text.match(/"itemDetail"\s*:\s*(\{[\s\S]*?\})\s*[,;]/);
+                        if (detailMatch) {
+                            try { result.itemDetail = JSON.parse(detailMatch[1]); } catch (_) {}
+                        }
+                    }
+
+                    // apiStack (often contains compressed product info)
+                    if (text.includes('apiStack')) {
+                        const apiMatch = text.match(/"apiStack"\s*:\s*(\[[\s\S]*?\])/);
+                        if (apiMatch) {
+                            try { result.apiStack = JSON.parse(apiMatch[1]); } catch (_) {}
+                        }
+                    }
+                }
+
+                return result;
+            });
+
+            this.logger.log(`JSON extraction found keys: ${Object.keys(jsonData).join(', ') || 'none'}`);
+
+            // ── Helper: dig into nested JSON for product fields ──────────
+            const dig = (obj: any, ...paths: string[]): any => {
+                for (const path of paths) {
+                    let cur = obj;
+                    for (const key of path.split('.')) {
+                        if (cur == null) break;
+                        cur = cur[key];
+                    }
+                    if (cur != null) return cur;
+                }
+                return undefined;
+            };
+
+            // Build a flattened data bag from all JSON sources
+            const allSources = [
+                jsonData.g_page_config,
+                jsonData.g_page_config_script,
+                jsonData.g_config,
+                jsonData.__INITIAL_DATA__,
+                jsonData.__INITIAL_DATA___script,
+                jsonData.itemDO,
+                jsonData.itemDetail,
+                ...networkProductData,
+            ].filter(Boolean);
+
+            let jsonTitle: string | undefined;
+            let jsonPrice: number | undefined;
+            let jsonOfferPrice: number | undefined;
+            let jsonImages: string[] = [];
+            let jsonSpecs: ScrapedSpecification[] = [];
+            let jsonVariants: ScrapedVariant[] = [];
+            let jsonSellerName: string | undefined;
+            let jsonSellerRating: number | undefined;
+            let jsonStoreName: string | undefined;
+            let jsonStoreUrl: string | undefined;
+            let jsonLocation: string | undefined;
+            let jsonReviewCount: number | undefined;
+            let jsonSalesCount: number | undefined;
+            let jsonCategoryPath: string | undefined;
+            let jsonDescription: string | undefined;
+            let jsonBrand: string | undefined;
+            let jsonShippingFree: boolean | undefined;
+            let jsonShippingFrom: string | undefined;
+
+            for (const src of allSources) {
+                if (!src || typeof src !== 'object') continue;
+                try {
+                    // Title
+                    if (!jsonTitle) {
+                        jsonTitle = dig(src, 'itemDO.title', 'itemDetail.title', 'data.itemDO.title',
+                            'data.itemDetail.title', 'item.title', 'title', 'raw_title',
+                            'itemInfoModel.title', 'mainInfo.title');
+                    }
+
+                    // Price
+                    if (jsonPrice == null) {
+                        const rawPrice = dig(src, 'itemDO.price', 'itemDetail.price', 'data.itemDO.price',
+                            'priceModel.currentPrice', 'price', 'item.price', 'mainInfo.price',
+                            'itemInfoModel.price', 'priceRange.0');
+                        if (rawPrice != null) {
+                            jsonPrice = parseFloat(String(rawPrice).replace(/[^0-9.]/g, '')) || undefined;
+                        }
+                    }
+
+                    // Offer / promo price
+                    if (jsonOfferPrice == null) {
+                        const rawOffer = dig(src, 'priceModel.promotionPrice', 'itemDO.promotionPrice',
+                            'data.promotion.proPrice', 'offerPrice', 'item.promotionPrice',
+                            'priceModel.extraPrice.priceText');
+                        if (rawOffer != null) {
+                            jsonOfferPrice = parseFloat(String(rawOffer).replace(/[^0-9.]/g, '')) || undefined;
+                        }
+                    }
+
+                    // Images
+                    if (jsonImages.length === 0) {
+                        const imgs = dig(src, 'itemDO.images', 'itemDetail.images', 'data.itemDO.images',
+                            'imageModel.images', 'item.images', 'images', 'itemInfoModel.picsPath');
+                        if (Array.isArray(imgs)) {
+                            jsonImages = imgs.map((i: any) => typeof i === 'string' ? i : i.url || i.src || '').filter(Boolean);
+                        }
+                    }
+
+                    // Specifications / properties
+                    if (jsonSpecs.length === 0) {
+                        const props = dig(src, 'itemDO.property', 'itemDetail.props', 'data.props',
+                            'propertyModel.props', 'item.props', 'attributes', 'itemInfoModel.props');
+                        if (Array.isArray(props)) {
+                            jsonSpecs = props.map((p: any) => ({
+                                label: p.name || p.label || p.key || '',
+                                value: p.value || p.text || '',
+                            })).filter((s: ScrapedSpecification) => s.label && s.value);
+                        }
+                    }
+
+                    // Variants / SKU props
+                    if (jsonVariants.length === 0) {
+                        const skuProps = dig(src, 'skuModel.propertyList', 'data.skuModel.propertyList',
+                            'itemDO.skuProps', 'skuList', 'itemDetail.skuProps',
+                            'skuModel.skuProps', 'propertyModel.saleProp');
+                        if (Array.isArray(skuProps)) {
+                            jsonVariants = skuProps.map((sp: any) => ({
+                                name: sp.name || sp.propName || sp.label || '',
+                                options: (sp.values || sp.options || sp.list || []).map(
+                                    (v: any) => typeof v === 'string' ? v : v.name || v.text || v.value || ''
+                                ).filter(Boolean),
+                            })).filter((v: ScrapedVariant) => v.name && v.options.length > 0);
+                        }
+                    }
+
+                    // Seller info
+                    if (!jsonSellerName) {
+                        jsonSellerName = dig(src, 'seller.shopName', 'data.seller.shopName',
+                            'sellerModel.shopName', 'shopName', 'item.shopName',
+                            'seller.nick', 'sellerModel.sellerNick');
+                    }
+                    if (jsonSellerRating == null) {
+                        const sr = dig(src, 'seller.creditLevel', 'sellerModel.creditLevel',
+                            'seller.sellerCredit', 'seller.goodRatePercentage');
+                        if (sr != null) jsonSellerRating = parseFloat(String(sr)) || undefined;
+                    }
+                    if (!jsonStoreName) {
+                        jsonStoreName = dig(src, 'seller.shopName', 'sellerModel.shopName', 'shopModel.shopName');
+                    }
+                    if (!jsonStoreUrl) {
+                        jsonStoreUrl = dig(src, 'seller.shopUrl', 'sellerModel.shopUrl', 'shopModel.shopUrl');
+                    }
+
+                    // Location
+                    if (!jsonLocation) {
+                        jsonLocation = dig(src, 'itemDO.location', 'deliveryModel.from',
+                            'data.deliveryModel.from', 'item.location', 'location',
+                            'areaModel.location', 'itemDetail.location');
+                    }
+
+                    // Review count
+                    if (jsonReviewCount == null) {
+                        const rc = dig(src, 'itemDO.commentCount', 'rateModel.rateCount',
+                            'data.rateModel.rateCount', 'item.commentCount', 'commentCount',
+                            'totalRate', 'itemDetail.commentCount');
+                        if (rc != null) jsonReviewCount = parseInt(String(rc), 10) || undefined;
+                    }
+
+                    // Sales count
+                    if (jsonSalesCount == null) {
+                        const sc = dig(src, 'itemDO.sellCount', 'data.sellCount', 'item.sellCount',
+                            'sellCount', 'totalSoldQuantity', 'itemDetail.sellCount');
+                        if (sc != null) jsonSalesCount = parseInt(String(sc), 10) || undefined;
+                    }
+
+                    // Category path
+                    if (!jsonCategoryPath) {
+                        jsonCategoryPath = dig(src, 'breadcrumbs', 'categoryPath', 'data.categoryPath',
+                            'itemDO.categoryPath');
+                        if (Array.isArray(jsonCategoryPath)) {
+                            jsonCategoryPath = (jsonCategoryPath as any[]).map(
+                                (c: any) => typeof c === 'string' ? c : c.name || c.text || ''
+                            ).filter(Boolean).join(' > ');
+                        }
+                    }
+
+                    // Description
+                    if (!jsonDescription) {
+                        jsonDescription = dig(src, 'itemDO.desc', 'itemDetail.desc', 'description',
+                            'data.descModel.desc', 'item.desc');
+                    }
+
+                    // Brand
+                    if (!jsonBrand) {
+                        jsonBrand = dig(src, 'itemDO.brand', 'brand', 'item.brand', 'brandName',
+                            'itemDetail.brand');
+                    }
+
+                    // Shipping
+                    if (jsonShippingFree == null) {
+                        const sf = dig(src, 'deliveryModel.freeShipping', 'data.deliveryModel.freeShipping',
+                            'shipping.freeShipping');
+                        if (sf != null) jsonShippingFree = !!sf;
+                    }
+                    if (!jsonShippingFrom) {
+                        jsonShippingFrom = dig(src, 'deliveryModel.from', 'data.deliveryModel.from',
+                            'shipping.from', 'areaModel.location');
+                    }
+                } catch (_) { /* skip bad source */ }
+            }
+
+            // ── 2. DOM fallback extraction ───────────────────────────────
+            const domData = await page.evaluate(() => {
+                const getText = (selectors: string): string => {
+                    for (const sel of selectors.split(',')) {
+                        const el = document.querySelector(sel.trim());
+                        if (el && (el as HTMLElement).innerText?.trim()) {
+                            return (el as HTMLElement).innerText.trim();
+                        }
+                    }
+                    return '';
+                };
+
+                const getAttr = (selectors: string, attr: string): string => {
+                    for (const sel of selectors.split(',')) {
+                        const el = document.querySelector(sel.trim());
+                        if (el) {
+                            const val = el.getAttribute(attr);
+                            if (val) return val.trim();
+                        }
+                    }
+                    return '';
+                };
+
+                // Title
+                const title = getText(
+                    '.tb-main-title, #J_DetailMeta h3, [data-title], .ItemHeader--mainTitle, ' +
+                    '.main-title, h1.title, .tb-detail-hd h1, [class*="mainTitle"], ' +
+                    '.ItemHeader--title, #J_Title .tb-main-title'
+                ) || getAttr('[data-title]', 'data-title');
+
+                // Price
+                const priceText = getText(
+                    '.tb-rmb-num, .tm-price, #J_StrPriceModBox .tm-price, ' +
+                    '.tb-rmb, [class*="currentPrice"], .Price--current, ' +
+                    '#J_PromoPriceNum, .tm-promo-price .tm-price, ' +
+                    '.ItemHeader--priceText, [class*="Price--priceText"]'
+                );
+
+                // Offer / promo price
+                const offerPriceText = getText(
+                    '#J_PromoPrice .tm-price, .tb-promo-price .tb-rmb-num, ' +
+                    '[class*="promotionPrice"], .Price--promotion, ' +
+                    '.tm-promo-price .tm-price, [class*="extraPrice"]'
+                );
+
+                // Images from gallery
+                const imageUrls: string[] = [];
+                const imgSelectors = [
+                    '#J_UlThumb img', '.tb-thumb img', '.tb-pic img',
+                    '.PicGallery--thumbnails img', '[class*="thumbnail"] img',
+                    '#J_ImgBooth img', '.tb-booth img', '.ItemHeader--img img',
+                    '.PicGallery--mainPic img', '.tb-main-img img',
+                ];
+                for (const sel of imgSelectors) {
+                    document.querySelectorAll(sel).forEach((img) => {
+                        const src = img.getAttribute('data-src') ||
+                                    img.getAttribute('src') ||
+                                    img.getAttribute('data-ks-lazyload') || '';
+                        if (src && !src.includes('placeholder') && !src.includes('blank')) {
+                            // Normalise Taobao image URLs
+                            let normalized = src.replace(/^\/\//, 'https://');
+                            // Remove size suffix to get full resolution
+                            normalized = normalized.replace(/_\d+x\d+\.\w+$/, '');
+                            if (!imageUrls.includes(normalized)) {
+                                imageUrls.push(normalized);
+                            }
+                        }
+                    });
+                    if (imageUrls.length > 0) break;
+                }
+
+                // Specifications
+                const specs: Array<{ label: string; value: string }> = [];
+                const specSelectors = ['#J_AttrUL li', '.attributes-list li', '.tb-attributes li',
+                    '[class*="AttributeList"] li', '.Attrs--list li', '.tb-prop li'];
+                for (const sel of specSelectors) {
+                    const specEls = document.querySelectorAll(sel);
+                    if (specEls.length > 0) {
+                        specEls.forEach(li => {
+                            const text = (li as HTMLElement).innerText?.trim() || '';
+                            const colonIdx = text.indexOf(':');
+                            const cnColonIdx = text.indexOf('\uff1a'); // Chinese colon
+                            const splitIdx = colonIdx >= 0 ? colonIdx : cnColonIdx;
+                            if (splitIdx > 0) {
+                                specs.push({
+                                    label: text.substring(0, splitIdx).trim(),
+                                    value: text.substring(splitIdx + 1).trim(),
+                                });
+                            }
+                        });
+                        break;
+                    }
+                }
+
+                // Variants / SKU properties
+                const variants: Array<{ name: string; options: string[] }> = [];
+                const variantGroups = document.querySelectorAll(
+                    '.J_TSaleProp, #J_imu, .tb-sku .tb-prop, [class*="SkuContent"], ' +
+                    '.Sku--list, [class*="saleProp"]'
+                );
+                variantGroups.forEach(group => {
+                    const nameEl = group.querySelector('.tb-metatit, [class*="propTitle"], dt, .Sku--title');
+                    const name = nameEl ? (nameEl as HTMLElement).innerText.replace(/[:：]/g, '').trim() : '';
+                    const options: string[] = [];
+                    group.querySelectorAll('li a, li span, [class*="valueItem"], [class*="skuItem"]').forEach(opt => {
+                        const optText = (opt as HTMLElement).innerText?.trim() ||
+                                        opt.getAttribute('title')?.trim() || '';
+                        if (optText && !options.includes(optText)) {
+                            options.push(optText);
+                        }
+                    });
+                    if (name && options.length > 0) {
+                        variants.push({ name, options });
+                    }
+                });
+
+                // Seller info
+                const sellerName = getText(
+                    '.shop-name a, #shop-info a, .ShopHeader--name, [class*="shopName"] a, ' +
+                    '.tb-shop-name a, .shop-info-simple a, [class*="SellerInfo--name"]'
+                );
+                const storeUrl = getAttr(
+                    '.shop-name a, #shop-info a, .ShopHeader--name a, .tb-shop-name a', 'href'
+                );
+                const sellerRatingText = getText(
+                    '.shop-rank, [class*="shopRank"], .ShopHeader--rate, [class*="SellerInfo--score"]'
+                );
+
+                // Shipping info
+                const shippingText = getText(
+                    '.tb-delivery, [class*="Delivery"], .tb-delivery-info, ' +
+                    '[class*="deliveryText"], [class*="ShipInfo"]'
+                );
+                const shippingFree = shippingText.includes('包邮') || shippingText.includes('免运费') ||
+                                     shippingText.includes('Free Shipping');
+
+                // Location / ship from
+                const location = getText(
+                    '.tb-delivery .tb-addr, [class*="deliveryFrom"], [class*="DeliveryContent--from"], ' +
+                    '[class*="location"]'
+                );
+
+                // Review count
+                const reviewText = getText(
+                    '#J_RateCounter, .tm-count, [class*="rateCount"], [class*="RateCount"], ' +
+                    '.tb-rate-count, [class*="Comment--count"]'
+                );
+
+                // Sales count
+                const salesText = getText(
+                    '.tm-count, .tb-sell-counter, [class*="sellCount"], [class*="SellCount"], ' +
+                    '[class*="ItemHeader--sales"]'
+                );
+
+                // Description snippet
+                const descText = getText(
+                    '#J_DivItemDesc, .tb-detail-content, [class*="descContent"], ' +
+                    '.tm-clear .tm-desc, [class*="Description"]'
+                );
+
+                // Brand from specs
+                let brand = '';
+                for (const spec of specs) {
+                    if (spec.label.includes('品牌') || spec.label.toLowerCase().includes('brand')) {
+                        brand = spec.value;
+                        break;
+                    }
+                }
+
+                // Category breadcrumbs
+                const breadcrumbs: string[] = [];
+                document.querySelectorAll('.tb-breadcrumb a, [class*="Breadcrumb"] a, .crumb a').forEach(a => {
+                    const t = (a as HTMLElement).innerText?.trim();
+                    if (t && t !== '>' && t !== '首页') breadcrumbs.push(t);
+                });
+
+                return {
+                    title,
+                    priceText,
+                    offerPriceText,
+                    imageUrls,
+                    specs,
+                    variants,
+                    sellerName,
+                    storeUrl,
+                    sellerRatingText,
+                    shippingText,
+                    shippingFree,
+                    location,
+                    reviewText,
+                    salesText,
+                    descText,
+                    brand,
+                    breadcrumbs,
+                };
+            });
+
+            this.logger.log(`DOM extraction: title="${(domData.title || '').substring(0, 60)}", images=${domData.imageUrls.length}, specs=${domData.specs.length}, variants=${domData.variants.length}`);
+
+            // ── 3. Merge JSON + DOM data (JSON takes priority) ───────────
+            const parseNum = (raw: string | undefined): number | undefined => {
+                if (!raw) return undefined;
+                const n = parseFloat(String(raw).replace(/[^0-9.]/g, ''));
+                return isNaN(n) ? undefined : n;
+            };
+
+            const productName = jsonTitle || domData.title || 'Taobao Product';
+            const productPrice = jsonPrice ?? parseNum(domData.priceText) ?? 0;
+            const offerPrice = jsonOfferPrice ?? parseNum(domData.offerPriceText) ?? productPrice;
+
+            // Images
+            const mergedImageUrls = jsonImages.length > 0 ? jsonImages : domData.imageUrls;
+            const images: ScrapedImage[] = mergedImageUrls.map((imgUrl, idx) => {
+                let normalized = imgUrl.replace(/^\/\//, 'https://');
+                return {
+                    url: normalized,
+                    imageName: `taobao-product-image-${idx + 1}`,
+                    isPrimary: idx === 0,
+                };
+            });
+
+            // Specifications
+            const specifications: ScrapedSpecification[] = jsonSpecs.length > 0 ? jsonSpecs : domData.specs;
+
+            // Variants
+            const variants: ScrapedVariant[] = jsonVariants.length > 0
+                ? jsonVariants
+                : domData.variants.map(v => ({ name: v.name, options: v.options }));
+
+            // Seller
+            const sellerNameFinal = jsonSellerName || domData.sellerName;
+            const seller: ScrapedSeller | undefined = sellerNameFinal ? {
+                name: sellerNameFinal,
+                rating: jsonSellerRating ?? parseNum(domData.sellerRatingText),
+                totalSales: jsonSalesCount ?? parseNum(domData.salesText),
+                storeName: jsonStoreName || sellerNameFinal,
+                storeUrl: jsonStoreUrl || (domData.storeUrl ? domData.storeUrl.replace(/^\/\//, 'https://') : undefined),
+                location: jsonLocation || domData.location || undefined,
+            } : undefined;
+
+            // Shipping
+            const shipping: ScrapedShipping = {
+                freeShipping: jsonShippingFree ?? domData.shippingFree,
+                shippingFrom: jsonShippingFrom || domData.location || 'China',
+                shippingCost: (jsonShippingFree ?? domData.shippingFree) ? 0 : undefined,
+            };
+
+            // Review count
+            const reviewCount = jsonReviewCount ?? parseNum(domData.reviewText);
+
+            // Category
+            const categoryPath = jsonCategoryPath ||
+                (domData.breadcrumbs.length > 0 ? domData.breadcrumbs.join(' > ') : undefined);
+
+            // Brand
+            const brandName = jsonBrand || domData.brand || undefined;
+
+            // Description
+            const description = jsonDescription || domData.descText || undefined;
+
+            // Build final product
             const scrapedProduct: ScrapedProduct = {
-                productName: 'Taobao Product (Not Implemented)',
-                description: 'Taobao scraping requires additional implementation to bypass anti-bot measures',
-                productPrice: 0,
-                offerPrice: 0,
-                sourceUrl: url,
-                sourcePlatform: 'Taobao.com',
+                productName,
+                description: description ? description.substring(0, 5000) : undefined,
+                shortDescription: productName,
+                specification: specifications.map(s => `${s.label}: ${s.value}`).join('\n') || undefined,
+                productPrice,
+                offerPrice,
+                brandName,
+                images,
                 placeOfOrigin: 'China',
                 productType: 'PHYSICAL',
+                typeOfProduct: 'NEW',
+                tags: specifications.slice(0, 5).map(s => s.value).filter(Boolean),
+                specifications,
+                sourceUrl: url,
+                sourcePlatform: 'Taobao.com',
+                inStock: true,
+                stockQuantity: undefined,
+                rating: undefined,
+                reviewCount,
                 metadata: {
                     scrapedAt: new Date().toISOString(),
                     sourceUrl: url,
-                    implementationStatus: 'placeholder',
+                    salesCount: jsonSalesCount ?? parseNum(domData.salesText),
+                    extractionSources: Object.keys(jsonData).length > 0 ? 'json+dom' : 'dom-only',
+                    jsonKeysFound: Object.keys(jsonData),
                 },
+                // Extended fields
+                sourceRegion: 'cn',
+                variants: variants.length > 0 ? variants : undefined,
+                seller,
+                shipping,
+                originalLanguage: 'zh-CN',
+                categoryPath,
             };
 
-            this.logger.warn('Taobao product scraping is not fully implemented. Returns placeholder data.');
+            this.logger.log(`Successfully scraped Taobao product: "${productName.substring(0, 50)}" — price=${productPrice}, images=${images.length}, specs=${specifications.length}, variants=${variants.length}`);
 
             return scrapedProduct;
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`Error scraping Taobao product: ${error.message}`, error.stack);
             throw error;
         } finally {
-            await page.close();
+            try { if (!page.isClosed()) await page.close(); } catch (_) {}
         }
     }
 
