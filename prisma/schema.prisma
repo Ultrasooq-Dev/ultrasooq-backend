@@ -135,6 +135,8 @@ model User {
   refreshTokens                                 RefreshToken[]
   contentFilterLogs                             ContentFilterLog[]
   recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
+  complaints                                    Complaint[]              @relation("ComplaintBuyer")
+  refundRequests                                 RefundRequest[]          @relation("RefundBuyer")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -1919,6 +1921,9 @@ model OrderProducts {
   // Delivery management relations
   deliveryEvents            DeliveryEvent[]
   pickupCode                PickupCode?
+  // Complaint & refund relations
+  complaints                Complaint[]
+  refundRequests            RefundRequest[]
 
   @@index([sellerId, status])
   @@index([orderId])
@@ -4092,4 +4097,46 @@ model TermDisambiguation {
   @@index([term])
   @@index([categoryId])
   @@map("term_disambiguations")
+}
+
+// ─── Complaint & Refund ─────────────────────────────────────────
+
+model Complaint {
+  id              Int            @id @default(autoincrement())
+  orderProductId  Int
+  buyerId         Int
+  sellerId        Int?
+  reason          String         // damaged, wrong_item, missing, not_described, late, quality, seller, other
+  description     String         @db.Text
+  status          String         @default("OPEN") // OPEN, IN_REVIEW, RESOLVED, REJECTED
+  resolution      String?
+  resolvedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
+  buyer           User           @relation("ComplaintBuyer", fields: [buyerId], references: [id])
+
+  @@index([orderProductId])
+  @@index([buyerId])
+  @@index([status])
+}
+
+model RefundRequest {
+  id              Int            @id @default(autoincrement())
+  orderProductId  Int
+  buyerId         Int
+  amount          Decimal?       @db.Decimal(10, 2)
+  reason          String
+  notes           String?        @db.Text
+  status          String         @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
+  adminNote       String?
+  processedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
+  buyer           User           @relation("RefundBuyer", fields: [buyerId], references: [id])
+
+  @@index([orderProductId])
+  @@index([buyerId])
+  @@index([status])
 }

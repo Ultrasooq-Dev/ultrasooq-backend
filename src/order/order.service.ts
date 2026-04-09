@@ -5469,4 +5469,190 @@ export class OrderService {
     }
   }
 
+  // ─── Complaint ──────────────────────────────────────────────────
+
+  async submitComplaint(req: any, payload: any) {
+    try {
+      const { orderProductId, reason, description } = payload;
+      if (!orderProductId || !reason || !description) {
+        return { status: false, message: 'orderProductId, reason, and description are required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findFirst({
+        where: { id: parseInt(orderProductId), userId: req.user.id, deletedAt: null },
+      });
+
+      if (!orderProduct) {
+        return { status: false, message: 'Order product not found or does not belong to you' };
+      }
+
+      const complaint = await this.prisma.complaint.create({
+        data: {
+          orderProductId: orderProduct.id,
+          buyerId: req.user.id,
+          sellerId: orderProduct.sellerId,
+          reason,
+          description,
+        },
+      });
+
+      // Notify seller
+      try {
+        if (orderProduct.sellerId) {
+          await this.notificationService.createNotification({
+            userId: orderProduct.sellerId,
+            type: 'ORDER',
+            title: 'New Complaint',
+            message: `A complaint has been filed for order #${orderProduct.orderNo || orderProduct.id}: ${reason}`,
+          });
+        }
+      } catch {}
+
+      return { status: true, message: 'Complaint submitted successfully', data: complaint };
+    } catch (error: any) {
+      return { status: false, message: error.message || 'Failed to submit complaint' };
+    }
+  }
+
+  // ─── Refund Request ─────────────────────────────────────────────
+
+  async requestRefund(req: any, payload: any) {
+    try {
+      const { orderProductId, reason, notes, amount } = payload;
+      if (!orderProductId || !reason) {
+        return { status: false, message: 'orderProductId and reason are required' };
+      }
+
+      const orderProduct = await this.prisma.orderProducts.findFirst({
+        where: { id: parseInt(orderProductId), userId: req.user.id, deletedAt: null },
+      });
+
+      if (!orderProduct) {
+        return { status: false, message: 'Order product not found or does not belong to you' };
+      }
+
+      // Check for existing pending refund
+      const existing = await this.prisma.refundRequest.findFirst({
+        where: { orderProductId: orderProduct.id, buyerId: req.user.id, status: 'PENDING' },
+      });
+      if (existing) {
+        return { status: false, message: 'A refund request is already pending for this order' };
+      }
+
+      const refundRequest = await this.prisma.refundRequest.create({
+        data: {
+          orderProductId: orderProduct.id,
+          buyerId: req.user.id,
+          amount: amount ? parseFloat(amount) : (orderProduct.customerPay || orderProduct.purchasePrice || 0),
+          reason,
+          notes: notes || null,
+        },
+      });
+
+      // Notify seller + admin
+      try {
+        if (orderProduct.sellerId) {
+          await this.notificationService.createNotification({
+            userId: orderProduct.sellerId,
+            type: 'ORDER',
+            title: 'Refund Requested',
+            message: `A refund has been requested for order #${orderProduct.orderNo || orderProduct.id}: ${reason}`,
+          });
+        }
+      } catch {}
+
+      return { status: true, message: 'Refund request submitted successfully', data: refundRequest };
+    } catch (error: any) {
+      return { status: false, message: error.message || 'Failed to submit refund request' };
+    }
+  }
+
+  // ─── Bulk Status Update ─────────────────────────────────────────
+
+  async bulkUpdateOrderStatus(req: any, payload: any) {
+    try {
+      const { orderProductIds, status, notes } = payload;
+      if (!orderProductIds?.length || !status) {
+        return { status: false, message: 'orderProductIds array and status are required' };
+      }
+
+      const results: any[] = [];
+      const errors: any[] = [];
+
+      for (const opId of orderProductIds) {
+        try {
+          const result = await this.updateOrderStatus(req, { orderProductId: opId, status, notes });
+          if (result.status) {
+            results.push({ orderProductId: opId, success: true });
+          } else {
+            errors.push({ orderProductId: opId, error: result.message });
+          }
+        } catch (err: any) {
+          errors.push({ orderProductId: opId, error: err.message });
+        }
+      }
+
+      return {
+        status: true,
+        message: `${results.length} updated, ${errors.length} failed`,
+        data: { updated: results, failed: errors },
+      };
+    } catch (error: any) {
+      return { status: false, message: error.message || 'Bulk update failed' };
+    }
+  }
+
+  // ─── Delivery Stage Update ──────────────────────────────────────
+
+  async addDeliveryStageUpdate(req: any, payload: any) {
+    try {
+      const { orderProductId, stage, note, location } = payload;
+      if (!orderProductId || !stage) {
+        return { status: false, message: 'orderProductId and stage are required' };
+      }
+
+      const opId = parseInt(orderProductId);
+      const orderProduct = await this.prisma.orderProducts.findFirst({
+        where: { id: opId, sellerId: req.user.id, deletedAt: null },
+      });
+
+      if (!orderProduct) {
+        // Try admin resolution for team members
+        const adminId = await this.resolveAdminId(req.user.id);
+        const opCheck = await this.prisma.orderProducts.findFirst({
+          where: { id: opId, sellerId: adminId, deletedAt: null },
+        });
+        if (!opCheck) {
+          return { status: false, message: 'Order not found or not owned by you' };
+        }
+      }
+
+      await this.createDeliveryEvent({
+        orderProductId: opId,
+        event: stage,
+        actor: 'SELLER',
+        actorUserId: req.user.id,
+        note: note || stage,
+        metadata: { location: location || null, stage },
+      });
+
+      // Notify buyer
+      const op = orderProduct || await this.prisma.orderProducts.findUnique({ where: { id: opId } });
+      if (op?.userId) {
+        try {
+          await this.notificationService.createNotification({
+            userId: op.userId,
+            type: 'SHIPMENT',
+            title: 'Delivery Update',
+            message: `${stage}${location ? ` — ${location}` : ''}`,
+          });
+        } catch {}
+      }
+
+      return { status: true, message: 'Stage update added', data: { orderProductId: opId, stage, location } };
+    } catch (error: any) {
+      return { status: false, message: error.message || 'Failed to add stage update' };
+    }
+  }
+
 }
