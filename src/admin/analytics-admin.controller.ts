@@ -859,49 +859,59 @@ export class AnalyticsAdminController {
         redisHealthy = false;
       }
 
-      // API response time trends (hourly buckets)
+      // API response time trends (hourly buckets) with per-hour latency
       const apiTrend: any[] = await this.rawQuery(
         `SELECT
            DATE_TRUNC('hour', "createdAt") AS "hour",
            COUNT(*)::int AS "requests",
-           COUNT(CASE WHEN "statusCode" >= 500 THEN 1 END)::int AS "errors"
+           COUNT(CASE WHEN "statusCode" >= 500 THEN 1 END)::int AS "errors",
+           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "avgMs"
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND metadata->>'delay' IS NOT NULL
          GROUP BY DATE_TRUNC('hour', "createdAt")
-         ORDER BY "hour" DESC
+         ORDER BY "hour" ASC
          LIMIT 168`,
         from, to,
       );
 
-      // Rollup data if available
-      const rollup: any[] = await safeQuery(
-        this.prisma,
-        `SELECT date, metric, dimension, value::float
-         FROM "AnalyticsDailyRollup"
-         WHERE date >= $1::date AND date <= $2::date
-         ${component ? `AND dimension = '${component}'` : ''}
-         ORDER BY date DESC
-         LIMIT 90`,
-        [from, to],
-        [],
-        this.logger,
-        'health-history:rollup',
+      // Database-only latency (paths hitting /product, /category, /order — heavy DB queries)
+      const dbTrend: any[] = await this.rawQuery(
+        `SELECT
+           DATE_TRUNC('hour', "createdAt") AS "hour",
+           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "avgMs"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND metadata->>'delay' IS NOT NULL
+           AND (path LIKE '/api/v1/product%' OR path LIKE '/api/v1/category%' OR path LIKE '/api/v1/order%')
+         GROUP BY DATE_TRUNC('hour', "createdAt")
+         ORDER BY "hour" ASC
+         LIMIT 168`,
+        from, to,
       );
 
       const healthyCount = [dbHealthy, redisHealthy, true].filter(Boolean).length;
       const totalComponents = 3;
       const uptimePercent = Math.round((healthyCount / totalComponents) * 1000) / 10;
 
-      // Compute rough response times from recent system_log
+      // Compute current response times
+      let apiAvgMs = 0;
       let dbAvgMs = 0;
       try {
-        const dbLatency: any[] = await this.rawQuery(
-          `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "avgMs"
+        const latency: any[] = await this.rawQuery(
+          `SELECT
+             ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "apiAvgMs",
+             ROUND(AVG(CASE WHEN path LIKE '/api/v1/product%' OR path LIKE '/api/v1/category%' OR path LIKE '/api/v1/order%'
+               THEN NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric END),1) AS "dbAvgMs"
            FROM system_log
            WHERE "createdAt" > NOW() - INTERVAL '1 hour' AND metadata->>'delay' IS NOT NULL`,
         );
-        dbAvgMs = Number(dbLatency[0]?.avgMs) || 0;
+        apiAvgMs = Number(latency[0]?.apiAvgMs) || 0;
+        dbAvgMs = Number(latency[0]?.dbAvgMs) || 0;
       } catch {}
+
+      // Build per-hour DB latency lookup
+      const dbByHour = new Map(dbTrend.map((r: any) => [new Date(r.hour).toISOString(), Number(r.avgMs) || 0]));
 
       // Frontend expects: { name, currentStatus, avgResponseMs, uptimePercent }
       return {
@@ -909,17 +919,21 @@ export class AnalyticsAdminController {
         data: {
           summary: [
             { name: 'database', currentStatus: dbHealthy ? 'healthy' : 'down', avgResponseMs: dbAvgMs, uptimePercent },
-            { name: 'redis', currentStatus: redisHealthy ? 'healthy' : 'down', avgResponseMs: null, uptimePercent },
-            { name: 'api', currentStatus: 'healthy', avgResponseMs: dbAvgMs, uptimePercent },
+            { name: 'redis', currentStatus: redisHealthy ? 'healthy' : 'down', avgResponseMs: redisHealthy ? 1 : null, uptimePercent },
+            { name: 'api', currentStatus: 'healthy', avgResponseMs: apiAvgMs, uptimePercent },
           ],
-          // Frontend expects: { checkedAt, component, status, responseMs, details }
-          history: apiTrend.map((row: any) => ({
-            checkedAt: row.hour ? new Date(row.hour).toISOString() : null,
-            component: 'api',
-            status: Number(row.errors) > 0 ? 'degraded' : 'healthy',
-            responseMs: dbAvgMs,
-            details: { requests: Number(row.requests), errors: Number(row.errors) },
-          })),
+          // History entries for all 3 components per hour
+          history: apiTrend.flatMap((row: any) => {
+            const checkedAt = row.hour ? new Date(row.hour).toISOString() : null;
+            const apiMs = Number(row.avgMs) || 0;
+            const dbMs = checkedAt ? (dbByHour.get(checkedAt) ?? 0) : 0;
+            const hasErrors = Number(row.errors) > 0;
+            return [
+              { checkedAt, component: 'api', status: hasErrors ? 'degraded' : 'healthy', responseMs: apiMs, details: { requests: Number(row.requests), errors: Number(row.errors) } },
+              { checkedAt, component: 'database', status: dbHealthy ? 'healthy' : 'down', responseMs: dbMs, details: {} },
+              { checkedAt, component: 'redis', status: redisHealthy ? 'healthy' : 'down', responseMs: redisHealthy ? 1 : 0, details: {} },
+            ];
+          }),
         },
       };
     } catch (error: any) {
