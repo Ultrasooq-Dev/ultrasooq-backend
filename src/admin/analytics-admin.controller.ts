@@ -676,6 +676,9 @@ export class AnalyticsAdminController {
       let overallLatency: any[] = [{ avgMs: 0, p95Ms: 0 }];
       let slowEndpoints: any[] = [];
 
+      // Exclude scraper endpoints from latency KPIs — they're 10-40s Puppeteer calls that distort metrics
+      const LATENCY_EXCLUDE = `AND path NOT LIKE '/api/v1/scraper/%'`;
+
       try {
         apiLatency = await this.prisma.$queryRawUnsafe(
           `SELECT
@@ -687,7 +690,7 @@ export class AnalyticsAdminController {
              ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgDuration"
            FROM system_log
            WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
-             AND metadata->>'delay' IS NOT NULL
+             AND metadata->>'delay' IS NOT NULL ${LATENCY_EXCLUDE}
            GROUP BY "statusGroup" ORDER BY "statusGroup"`,
           from, to,
         );
@@ -697,10 +700,10 @@ export class AnalyticsAdminController {
         overallLatency = await this.prisma.$queryRawUnsafe(
           `SELECT
              ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
-             ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Ms"
+             ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric)::numeric, 1) AS "p95Ms"
            FROM system_log
            WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
-             AND metadata->>'delay' IS NOT NULL`,
+             AND metadata->>'delay' IS NOT NULL ${LATENCY_EXCLUDE}`,
           from, to,
         );
       } catch (e: any) { this.logger.warn(`[performance:overallLatency] ${e.message}`); }
@@ -718,7 +721,7 @@ export class AnalyticsAdminController {
         );
       } catch (e: any) { this.logger.warn(`[performance:slowEndpoints] ${e.message}`); }
 
-      // Latency trend (hourly buckets with actual avg latency)
+      // Latency trend (hourly buckets, excludes scraper)
       const latencyTrend: any[] = await safeQuery(
         this.prisma,
         `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
@@ -727,6 +730,7 @@ export class AnalyticsAdminController {
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
            AND metadata->>'delay' IS NOT NULL
+           AND path NOT LIKE '/api/v1/scraper/%'
          GROUP BY DATE_TRUNC('hour', "createdAt")
          ORDER BY "hour" ASC
          LIMIT 168`,
