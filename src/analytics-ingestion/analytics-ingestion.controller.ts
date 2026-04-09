@@ -72,12 +72,11 @@ export class AnalyticsIngestionController {
     @Req() req: Request,
   ): Promise<void> {
     const events = body?.events;
-    if (!Array.isArray(events) || events.length === 0) {
+    const vitals = (body as any)?.vitals;
+
+    if ((!Array.isArray(events) || events.length === 0) && !vitals) {
       return;
     }
-
-    // Cap batch size to prevent abuse
-    const batch = events.slice(0, 100);
 
     const ip =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
@@ -85,12 +84,24 @@ export class AnalyticsIngestionController {
       '';
     const userAgent = req.headers['user-agent'] || '';
 
-    // Fire-and-forget — never block the response
-    this.analyticsIngestionService
-      .processEvents(batch, ip, userAgent)
-      .catch((err) => {
-        this.logger.warn(`Event ingestion failed: ${err}`);
-      });
+    // Process events (fire-and-forget)
+    if (Array.isArray(events) && events.length > 0) {
+      const batch = events.slice(0, 100);
+      this.analyticsIngestionService
+        .processEvents(batch, ip, userAgent)
+        .catch((err) => {
+          this.logger.warn(`Event ingestion failed: ${err}`);
+        });
+    }
+
+    // Process web vitals sent via visibility flush (fire-and-forget)
+    if (vitals && typeof vitals === 'object') {
+      this.analyticsIngestionService
+        .processWebVitals(vitals, {})
+        .catch((err) => {
+          this.logger.warn(`Vitals ingestion failed: ${err}`);
+        });
+    }
   }
 
   /**
