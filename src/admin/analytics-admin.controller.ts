@@ -51,6 +51,17 @@ function defaultEndDate(): string {
 }
 
 /**
+ * Normalize endDate: if date-only (YYYY-MM-DD), append T23:59:59.999Z
+ * so queries include the entire end day, not just midnight.
+ */
+function normalizeEndDate(endDate: string): string {
+  if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return `${endDate}T23:59:59.999Z`;
+  }
+  return endDate;
+}
+
+/**
  * Safe raw query helper — catches "relation does not exist" errors and returns
  * a fallback value. This allows endpoints referencing tables not yet migrated
  * (ErrorLog, PerformanceMetric, VisitorSession, AnalyticsDailyRollup) to
@@ -102,7 +113,7 @@ export class AnalyticsAdminController {
     @Query('endDate') endDate?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     try {
       // Core metrics from system_log (always exists)
@@ -256,7 +267,7 @@ export class AnalyticsAdminController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit?: number,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
     const offset = ((page || 1) - 1) * (limit || 20);
 
     try {
@@ -357,7 +368,7 @@ export class AnalyticsAdminController {
     @Query('flow') flow?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     try {
       // Stage 1: Product views
@@ -414,7 +425,7 @@ export class AnalyticsAdminController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
     const limit = 20;
     const offset = ((page || 1) - 1) * limit;
 
@@ -529,7 +540,7 @@ export class AnalyticsAdminController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
     const limit = 20;
     const offset = ((page || 1) - 1) * limit;
 
@@ -649,7 +660,7 @@ export class AnalyticsAdminController {
     @Query('endDate') endDate?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     try {
       // Web Vitals from PerformanceMetric (may not exist)
@@ -793,7 +804,7 @@ export class AnalyticsAdminController {
     @Query('component') component?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     try {
       // Check database connectivity
@@ -1015,7 +1026,7 @@ export class AnalyticsAdminController {
     @Query('sessionId') sessionId?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     try {
       let journeyData: any[];
@@ -1111,7 +1122,7 @@ export class AnalyticsAdminController {
     @Query('endDate') endDate?: string,
   ) {
     const from = startDate || defaultStartDate();
-    const to = endDate || defaultEndDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
 
     let data: any[] = [];
     let filename = 'analytics';
