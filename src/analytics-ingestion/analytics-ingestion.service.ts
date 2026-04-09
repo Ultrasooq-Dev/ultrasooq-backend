@@ -155,9 +155,28 @@ export class AnalyticsIngestionService {
       // FIX P2-9: Add pageUrl column to VisitorSession if it doesn't exist yet
       await this.prisma.$queryRawUnsafe(`
         ALTER TABLE "VisitorSession" ADD COLUMN IF NOT EXISTS "pageUrl" TEXT
-      `).catch(() => {
-        // Silently ignore if column already exists or table not yet created
-      });
+      `).catch(() => {});
+
+      // OrderEvent table for order analytics
+      await this.prisma.$queryRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "OrderEvent" (
+          "id" SERIAL PRIMARY KEY,
+          "orderProductId" INTEGER NOT NULL,
+          "orderId" INTEGER,
+          "sellerId" INTEGER,
+          "buyerId" INTEGER,
+          "event" TEXT NOT NULL,
+          "previousStatus" TEXT,
+          "revenue" DECIMAL(10,2),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await this.prisma.$queryRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_order_event_event ON "OrderEvent"("event", "createdAt")
+      `).catch(() => {});
+      await this.prisma.$queryRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS idx_order_event_seller ON "OrderEvent"("sellerId")
+      `).catch(() => {});
 
       this.tablesInitialized = true;
     } catch (error) {
@@ -433,6 +452,36 @@ export class AnalyticsIngestionService {
       this.logger.log('Recommendation metrics aggregated');
     } catch (e: any) {
       this.logger.warn(`Rec metrics aggregation failed: ${e.message}`);
+    }
+  }
+
+  // ─── Order Event Logging ────────────────────────────────────────
+
+  async logOrderEvent(data: {
+    orderProductId: number;
+    orderId?: number;
+    sellerId?: number;
+    buyerId?: number;
+    event: string;
+    previousStatus?: string;
+    revenue?: number;
+  }): Promise<void> {
+    try {
+      await this.ensureTables();
+      await this.prisma.$queryRawUnsafe(
+        `INSERT INTO "OrderEvent" ("orderProductId", "orderId", "sellerId", "buyerId", "event", "previousStatus", "revenue")
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        data.orderProductId,
+        data.orderId || null,
+        data.sellerId || null,
+        data.buyerId || null,
+        data.event,
+        data.previousStatus || null,
+        data.revenue || null,
+      );
+    } catch (e: any) {
+      // Non-blocking — don't fail the caller
+      this.logger.warn(`OrderEvent log failed: ${e.message}`);
     }
   }
 }

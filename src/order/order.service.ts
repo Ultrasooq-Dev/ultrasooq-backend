@@ -43,7 +43,8 @@
  *   - Fee types are either GLOBAL (one fee structure per menu) or NONGLOBAL
  *     (location-specific fees matched by country/state/city).
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { AnalyticsIngestionService } from '../analytics-ingestion/analytics-ingestion.service';
 import * as randomstring from 'randomstring';
 import { compare, hash, genSalt } from 'bcrypt';
 import { Prisma } from '../generated/prisma/client';
@@ -83,6 +84,8 @@ export class OrderService {
     private readonly helperService: HelperService,
     private readonly walletService: WalletService,
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => AnalyticsIngestionService))
+    private readonly analyticsService: AnalyticsIngestionService,
   ) {
     // Initialize auto-confirm scheduler once
     if (!this.autoConfirmInterval) {
@@ -4661,6 +4664,16 @@ export class OrderService {
       } catch (notificationError) {
       }
 
+      // Log to analytics
+      this.analyticsService.logOrderEvent({
+        orderProductId: parseInt(orderProductId),
+        orderId: orderProduct.orderId || undefined,
+        sellerId: orderProduct.sellerId || undefined,
+        buyerId: orderProduct.userId || undefined,
+        event: dbStatus,
+        previousStatus: orderProduct.orderProductStatus,
+      }).catch(() => {});
+
       return {
         status: true,
         message: 'Order status updated successfully',
@@ -5061,6 +5074,12 @@ export class OrderService {
           });
         } catch (e) { /* notification failure should not fail the operation */ }
       }
+
+      this.analyticsService.logOrderEvent({
+        orderProductId: opId, orderId: orderProduct.orderId || undefined,
+        sellerId: orderProduct.sellerId || undefined, buyerId: req.user.id,
+        event: 'RECEIVED', previousStatus: 'DELIVERED',
+      }).catch(() => {});
 
       return { status: true, message: 'Receipt confirmed successfully' };
     } catch (error) {

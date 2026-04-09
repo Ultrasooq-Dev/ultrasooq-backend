@@ -1190,6 +1190,101 @@ export class AnalyticsAdminController {
   }
 
   // ────────────────────────────────────────────────────────────────
+  // GET /admin/analytics/orders
+  // ────────────────────────────────────────────────────────────────
+  @Get('orders')
+  async getOrderAnalytics(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const from = startDate || defaultStartDate();
+    const to = normalizeEndDate(endDate || defaultEndDate());
+
+    try {
+      // Status distribution
+      const statusDist: any[] = await this.rawQuery(
+        `SELECT "orderProductStatus" AS status, COUNT(*)::int AS count
+         FROM "OrderProducts" WHERE "deletedAt" IS NULL AND "createdAt" >= $1 AND "createdAt" <= $2
+         GROUP BY "orderProductStatus" ORDER BY count DESC`,
+        from, to,
+      );
+
+      // Revenue by day
+      const revenueByDay: any[] = await this.rawQuery(
+        `SELECT DATE_TRUNC('day', "createdAt")::date AS date,
+                COUNT(*)::int AS orders,
+                COALESCE(SUM("customerPay"), 0) AS revenue
+         FROM "OrderProducts" WHERE "deletedAt" IS NULL AND "createdAt" >= $1 AND "createdAt" <= $2
+           AND "orderProductStatus" != 'CANCELLED'
+         GROUP BY DATE_TRUNC('day', "createdAt") ORDER BY date ASC`,
+        from, to,
+      );
+
+      // Totals
+      const totals: any[] = await this.rawQuery(
+        `SELECT
+           COUNT(*)::int AS "totalOrders",
+           COUNT(CASE WHEN "orderProductStatus" = 'CANCELLED' THEN 1 END)::int AS "cancelled",
+           COUNT(CASE WHEN "orderProductStatus" = 'DELIVERED' THEN 1 END)::int AS "delivered",
+           COALESCE(SUM(CASE WHEN "orderProductStatus" != 'CANCELLED' THEN "customerPay" END), 0) AS "totalRevenue"
+         FROM "OrderProducts" WHERE "deletedAt" IS NULL AND "createdAt" >= $1 AND "createdAt" <= $2`,
+        from, to,
+      );
+
+      // Top sellers
+      const topSellers: any[] = await this.rawQuery(
+        `SELECT op."sellerId", u."firstName", u."lastName", COUNT(*)::int AS orders,
+                COALESCE(SUM(op."customerPay"), 0) AS revenue
+         FROM "OrderProducts" op
+         LEFT JOIN "User" u ON u.id = op."sellerId"
+         WHERE op."deletedAt" IS NULL AND op."createdAt" >= $1 AND op."createdAt" <= $2
+           AND op."orderProductStatus" != 'CANCELLED'
+         GROUP BY op."sellerId", u."firstName", u."lastName"
+         ORDER BY revenue DESC LIMIT 10`,
+        from, to,
+      );
+
+      // Complaints + Refunds counts
+      const complaints: any[] = await safeQuery(
+        this.prisma,
+        `SELECT status, COUNT(*)::int AS count FROM "Complaint" WHERE "createdAt" >= $1 AND "createdAt" <= $2 GROUP BY status`,
+        [from, to], [], this.logger, 'orders:complaints',
+      );
+      const refunds: any[] = await safeQuery(
+        this.prisma,
+        `SELECT status, COUNT(*)::int AS count FROM "RefundRequest" WHERE "createdAt" >= $1 AND "createdAt" <= $2 GROUP BY status`,
+        [from, to], [], this.logger, 'orders:refunds',
+      );
+
+      const t = totals[0] || {};
+      const cancellationRate = t.totalOrders > 0
+        ? Math.round((t.cancelled / t.totalOrders) * 1000) / 10
+        : 0;
+
+      return {
+        status: true,
+        data: {
+          kpis: {
+            totalOrders: t.totalOrders || 0,
+            delivered: t.delivered || 0,
+            cancelled: t.cancelled || 0,
+            cancellationRate,
+            totalRevenue: Number(t.totalRevenue) || 0,
+          },
+          statusDistribution: statusDist,
+          revenueByDay,
+          topSellers,
+          complaints,
+          refunds,
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`[orders] ${error.message}`);
+      return { status: true, data: { kpis: {}, statusDistribution: [], revenueByDay: [], topSellers: [], complaints: [], refunds: [] } };
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
   // GET /admin/analytics/export   (P2-8)
   // Must be BEFORE any parameterized routes to avoid NestJS routing conflicts
   // ────────────────────────────────────────────────────────────────
