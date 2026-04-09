@@ -14,6 +14,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemLogService } from '../system-log/system-log.service';
@@ -138,6 +139,25 @@ export class AnalyticsIngestionService {
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      await this.prisma.$queryRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "AnalyticsDailyRollup" (
+          id SERIAL PRIMARY KEY,
+          date DATE NOT NULL,
+          metric VARCHAR(100) NOT NULL,
+          dimension VARCHAR(200) NOT NULL DEFAULT 'total',
+          value DECIMAL(12,2) NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP DEFAULT NOW(),
+          UNIQUE(date, metric, dimension)
+        )
+      `);
+
+      // FIX P2-9: Add pageUrl column to VisitorSession if it doesn't exist yet
+      await this.prisma.$queryRawUnsafe(`
+        ALTER TABLE "VisitorSession" ADD COLUMN IF NOT EXISTS "pageUrl" TEXT
+      `).catch(() => {
+        // Silently ignore if column already exists or table not yet created
+      });
 
       this.tablesInitialized = true;
     } catch (error) {
@@ -330,6 +350,89 @@ export class AnalyticsIngestionService {
       );
     } catch (error) {
       this.logger.warn(`Failed to write performance metric: ${error}`);
+    }
+  }
+
+  // ─── P2-7: Daily rollup cron ─────────────────────────────────────
+
+  /**
+   * Runs at 02:00 daily. Aggregates system_log + ProductView into
+   * AnalyticsDailyRollup for fast dashboard queries.
+   */
+  @Cron('0 0 2 * * *') // 02:00 daily
+  async buildDailyRollup(): Promise<void> {
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      const today = new Date(yesterday);
+      today.setDate(today.getDate() + 1);
+
+      // Aggregate system_log into AnalyticsDailyRollup
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "AnalyticsDailyRollup" (date, metric, dimension, value, "createdAt")
+        SELECT $1::date, 'requests', COALESCE(method, 'UNKNOWN'), COUNT(*)::decimal, NOW()
+        FROM system_log WHERE "createdAt" >= $1 AND "createdAt" < $2
+        GROUP BY method
+        ON CONFLICT DO NOTHING
+      `, yesterday, today);
+
+      // Aggregate product views
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "AnalyticsDailyRollup" (date, metric, dimension, value, "createdAt")
+        SELECT $1::date, 'product_views', 'total', COUNT(*)::decimal, NOW()
+        FROM "ProductView" WHERE "lastViewedAt" >= $1 AND "lastViewedAt" < $2
+        ON CONFLICT DO NOTHING
+      `, yesterday, today);
+
+      this.logger.log('Daily rollup complete');
+    } catch (e: any) {
+      this.logger.warn(`Daily rollup failed: ${e.message}`);
+    }
+  }
+
+  // ─── P2-12: Recommendation metrics aggregation cron ─────────────
+
+  /**
+   * Runs at 04:00 daily. Aggregates recommendation_feedback into
+   * recommendation_metrics for reporting.
+   */
+  @Cron('0 0 4 * * *') // 04:00 daily
+  async aggregateRecommendationMetrics(): Promise<void> {
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      const today = new Date(yesterday);
+      today.setDate(today.getDate() + 1);
+
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO recommendation_metrics (date, algorithm, placement, segment, impressions, clicks, "cartAdds", purchases, revenue, "createdAt", "updatedAt")
+        SELECT
+          $1::date,
+          algorithm,
+          placement,
+          'all',
+          COUNT(CASE WHEN action = 'impression' THEN 1 END)::int,
+          COUNT(CASE WHEN action = 'click' THEN 1 END)::int,
+          COUNT(CASE WHEN action = 'cart' THEN 1 END)::int,
+          COUNT(CASE WHEN action = 'purchase' THEN 1 END)::int,
+          0,
+          NOW(), NOW()
+        FROM recommendation_feedback
+        WHERE "createdAt" >= $1 AND "createdAt" < $2
+        GROUP BY algorithm, placement
+        ON CONFLICT (date, algorithm, placement, segment, experiment) DO UPDATE SET
+          impressions = EXCLUDED.impressions,
+          clicks = EXCLUDED.clicks,
+          "cartAdds" = EXCLUDED."cartAdds",
+          purchases = EXCLUDED.purchases,
+          "updatedAt" = NOW()
+      `, yesterday, today);
+
+      this.logger.log('Recommendation metrics aggregated');
+    } catch (e: any) {
+      this.logger.warn(`Rec metrics aggregation failed: ${e.message}`);
     }
   }
 }

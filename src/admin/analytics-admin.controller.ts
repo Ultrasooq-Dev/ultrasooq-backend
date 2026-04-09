@@ -25,6 +25,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Query,
   UseGuards,
@@ -1015,6 +1016,94 @@ export class AnalyticsAdminController {
       return { status: true, data: { paused: paused === true } };
     } catch {
       return { status: true, data: { paused: false } };
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // GET /admin/analytics/export   (P2-8)
+  // Must be BEFORE any parameterized routes to avoid NestJS routing conflicts
+  // ────────────────────────────────────────────────────────────────
+  @Get('export')
+  async exportAnalytics(
+    @Query('type') type: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const from = startDate || defaultStartDate();
+    const to = endDate || defaultEndDate();
+
+    let data: any[] = [];
+    let filename = 'analytics';
+
+    if (type === 'events') {
+      data = await this.prisma.$queryRawUnsafe(
+        `SELECT id, level, method, path, "statusCode", metadata->>'delay' as delay, "ipAddress", "createdAt"
+         FROM system_log WHERE "createdAt" >= $1 AND "createdAt" <= $2 ORDER BY "createdAt" DESC LIMIT 10000`,
+        from, to,
+      );
+      filename = 'events';
+    } else if (type === 'errors') {
+      data = await this.prisma.$queryRawUnsafe(
+        `SELECT id, level, method, path, "statusCode", message, "createdAt"
+         FROM system_log WHERE level = 'ERROR' AND "createdAt" >= $1 AND "createdAt" <= $2 ORDER BY "createdAt" DESC LIMIT 5000`,
+        from, to,
+      );
+      filename = 'errors';
+    } else if (type === 'sessions') {
+      data = await safeQuery(
+        this.prisma,
+        `SELECT * FROM "VisitorSession" WHERE "createdAt" >= $1 AND "createdAt" <= $2 ORDER BY "createdAt" DESC LIMIT 5000`,
+        [from, to],
+        [],
+        this.logger,
+        'export:sessions',
+      );
+      filename = 'sessions';
+    }
+
+    return { status: true, data, filename: `${filename}_${from}_${to}` };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // DELETE /admin/analytics/user/:userId/data   (P2-11)
+  // Must be BEFORE any parameterized routes to avoid NestJS routing conflicts
+  // ────────────────────────────────────────────────────────────────
+  @Delete('user/:userId/data')
+  async deleteUserData(@Param('userId') userId: string) {
+    const uid = parseInt(userId, 10);
+    if (!uid) return { status: false, message: 'Invalid userId' };
+
+    try {
+      const deleted: Record<string, number> = {};
+
+      deleted.productViews = (await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "ProductView" WHERE "userId" = $1`, uid,
+      )) as number;
+
+      deleted.productClicks = (await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "ProductClick" WHERE "userId" = $1`, uid,
+      )) as number;
+
+      deleted.productSearches = (await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "ProductSearch" WHERE "userId" = $1`, uid,
+      )) as number;
+
+      deleted.visitorSessions = (await safeQuery(
+        this.prisma,
+        `DELETE FROM "VisitorSession" WHERE "userId" = $1`,
+        [uid],
+        0 as any,
+        this.logger,
+        'deleteUserData:visitorSessions',
+      )) as number;
+
+      deleted.systemLogs = (await this.prisma.$executeRawUnsafe(
+        `DELETE FROM system_log WHERE "userId" = $1`, uid,
+      )) as number;
+
+      return { status: true, data: deleted };
+    } catch (error: any) {
+      return { status: false, message: error.message };
     }
   }
 
