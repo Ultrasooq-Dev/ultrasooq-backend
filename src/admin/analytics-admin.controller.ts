@@ -651,7 +651,7 @@ export class AnalyticsAdminController {
         'performance:vitals',
       );
 
-      // API latency distribution from system_log (statusCode-based)
+      // API latency from system_log — parse metadata->>'delay' ("32ms" → 32)
       const apiLatency: any[] = await this.prisma.$queryRawUnsafe(
         `SELECT
            CASE
@@ -661,34 +661,52 @@ export class AnalyticsAdminController {
              WHEN "statusCode" >= 500 THEN '5xx'
              ELSE 'other'
            END AS "statusGroup",
-           COUNT(*)::int AS "requestCount"
+           COUNT(*)::int AS "requestCount",
+           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgDuration",
+           ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Duration"
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND metadata->>'delay' IS NOT NULL
          GROUP BY "statusGroup"
          ORDER BY "statusGroup"`,
         from, to,
       );
 
-      // Slowest endpoints (extract delay from metadata JSON)
+      // Overall avg and p95 latency
+      const overallLatency: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT
+           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
+           ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Ms"
+         FROM system_log
+         WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND metadata->>'delay' IS NOT NULL`,
+        from, to,
+      );
+
+      // Slowest endpoints — actual avg latency per endpoint
       const slowEndpoints: any[] = await this.prisma.$queryRawUnsafe(
         `SELECT path, method, COUNT(*)::int AS "requestCount",
-                "statusCode"
+                ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
+                ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "maxMs"
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
            AND path IS NOT NULL
-         GROUP BY path, method, "statusCode"
-         ORDER BY "requestCount" DESC
+           AND metadata->>'delay' IS NOT NULL
+         GROUP BY path, method
+         ORDER BY "avgMs" DESC NULLS LAST
          LIMIT 20`,
         from, to,
       );
 
-      // Latency trend (hourly buckets)
+      // Latency trend (hourly buckets with actual avg latency)
       const latencyTrend: any[] = await safeQuery(
         this.prisma,
         `SELECT DATE_TRUNC('hour', "createdAt") AS "hour",
-                COUNT(*)::int AS "requests"
+                COUNT(*)::int AS "requests",
+                ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs"
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
+           AND metadata->>'delay' IS NOT NULL
          GROUP BY DATE_TRUNC('hour', "createdAt")
          ORDER BY "hour" ASC
          LIMIT 168`,
@@ -698,10 +716,14 @@ export class AnalyticsAdminController {
         'performance:latencyTrend',
       );
 
-      // metrics as array: each entry is { name, value, unit, source }
+      // Build metrics array for frontend
+      const avgMs = Number(overallLatency[0]?.avgMs) || 0;
+      const p95Ms = Number(overallLatency[0]?.p95Ms) || 0;
       const metricsArray = [
-        ...vitals.map((v: any) => ({ name: v.metricName || v.name, value: v.avg || v.value, unit: 'ms', source: 'webVitals' })),
-        ...apiLatency.map((a: any) => ({ name: `API ${a.statusGroup || a.status || 'requests'}`, value: a.avgDuration || a.requestCount, unit: a.avgDuration ? 'ms' : 'count', source: 'apiLatency' })),
+        ...vitals.map((v: any) => ({ name: v.metricName || v.name, value: Number(v.avgValue) || 0, unit: 'ms', source: 'webVitals' })),
+        { name: 'Avg API Latency', value: avgMs, unit: 'ms', source: 'apiLatency' },
+        { name: 'P95 API Latency', value: p95Ms, unit: 'ms', source: 'apiLatency' },
+        ...apiLatency.map((a: any) => ({ name: `API ${a.statusGroup}`, value: Number(a.avgDuration) || 0, unit: 'ms', source: 'apiLatency', requestCount: a.requestCount })),
       ];
 
       return {
