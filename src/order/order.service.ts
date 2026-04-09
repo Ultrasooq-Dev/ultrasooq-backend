@@ -4674,6 +4674,11 @@ export class OrderService {
         previousStatus: orderProduct.orderProductStatus,
       }).catch(() => {});
 
+      // Real-time socket push to buyer
+      if (orderProduct.userId) {
+        this.notificationService.emitOrderStatusUpdate(orderProduct.userId, parseInt(orderProductId), dbStatus);
+      }
+
       return {
         status: true,
         message: 'Order status updated successfully',
