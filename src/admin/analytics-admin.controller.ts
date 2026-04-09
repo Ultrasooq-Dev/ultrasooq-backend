@@ -181,10 +181,10 @@ export class AnalyticsAdminController {
         'overview:topEvents',
       );
 
-      // Top pages (most visited paths)
+      // Top pages (most visited paths) — frontend reads .url
       const topPagesRows: any[] = await safeQuery(
         this.prisma,
-        `SELECT path AS "page", COUNT(*)::int AS "count"
+        `SELECT path AS "url", COUNT(*)::int AS "count"
          FROM system_log
          WHERE "createdAt" >= $1 AND "createdAt" <= $2
            AND path IS NOT NULL
@@ -197,6 +197,19 @@ export class AnalyticsAdminController {
         'overview:topPages',
       );
 
+      // Avg API latency from system_log metadata.delay
+      let avgApiLatencyMs = 0;
+      try {
+        const latencyRow: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),0) AS "avg"
+           FROM system_log
+           WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
+             AND metadata->>'delay' IS NOT NULL`,
+          from, to,
+        );
+        avgApiLatencyMs = Number(latencyRow[0]?.avg) || 0;
+      } catch {}
+
       return {
         status: true,
         data: {
@@ -206,7 +219,7 @@ export class AnalyticsAdminController {
             bounceRate: 0,
             unresolvedErrors: errors.unresolvedErrors || (core.serverErrors || 0),
             totalErrors,
-            avgApiLatencyMs: 0,
+            avgApiLatencyMs,
           },
           dailyEvents: dailyEventsRows,
           topEvents: topEventsRows,
@@ -306,14 +319,13 @@ export class AnalyticsAdminController {
       const currentLimit = limit || 20;
       const pages = Math.max(1, Math.ceil(total / currentLimit));
 
-      // Merge viewed products with click/search data for unified list
+      // Merge — frontend reads: productId, productName, viewCount, clickCount, uniqueViewers
       const products = topViewed.map((v: any) => ({
         productId: v.productId,
-        name_en: v.name_en,
-        name_ar: v.name_ar,
-        views: v.totalViews || 0,
-        clicks: topClicked.find((c: any) => c.productId === v.productId)?.totalClicks || 0,
-        searches: 0,
+        productName: v.name_en || v.name_ar || `Product #${v.productId}`,
+        viewCount: v.totalViews || 0,
+        clickCount: topClicked.find((c: any) => c.productId === v.productId)?.totalClicks || 0,
+        uniqueViewers: 0,
       }));
 
       return {
@@ -322,7 +334,7 @@ export class AnalyticsAdminController {
           kpis: {
             totalViews: kpi.totalViews || 0,
             totalClicks: kpi.totalClicks || 0,
-            totalSearches: kpi.totalSearches || 0,
+            uniqueProducts: total,
           },
           products,
           total,
@@ -331,7 +343,7 @@ export class AnalyticsAdminController {
       };
     } catch (error: any) {
       this.logger.error(`[products] ${error.message}`);
-      return { status: true, data: { kpis: { totalViews: 0, totalClicks: 0, totalSearches: 0 }, products: [], total: 0, pages: 1 } };
+      return { status: true, data: { kpis: { totalViews: 0, totalClicks: 0, uniqueProducts: 0 }, products: [], total: 0, pages: 1 } };
     }
   }
 
@@ -456,17 +468,17 @@ export class AnalyticsAdminController {
         ? Math.round((stats.totalClicked / stats.totalSearches) * 1000) / 10
         : 0;
 
-      // Reshape topQueries → terms (field names the admin expects)
+      // Reshape topQueries → terms — frontend reads .query, .count, .clickedCount
       const terms = topQueries.map((q: any) => ({
-        term: q.searchTerm,
-        searches: q.totalSearches || 0,
-        clicks: q.clickedCount || 0,
+        query: q.searchTerm,
+        count: q.totalSearches || 0,
+        clickedCount: q.clickedCount || 0,
         ctr: q.ctr ? Number(q.ctr) : 0,
       }));
 
-      // Reshape noResults → zeroResults
+      // Reshape noResults → zeroResults — frontend reads .query, .count
       const zeroResults = noResults.map((q: any) => ({
-        term: q.searchTerm,
+        query: q.searchTerm,
         count: q.searchCount || 0,
       }));
 
@@ -486,6 +498,7 @@ export class AnalyticsAdminController {
           kpis: {
             totalSearches: stats.totalSearches || 0,
             uniqueTerms: stats.uniqueTerms || 0,
+            zeroResultCount: zeroResults.length,
             overallCtr,
           },
           terms,
@@ -497,7 +510,7 @@ export class AnalyticsAdminController {
       this.logger.error(`[search] ${error.message}`);
       return {
         status: true,
-        data: { kpis: { totalSearches: 0, uniqueTerms: 0, overallCtr: 0 }, terms: [], zeroResults: [], pages: 1 },
+        data: { kpis: { totalSearches: 0, uniqueTerms: 0, zeroResultCount: 0, overallCtr: 0 }, terms: [], zeroResults: [], pages: 1 },
       };
     }
   }
@@ -564,9 +577,10 @@ export class AnalyticsAdminController {
       // If ErrorLog doesn't exist, fall back to system_log errors
       let finalErrors = errors;
       if (errors.length === 0) {
-        finalErrors = await this.prisma.$queryRawUnsafe(
-          `SELECT id, message, context AS source, level, path,
-                  "statusCode", "createdAt" AS "lastSeenAt", "errorStack" AS stack
+        const sysErrors: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT id, message, context AS source, level, path AS "pageUrl",
+                  "statusCode", "createdAt" AS "lastSeenAt", "createdAt" AS "firstSeenAt",
+                  "errorStack" AS stack, metadata, 1 AS count
            FROM system_log
            WHERE "createdAt" >= $1 AND "createdAt" <= $2
              AND level = 'ERROR'
@@ -574,6 +588,11 @@ export class AnalyticsAdminController {
            LIMIT $3 OFFSET $4`,
           from, to, limit, offset,
         );
+        // Add fingerprint for frontend key/display
+        finalErrors = sysErrors.map((e: any) => ({
+          ...e,
+          fingerprint: e.message ? e.message.slice(0, 40) : `err-${e.id}`,
+        }));
       }
 
       // Total error count for pagination
@@ -717,30 +736,38 @@ export class AnalyticsAdminController {
         'performance:latencyTrend',
       );
 
-      // Build metrics array for frontend
+      // Build metrics array — frontend expects { name, avg, percentiles: { p50, p95 } }
       const avgMs = Number(overallLatency[0]?.avgMs) || 0;
       const p95Ms = Number(overallLatency[0]?.p95Ms) || 0;
-      const metricsArray = [
-        ...vitals.map((v: any) => ({ name: v.metricName || v.name, value: Number(v.avgValue) || 0, unit: 'ms', source: 'webVitals' })),
-        { name: 'Avg API Latency', value: avgMs, unit: 'ms', source: 'apiLatency' },
-        { name: 'P95 API Latency', value: p95Ms, unit: 'ms', source: 'apiLatency' },
-        ...apiLatency.map((a: any) => ({ name: `API ${a.statusGroup}`, value: Number(a.avgDuration) || 0, unit: 'ms', source: 'apiLatency', requestCount: a.requestCount })),
-      ];
+      const vitalMetrics = vitals.map((v: any) => ({
+        name: v.metricName || v.name,
+        avg: Number(v.avgValue) || 0,
+        percentiles: { p50: Number(v.avgValue) || 0, p95: Number(v.maxValue) || 0 },
+        min: Number(v.minValue) || 0,
+        max: Number(v.maxValue) || 0,
+        sampleCount: Number(v.sampleCount) || 0,
+      }));
+      // Only add system_log-based api_latency if PerformanceMetric doesn't already have one
+      const hasApiLatency = vitalMetrics.some((m: any) => m.name === 'api_latency');
+      const metricsArray = hasApiLatency
+        ? vitalMetrics
+        : [...vitalMetrics, { name: 'api_latency', avg: avgMs, percentiles: { p50: avgMs, p95: p95Ms } }];
 
-      // Convert all Decimal strings to numbers for frontend
+      // Convert all Decimal strings to numbers; rename fields to match frontend expectations
       return {
         status: true,
         data: {
           metrics: metricsArray,
           slowestEndpoints: slowEndpoints.map((ep: any) => ({
-            ...ep,
+            endpoint: ep.path,
+            method: ep.method,
             avgMs: Number(ep.avgMs) || 0,
-            maxMs: Number(ep.maxMs) || 0,
-            requestCount: Number(ep.requestCount) || 0,
+            p95Ms: Number(ep.maxMs) || 0,
+            count: Number(ep.requestCount) || 0,
           })),
           slowPrismaQueries: [],
           latencyTrend: (latencyTrend as any[]).map((t: any) => ({
-            ...t,
+            date: t.hour ? new Date(t.hour).toISOString().slice(0, 10) : '',
             avgMs: Number(t.avgMs) || 0,
             requests: Number(t.requests) || 0,
           })),
@@ -808,21 +835,38 @@ export class AnalyticsAdminController {
         'health-history:rollup',
       );
 
-      const allHealthy = dbHealthy && redisHealthy;
       const healthyCount = [dbHealthy, redisHealthy, true].filter(Boolean).length;
       const totalComponents = 3;
       const uptimePercent = Math.round((healthyCount / totalComponents) * 1000) / 10;
 
-      // summary as array of components for frontend .map()
+      // Compute rough response times from recent system_log
+      let dbAvgMs = 0;
+      try {
+        const dbLatency: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "avgMs"
+           FROM system_log
+           WHERE "createdAt" > NOW() - INTERVAL '1 hour' AND metadata->>'delay' IS NOT NULL`,
+        );
+        dbAvgMs = Number(dbLatency[0]?.avgMs) || 0;
+      } catch {}
+
+      // Frontend expects: { name, currentStatus, avgResponseMs, uptimePercent }
       return {
         status: true,
         data: {
           summary: [
-            { name: 'PostgreSQL', component: 'database', healthy: dbHealthy, status: dbHealthy ? 'healthy' : 'unhealthy', uptime: `${uptimePercent}%` },
-            { name: 'Redis', component: 'cache', healthy: redisHealthy, status: redisHealthy ? 'healthy' : 'unhealthy', uptime: `${uptimePercent}%` },
-            { name: 'NestJS API', component: 'api', healthy: true, status: 'healthy', uptime: `${uptimePercent}%` },
+            { name: 'database', currentStatus: dbHealthy ? 'healthy' : 'down', avgResponseMs: dbAvgMs, uptimePercent },
+            { name: 'redis', currentStatus: redisHealthy ? 'healthy' : 'down', avgResponseMs: null, uptimePercent },
+            { name: 'api', currentStatus: 'healthy', avgResponseMs: dbAvgMs, uptimePercent },
           ],
-          history: apiTrend,
+          // Frontend expects: { checkedAt, component, status, responseMs, details }
+          history: apiTrend.map((row: any) => ({
+            checkedAt: row.hour ? new Date(row.hour).toISOString() : null,
+            component: 'api',
+            status: Number(row.errors) > 0 ? 'degraded' : 'healthy',
+            responseMs: dbAvgMs,
+            details: { requests: Number(row.requests), errors: Number(row.errors) },
+          })),
         },
       };
     } catch (error: any) {
@@ -831,9 +875,9 @@ export class AnalyticsAdminController {
         status: true,
         data: {
           summary: [
-            { name: 'PostgreSQL', component: 'database', healthy: false, status: 'unhealthy', uptime: '0%' },
-            { name: 'Redis', component: 'cache', healthy: false, status: 'unhealthy', uptime: '0%' },
-            { name: 'NestJS API', component: 'api', healthy: true, status: 'healthy', uptime: '0%' },
+            { name: 'database', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
+            { name: 'redis', currentStatus: 'unknown', avgResponseMs: null, uptimePercent: 0 },
+            { name: 'api', currentStatus: 'healthy', avgResponseMs: null, uptimePercent: 0 },
           ],
           history: [],
         },
@@ -905,6 +949,17 @@ export class AnalyticsAdminController {
          LIMIT 20`,
       );
 
+      // Avg latency for KPI card
+      let avgLatencyMs = 0;
+      try {
+        const lat: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),0) AS "avg"
+           FROM system_log WHERE "createdAt" > NOW() - INTERVAL '5 minutes' AND metadata->>'delay' IS NOT NULL`,
+        );
+        avgLatencyMs = Number(lat[0]?.avg) || 0;
+      } catch {}
+
+      // Map fields to match frontend expectations
       return {
         status: true,
         data: {
@@ -913,9 +968,21 @@ export class AnalyticsAdminController {
           kpis: {
             activeVisitors,
             eventsPerMinute,
+            eventsLast5m: totalEvents,
+            avgLatencyMs,
           },
-          activeSessions: activeSessionsList,
-          recentEvents,
+          activeSessions: activeSessionsList.map((s: any) => ({
+            sessionId: s.sessionId,
+            userId: s.userId,
+            currentPage: s.pageUrl ?? '/',
+            lastSeenAt: s.lastActiveAt,
+            pageCount: 0,
+          })),
+          recentEvents: recentEvents.map((e: any) => ({
+            eventName: `${e.method} ${e.statusCode}`,
+            pageUrl: e.path,
+            createdAt: e.createdAt,
+          })),
         },
       };
     } catch (error: any) {
@@ -925,7 +992,7 @@ export class AnalyticsAdminController {
         data: {
           activeVisitors: 0,
           eventsPerMinute: 0,
-          kpis: { activeVisitors: 0, eventsPerMinute: 0 },
+          kpis: { activeVisitors: 0, eventsPerMinute: 0, eventsLast5m: 0, avgLatencyMs: 0 },
           activeSessions: [],
           recentEvents: [],
         },
