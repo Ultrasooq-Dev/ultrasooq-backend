@@ -62,6 +62,32 @@ function normalizeEndDate(endDate: string): string {
 }
 
 /**
+ * Convert Prisma Decimal / BigInt strings to JS numbers in raw query results.
+ * Prisma serializes PostgreSQL `numeric` (from ROUND, AVG, PERCENTILE_CONT)
+ * as Decimal strings (e.g. "35225.5") and `bigint` as string. This helper
+ * recursively converts all such values to plain JS numbers in any object/array,
+ * while leaving Date objects and non-numeric strings untouched.
+ */
+function numericize<T>(val: T): T {
+  if (val === null || val === undefined) return val;
+  if (typeof val === 'bigint') return Number(val) as unknown as T;
+  if (val instanceof Date) return val;
+  if (Array.isArray(val)) return val.map(numericize) as unknown as T;
+  if (typeof val === 'object') {
+    const out: any = {};
+    for (const [k, v] of Object.entries(val as any)) {
+      if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && v.length < 16) {
+        out[k] = Number(v);
+      } else {
+        out[k] = numericize(v);
+      }
+    }
+    return out as T;
+  }
+  return val;
+}
+
+/**
  * Safe raw query helper — catches "relation does not exist" errors and returns
  * a fallback value. This allows endpoints referencing tables not yet migrated
  * (ErrorLog, PerformanceMetric, VisitorSession, AnalyticsDailyRollup) to
@@ -77,7 +103,7 @@ async function safeQuery<T>(
 ): Promise<T> {
   try {
     const result = await prisma.$queryRawUnsafe(sql, ...params);
-    return result as T;
+    return numericize(result) as T;
   } catch (error: any) {
     const msg = error?.message || '';
     if (msg.includes('does not exist') || msg.includes('relation')) {
@@ -104,6 +130,12 @@ export class AnalyticsAdminController {
     private readonly cache: CacheService,
   ) {}
 
+  /** Wrapper: run raw SQL and auto-convert Prisma Decimal/BigInt strings to numbers */
+  private async rawQuery<T = any[]>(sql: string, ...params: any[]): Promise<T> {
+    const result = await this.prisma.$queryRawUnsafe(sql, ...params);
+    return numericize(result) as T;
+  }
+
   // ────────────────────────────────────────────────────────────────
   // GET /admin/analytics/overview
   // ────────────────────────────────────────────────────────────────
@@ -117,7 +149,7 @@ export class AnalyticsAdminController {
 
     try {
       // Core metrics from system_log (always exists)
-      const coreRows: any[] = await this.prisma.$queryRawUnsafe(
+      const coreRows: any[] = await this.rawQuery(
         `SELECT
            (SELECT COUNT(*)::int FROM system_log WHERE "createdAt" >= $1 AND "createdAt" <= $2) AS "totalRequests",
            (SELECT COUNT(*)::int FROM system_log WHERE "createdAt" >= $1 AND "createdAt" <= $2 AND "statusCode" >= 500) AS "serverErrors",
@@ -126,7 +158,7 @@ export class AnalyticsAdminController {
       );
 
       // Product engagement metrics
-      const productRows: any[] = await this.prisma.$queryRawUnsafe(
+      const productRows: any[] = await this.rawQuery(
         `SELECT
            (SELECT COUNT(*)::int FROM "ProductView" WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2) AS "productViews",
            (SELECT COUNT(*)::int FROM "ProductClick" WHERE "createdAt" >= $1 AND "createdAt" <= $2) AS "productClicks",
@@ -211,7 +243,7 @@ export class AnalyticsAdminController {
       // Avg API latency from system_log metadata.delay
       let avgApiLatencyMs = 0;
       try {
-        const latencyRow: any[] = await this.prisma.$queryRawUnsafe(
+        const latencyRow: any[] = await this.rawQuery(
           `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),0) AS "avg"
            FROM system_log
            WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
@@ -272,7 +304,7 @@ export class AnalyticsAdminController {
 
     try {
       // Top viewed products
-      const topViewed: any[] = await this.prisma.$queryRawUnsafe(
+      const topViewed: any[] = await this.rawQuery(
         `SELECT pv."productId", SUM(pv."viewCount")::int AS "totalViews",
                 p."name_en", p."name_ar"
          FROM "ProductView" pv
@@ -285,7 +317,7 @@ export class AnalyticsAdminController {
       );
 
       // Top clicked products
-      const topClicked: any[] = await this.prisma.$queryRawUnsafe(
+      const topClicked: any[] = await this.rawQuery(
         `SELECT pc."productId", COUNT(*)::int AS "totalClicks",
                 p."name_en", p."name_ar"
          FROM "ProductClick" pc
@@ -298,7 +330,7 @@ export class AnalyticsAdminController {
       );
 
       // Top searched terms
-      const topSearched: any[] = await this.prisma.$queryRawUnsafe(
+      const topSearched: any[] = await this.rawQuery(
         `SELECT ps."searchTerm", COUNT(*)::int AS "searchCount",
                 SUM(CASE WHEN ps.clicked THEN 1 ELSE 0 END)::int AS "clickCount"
          FROM "ProductSearch" ps
@@ -310,7 +342,7 @@ export class AnalyticsAdminController {
       );
 
       // Aggregate KPI totals
-      const kpiRows: any[] = await this.prisma.$queryRawUnsafe(
+      const kpiRows: any[] = await this.rawQuery(
         `SELECT
            (SELECT COALESCE(SUM("viewCount"), 0)::int FROM "ProductView" WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2) AS "totalViews",
            (SELECT COUNT(*)::int FROM "ProductClick" WHERE "createdAt" >= $1 AND "createdAt" <= $2) AS "totalClicks",
@@ -320,7 +352,7 @@ export class AnalyticsAdminController {
       const kpi = kpiRows[0] || { totalViews: 0, totalClicks: 0, totalSearches: 0 };
 
       // Total count for pagination
-      const countRows: any[] = await this.prisma.$queryRawUnsafe(
+      const countRows: any[] = await this.rawQuery(
         `SELECT COUNT(DISTINCT "productId")::int AS total
          FROM "ProductView"
          WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2`,
@@ -372,25 +404,25 @@ export class AnalyticsAdminController {
 
     try {
       // Stage 1: Product views
-      const viewRows: any[] = await this.prisma.$queryRawUnsafe(
+      const viewRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS count FROM "ProductView" WHERE "lastViewedAt" >= $1 AND "lastViewedAt" <= $2`,
         from, to,
       );
 
       // Stage 2: Added to cart (active carts)
-      const cartRows: any[] = await this.prisma.$queryRawUnsafe(
+      const cartRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS count FROM "Cart" WHERE status = 'ACTIVE' AND "createdAt" >= $1 AND "createdAt" <= $2 AND "deletedAt" IS NULL`,
         from, to,
       );
 
       // Stage 3: Orders placed (not cancelled)
-      const orderRows: any[] = await this.prisma.$queryRawUnsafe(
+      const orderRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS count FROM "OrderProducts" WHERE "orderProductStatus" != 'CANCELLED' AND "createdAt" >= $1 AND "createdAt" <= $2 AND "deletedAt" IS NULL`,
         from, to,
       );
 
       // Stage 4: Delivered
-      const deliveredRows: any[] = await this.prisma.$queryRawUnsafe(
+      const deliveredRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS count FROM "OrderProducts" WHERE "orderProductStatus" = 'DELIVERED' AND "createdAt" >= $1 AND "createdAt" <= $2 AND "deletedAt" IS NULL`,
         from, to,
       );
@@ -431,7 +463,7 @@ export class AnalyticsAdminController {
 
     try {
       // Top search terms with click-through rate
-      const topQueries: any[] = await this.prisma.$queryRawUnsafe(
+      const topQueries: any[] = await this.rawQuery(
         `SELECT
            "searchTerm",
            COUNT(*)::int AS "totalSearches",
@@ -448,7 +480,7 @@ export class AnalyticsAdminController {
       );
 
       // No-results queries (searched but never clicked any product)
-      const noResults: any[] = await this.prisma.$queryRawUnsafe(
+      const noResults: any[] = await this.rawQuery(
         `SELECT
            "searchTerm",
            COUNT(*)::int AS "searchCount"
@@ -463,7 +495,7 @@ export class AnalyticsAdminController {
       );
 
       // Overall search stats
-      const statsRows: any[] = await this.prisma.$queryRawUnsafe(
+      const statsRows: any[] = await this.rawQuery(
         `SELECT
            COUNT(*)::int AS "totalSearches",
            SUM(CASE WHEN clicked THEN 1 ELSE 0 END)::int AS "totalClicked",
@@ -494,7 +526,7 @@ export class AnalyticsAdminController {
       }));
 
       // Total count for pagination
-      const totalCountRows: any[] = await this.prisma.$queryRawUnsafe(
+      const totalCountRows: any[] = await this.rawQuery(
         `SELECT COUNT(DISTINCT "searchTerm")::int AS total
          FROM "ProductSearch"
          WHERE "createdAt" >= $1 AND "createdAt" <= $2`,
@@ -588,7 +620,7 @@ export class AnalyticsAdminController {
       // If ErrorLog doesn't exist, fall back to system_log errors
       let finalErrors = errors;
       if (errors.length === 0) {
-        const sysErrors: any[] = await this.prisma.$queryRawUnsafe(
+        const sysErrors: any[] = await this.rawQuery(
           `SELECT id, message, context AS source, level, path AS "pageUrl",
                   "statusCode", "createdAt" AS "lastSeenAt", "createdAt" AS "firstSeenAt",
                   "errorStack" AS stack, metadata, 1 AS count
@@ -619,7 +651,7 @@ export class AnalyticsAdminController {
 
       // If ErrorLog didn't have data, count from system_log
       if (total === 0) {
-        const sysCountRows: any[] = await this.prisma.$queryRawUnsafe(
+        const sysCountRows: any[] = await this.rawQuery(
           `SELECT COUNT(*)::int AS total FROM system_log
            WHERE "createdAt" >= $1 AND "createdAt" <= $2 AND level = 'ERROR'`,
           from, to,
@@ -691,7 +723,7 @@ export class AnalyticsAdminController {
       const LATENCY_EXCLUDE = `AND path NOT LIKE '/api/v1/scraper/%'`;
 
       try {
-        apiLatency = await this.prisma.$queryRawUnsafe(
+        apiLatency = await this.rawQuery(
           `SELECT
              CASE WHEN "statusCode" BETWEEN 200 AND 299 THEN '2xx'
                   WHEN "statusCode" BETWEEN 300 AND 399 THEN '3xx'
@@ -708,7 +740,7 @@ export class AnalyticsAdminController {
       } catch (e: any) { this.logger.warn(`[performance:apiLatency] ${e.message}`); }
 
       try {
-        overallLatency = await this.prisma.$queryRawUnsafe(
+        overallLatency = await this.rawQuery(
           `SELECT
              ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
              ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric)::numeric, 1) AS "p95Ms"
@@ -720,7 +752,7 @@ export class AnalyticsAdminController {
       } catch (e: any) { this.logger.warn(`[performance:overallLatency] ${e.message}`); }
 
       try {
-        slowEndpoints = await this.prisma.$queryRawUnsafe(
+        slowEndpoints = await this.rawQuery(
           `SELECT path, method, COUNT(*)::int AS "requestCount",
                   ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
                   ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "maxMs"
@@ -808,7 +840,7 @@ export class AnalyticsAdminController {
 
     try {
       // Check database connectivity
-      const dbCheck = await this.prisma.$queryRawUnsafe(`SELECT 1 AS ok`);
+      const dbCheck = await this.rawQuery(`SELECT 1 AS ok`);
       const dbHealthy = Array.isArray(dbCheck) && dbCheck.length > 0;
 
       // Check Redis connectivity
@@ -822,7 +854,7 @@ export class AnalyticsAdminController {
       }
 
       // API response time trends (hourly buckets)
-      const apiTrend: any[] = await this.prisma.$queryRawUnsafe(
+      const apiTrend: any[] = await this.rawQuery(
         `SELECT
            DATE_TRUNC('hour', "createdAt") AS "hour",
            COUNT(*)::int AS "requests",
@@ -857,7 +889,7 @@ export class AnalyticsAdminController {
       // Compute rough response times from recent system_log
       let dbAvgMs = 0;
       try {
-        const dbLatency: any[] = await this.prisma.$queryRawUnsafe(
+        const dbLatency: any[] = await this.rawQuery(
           `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),1) AS "avgMs"
            FROM system_log
            WHERE "createdAt" > NOW() - INTERVAL '1 hour' AND metadata->>'delay' IS NOT NULL`,
@@ -920,7 +952,7 @@ export class AnalyticsAdminController {
       );
 
       // Events per minute from system_log (last 5 minutes)
-      const eventsRows: any[] = await this.prisma.$queryRawUnsafe(
+      const eventsRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS "totalEvents"
          FROM system_log
          WHERE "createdAt" > NOW() - INTERVAL '5 minutes'`,
@@ -931,7 +963,7 @@ export class AnalyticsAdminController {
       const eventsPerMinute = Math.round(totalEvents / 5);
 
       // Current error rate
-      const errorRows: any[] = await this.prisma.$queryRawUnsafe(
+      const errorRows: any[] = await this.rawQuery(
         `SELECT COUNT(*)::int AS "recentErrors"
          FROM system_log
          WHERE "createdAt" > NOW() - INTERVAL '5 minutes'
@@ -956,7 +988,7 @@ export class AnalyticsAdminController {
       );
 
       // Recent events from system_log
-      const recentEvents: any[] = await this.prisma.$queryRawUnsafe(
+      const recentEvents: any[] = await this.rawQuery(
         `SELECT id, path, method, "statusCode", "createdAt"
          FROM system_log
          WHERE "createdAt" > NOW() - INTERVAL '5 minutes'
@@ -967,7 +999,7 @@ export class AnalyticsAdminController {
       // Avg latency for KPI card
       let avgLatencyMs = 0;
       try {
-        const lat: any[] = await this.prisma.$queryRawUnsafe(
+        const lat: any[] = await this.rawQuery(
           `SELECT ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay','[^0-9.]','','g'),'')::numeric),0) AS "avg"
            FROM system_log WHERE "createdAt" > NOW() - INTERVAL '5 minutes' AND metadata->>'delay' IS NOT NULL`,
         );
@@ -1033,7 +1065,7 @@ export class AnalyticsAdminController {
 
       if (userId) {
         // Specific user journey from system_log
-        journeyData = await this.prisma.$queryRawUnsafe(
+        journeyData = await this.rawQuery(
           `SELECT path, method, "statusCode", "createdAt", "requestId"
            FROM system_log
            WHERE "userId" = $1 AND "createdAt" >= $2 AND "createdAt" <= $3
@@ -1063,7 +1095,7 @@ export class AnalyticsAdminController {
         }
       } else {
         // Aggregate page transitions (top paths)
-        journeyData = await this.prisma.$queryRawUnsafe(
+        journeyData = await this.rawQuery(
           `SELECT path, COUNT(*)::int AS "visits",
                   COUNT(DISTINCT "userId")::int AS "uniqueUsers"
            FROM system_log
@@ -1128,14 +1160,14 @@ export class AnalyticsAdminController {
     let filename = 'analytics';
 
     if (type === 'events') {
-      data = await this.prisma.$queryRawUnsafe(
+      data = await this.rawQuery(
         `SELECT id, level, method, path, "statusCode", metadata->>'delay' as delay, "ipAddress", "createdAt"
          FROM system_log WHERE "createdAt" >= $1 AND "createdAt" <= $2 ORDER BY "createdAt" DESC LIMIT 10000`,
         from, to,
       );
       filename = 'events';
     } else if (type === 'errors') {
-      data = await this.prisma.$queryRawUnsafe(
+      data = await this.rawQuery(
         `SELECT id, level, method, path, "statusCode", message, "createdAt"
          FROM system_log WHERE level = 'ERROR' AND "createdAt" >= $1 AND "createdAt" <= $2 ORDER BY "createdAt" DESC LIMIT 5000`,
         from, to,
@@ -1205,7 +1237,7 @@ export class AnalyticsAdminController {
   @Get('timeline/:requestId')
   async getTimeline(@Param('requestId') requestId: string) {
     try {
-      const events: any[] = await this.prisma.$queryRawUnsafe(
+      const events: any[] = await this.rawQuery(
         `SELECT id, level, message, context, method, path, "statusCode",
                 metadata, "createdAt"
          FROM system_log
