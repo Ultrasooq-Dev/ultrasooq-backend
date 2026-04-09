@@ -14,12 +14,13 @@
 import { Module } from '@nestjs/common';
 import { AnalyticsIngestionController } from './analytics-ingestion.controller';
 import { AnalyticsIngestionService } from './analytics-ingestion.service';
+import { AnalyticsGateway } from './analytics.gateway';
 import { SystemLogModule } from '../system-log/system-log.module';
 
 @Module({
   imports: [SystemLogModule],
   controllers: [AnalyticsIngestionController],
-  providers: [AnalyticsIngestionService],
-  exports: [AnalyticsIngestionService],
+  providers: [AnalyticsIngestionService, AnalyticsGateway],
+  exports: [AnalyticsIngestionService, AnalyticsGateway],
 })
 export class AnalyticsIngestionModule {}
