@@ -652,52 +652,52 @@ export class AnalyticsAdminController {
         'performance:vitals',
       );
 
-      // API latency from system_log — parse metadata->>'delay' ("32ms" → 32)
-      const apiLatency: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT
-           CASE
-             WHEN "statusCode" >= 200 AND "statusCode" < 300 THEN '2xx'
-             WHEN "statusCode" >= 300 AND "statusCode" < 400 THEN '3xx'
-             WHEN "statusCode" >= 400 AND "statusCode" < 500 THEN '4xx'
-             WHEN "statusCode" >= 500 THEN '5xx'
-             ELSE 'other'
-           END AS "statusGroup",
-           COUNT(*)::int AS "requestCount",
-           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgDuration",
-           ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Duration"
-         FROM system_log
-         WHERE "createdAt" >= $1 AND "createdAt" <= $2
-           AND metadata->>'delay' IS NOT NULL
-         GROUP BY "statusGroup"
-         ORDER BY "statusGroup"`,
-        from, to,
-      );
+      // API latency — use direct $queryRawUnsafe with try/catch for each query
+      let apiLatency: any[] = [];
+      let overallLatency: any[] = [{ avgMs: 0, p95Ms: 0 }];
+      let slowEndpoints: any[] = [];
 
-      // Overall avg and p95 latency
-      const overallLatency: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT
-           ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
-           ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Ms"
-         FROM system_log
-         WHERE "createdAt" >= $1 AND "createdAt" <= $2
-           AND metadata->>'delay' IS NOT NULL`,
-        from, to,
-      );
+      try {
+        apiLatency = await this.prisma.$queryRawUnsafe(
+          `SELECT
+             CASE WHEN "statusCode" BETWEEN 200 AND 299 THEN '2xx'
+                  WHEN "statusCode" BETWEEN 300 AND 399 THEN '3xx'
+                  WHEN "statusCode" BETWEEN 400 AND 499 THEN '4xx'
+                  WHEN "statusCode" >= 500 THEN '5xx' ELSE 'other' END AS "statusGroup",
+             COUNT(*)::int AS "requestCount",
+             ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgDuration"
+           FROM system_log
+           WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
+             AND metadata->>'delay' IS NOT NULL
+           GROUP BY "statusGroup" ORDER BY "statusGroup"`,
+          from, to,
+        );
+      } catch (e: any) { this.logger.warn(`[performance:apiLatency] ${e.message}`); }
 
-      // Slowest endpoints — actual avg latency per endpoint
-      const slowEndpoints: any[] = await this.prisma.$queryRawUnsafe(
-        `SELECT path, method, COUNT(*)::int AS "requestCount",
-                ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
-                ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "maxMs"
-         FROM system_log
-         WHERE "createdAt" >= $1 AND "createdAt" <= $2
-           AND path IS NOT NULL
-           AND metadata->>'delay' IS NOT NULL
-         GROUP BY path, method
-         ORDER BY "avgMs" DESC NULLS LAST
-         LIMIT 20`,
-        from, to,
-      );
+      try {
+        overallLatency = await this.prisma.$queryRawUnsafe(
+          `SELECT
+             ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
+             ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "p95Ms"
+           FROM system_log
+           WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
+             AND metadata->>'delay' IS NOT NULL`,
+          from, to,
+        );
+      } catch (e: any) { this.logger.warn(`[performance:overallLatency] ${e.message}`); }
+
+      try {
+        slowEndpoints = await this.prisma.$queryRawUnsafe(
+          `SELECT path, method, COUNT(*)::int AS "requestCount",
+                  ROUND(AVG(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "avgMs",
+                  ROUND(MAX(NULLIF(REGEXP_REPLACE(metadata->>'delay', '[^0-9.]', '', 'g'), '')::numeric), 1) AS "maxMs"
+           FROM system_log
+           WHERE "createdAt" >= $1::timestamp AND "createdAt" <= $2::timestamp
+             AND path IS NOT NULL AND metadata->>'delay' IS NOT NULL
+           GROUP BY path, method ORDER BY "avgMs" DESC NULLS LAST LIMIT 20`,
+          from, to,
+        );
+      } catch (e: any) { this.logger.warn(`[performance:slowEndpoints] ${e.message}`); }
 
       // Latency trend (hourly buckets with actual avg latency)
       const latencyTrend: any[] = await safeQuery(
