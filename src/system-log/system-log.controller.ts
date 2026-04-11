@@ -17,6 +17,10 @@ export class SystemLogController {
     @Query('level') level?: string,
     @Query('userId') userId?: string,
     @Query('context') context?: string,
+    @Query('requestId') requestId?: string,
+    @Query('search') search?: string,
+    @Query('statusCode') statusCode?: string,
+    @Query('method') method?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
@@ -24,11 +28,25 @@ export class SystemLogController {
       level,
       userId: userId ? parseInt(userId, 10) : undefined,
       context,
+      requestId,
+      search,
+      statusCode: statusCode ? parseInt(statusCode, 10) : undefined,
+      method,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       page,
       limit,
     });
+  }
+
+  @Get('trace/:requestId')
+  async getTrace(@Param('requestId') requestId: string) {
+    return this.systemLogService.getTrace(requestId);
+  }
+
+  @Get('stats/summary')
+  async getStats() {
+    return this.systemLogService.getStats();
   }
 
   @Get(':id')
