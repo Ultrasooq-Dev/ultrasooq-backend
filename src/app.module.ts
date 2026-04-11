@@ -57,6 +57,7 @@ import { BrandModule } from './brand/brand.module';
 import { CartModule } from './cart/cart.module';
 import { OrderModule } from './order/order.module';
 import { DealModule } from './deal/deal.module';
+import { VerificationModule } from './verification/verification.module';
 import { RfqProductModule } from './rfq-product/rfq-product.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ChatModule } from './chat/chat.module';
@@ -162,6 +163,7 @@ import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingest
     CartModule,           // Shopping cart (regular, RFQ, factories)
     OrderModule,          // Order creation, status tracking, seller/buyer views
     DealModule,           // Unified deal operations (BuyGroup, Dropship, Service, Retail)
+    VerificationModule,   // AI-powered CR verification pipeline
     RfqProductModule,     // Request-for-Quote product management
     WishlistModule,       // User wishlists
     ChatModule,           // Real-time chat (Socket.io gateway), rooms, messages
