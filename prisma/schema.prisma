@@ -322,6 +322,7 @@ model UserProfile {
   updatedAt               DateTime                  @updatedAt
   userId                  Int
   annualPurchasingVolume  String?
+  crDocument              String?                   @db.VarChar(500)
   cc                      String?
   phoneNumber             String?
   user                    User                      @relation(fields: [userId], references: [id])
