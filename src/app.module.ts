@@ -56,6 +56,8 @@ import { ProductModule } from './product/product.module';
 import { BrandModule } from './brand/brand.module';
 import { CartModule } from './cart/cart.module';
 import { OrderModule } from './order/order.module';
+import { DealModule } from './deal/deal.module';
+import { VerificationModule } from './verification/verification.module';
 import { RfqProductModule } from './rfq-product/rfq-product.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ChatModule } from './chat/chat.module';
@@ -83,6 +85,7 @@ import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
 import { ContentFilterModule } from './content-filter/content-filter.module';
 import { RecommendationModule } from './recommendation/recommendation.module';
 import { SearchIntelligenceModule } from './search-intelligence/search-intelligence.module';
+import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingestion.module';
 
 @Module({
   imports: [
@@ -159,6 +162,8 @@ import { SearchIntelligenceModule } from './search-intelligence/search-intellige
     BrandModule,          // Brand CRUD
     CartModule,           // Shopping cart (regular, RFQ, factories)
     OrderModule,          // Order creation, status tracking, seller/buyer views
+    DealModule,           // Unified deal operations (BuyGroup, Dropship, Service, Retail)
+    VerificationModule,   // AI-powered CR verification pipeline
     RfqProductModule,     // Request-for-Quote product management
     WishlistModule,       // User wishlists
     ChatModule,           // Real-time chat (Socket.io gateway), rooms, messages
@@ -178,6 +183,7 @@ import { SearchIntelligenceModule } from './search-intelligence/search-intellige
     ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
     RecommendationModule, // Recommendation engine — personalized, product-based, trending
     SearchIntelligenceModule, // Search intelligence — query parsing, intent classification, category/brand resolution
+    AnalyticsIngestionModule, // Analytics ingestion — public event/error endpoints, session tracking
   ],
   controllers: [AppController],
   providers: [

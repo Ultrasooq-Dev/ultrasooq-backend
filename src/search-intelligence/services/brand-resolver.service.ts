@@ -34,7 +34,7 @@ export class BrandResolverService implements OnModuleInit {
 
     const brands = await this.prisma.brand.findMany({
       where: { deletedAt: null, status: { not: 'DELETE' } },
-      select: { id: true, brandName: true, aliases: true },
+      select: { id: true, brandName: true },
     });
 
     const newMap = new Map<string, BrandEntry>();
@@ -49,15 +49,6 @@ export class BrandResolverService implements OnModuleInit {
 
       // Index the canonical brand name (lowercase)
       newMap.set(brand.brandName.toLowerCase().trim(), entry);
-
-      // Index all aliases from the JSON array
-      if (brand.aliases && Array.isArray(brand.aliases)) {
-        for (const alias of brand.aliases) {
-          if (typeof alias === 'string' && alias.trim()) {
-            newMap.set(alias.toLowerCase().trim(), entry);
-          }
-        }
-      }
     }
 
     this.aliasMap = newMap;

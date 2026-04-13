@@ -48,9 +48,10 @@ import { NotificationModule } from 'src/notification/notification.module';
 import { HelperService } from 'src/helper/helper.service';
 import { WalletModule } from 'src/wallet/wallet.module';
 import { DeliverySchedulerService } from './delivery-scheduler.service';
+import { AnalyticsIngestionModule } from 'src/analytics-ingestion/analytics-ingestion.module';
 
 @Module({
-  imports: [AuthModule, WalletModule, NotificationModule],
+  imports: [AuthModule, WalletModule, NotificationModule, AnalyticsIngestionModule],
   controllers: [OrderController],
   providers: [OrderService, JwtService, HelperService, DeliverySchedulerService]
 })

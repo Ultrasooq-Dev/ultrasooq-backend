@@ -15,22 +15,20 @@ export class SearchTokensBuilderService {
    *  1. Product name
    *  2. SKU number
    *  3. Short description (first 200 chars)
-   *  4. Brand canonical name + all aliases from Brand.aliases (Json?)
-   *  5. Category name + all aliases from Category.aliases (Json?)
-   *
-   * Brand.aliases and Category.aliases are Json? columns added in Task 1.
-   * Both are handled gracefully when null/absent.
+   *  4. Brand canonical name
+   *  5. Category name
    */
   buildTokens(product: {
     productName: string;
     skuNo: string;
     shortDescription?: string | null;
-    brand?: { brandName?: string | null; aliases?: unknown } | null;
-    category?: { name?: string | null; aliases?: unknown } | null;
+    brand?: { brandName?: string | null } | null;
+    category?: { name?: string | null } | null;
+    productTags?: Array<{ productTagsTag?: { tagName?: string | null } | null }> | null;
   }): string {
     const parts: string[] = [];
 
-    // 1. Product name
+    // 1. Product name (highest weight — appears first in tsvector)
     if (product.productName) parts.push(product.productName.trim());
 
     // 2. SKU
@@ -41,25 +39,21 @@ export class SearchTokensBuilderService {
       parts.push(product.shortDescription.slice(0, 200).trim());
     }
 
-    // 4. Brand name + aliases
-    if (product.brand) {
-      if (product.brand.brandName) {
-        parts.push(product.brand.brandName.trim());
-      }
-      const brandAliases = this.parseJsonArray(product.brand.aliases);
-      for (const alias of brandAliases) {
-        if (alias) parts.push(String(alias).trim());
-      }
+    // 4. Brand name
+    if (product.brand?.brandName) {
+      parts.push(product.brand.brandName.trim());
     }
 
-    // 5. Category name + aliases
-    if (product.category) {
-      if (product.category.name) {
-        parts.push(product.category.name.trim());
-      }
-      const categoryAliases = this.parseJsonArray(product.category.aliases);
-      for (const alias of categoryAliases) {
-        if (alias) parts.push(String(alias).trim());
+    // 5. Category name
+    if (product.category?.name) {
+      parts.push(product.category.name.trim());
+    }
+
+    // 6. Product tags — improves search discoverability
+    if (product.productTags?.length) {
+      for (const pt of product.productTags) {
+        const tagName = pt.productTagsTag?.tagName;
+        if (tagName) parts.push(tagName.trim());
       }
     }
 
@@ -80,15 +74,16 @@ export class SearchTokensBuilderService {
         brand: {
           select: {
             brandName: true,
-            // aliases field added by Task 1 migration; may not exist yet — handled safely
-            aliases: true,
           },
         },
         category: {
           select: {
             name: true,
-            aliases: true,
           },
+        },
+        productTags: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { productTagsTag: { select: { tagName: true } } },
         },
       },
     });
@@ -131,14 +126,16 @@ export class SearchTokensBuilderService {
         brand: {
           select: {
             brandName: true,
-            aliases: true,
           },
         },
         category: {
           select: {
             name: true,
-            aliases: true,
           },
+        },
+        productTags: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { productTagsTag: { select: { tagName: true } } },
         },
       },
     });

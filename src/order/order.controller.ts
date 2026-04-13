@@ -552,6 +552,42 @@ export class OrderController {
   }
 
   /**
+   * POST /order/buyer/submit-complaint — Buyer files a complaint
+   */
+  @UseGuards(AuthGuard)
+  @Post('/buyer/submit-complaint')
+  submitComplaint(@Request() req, @Body() payload: any) {
+    return this.orderService.submitComplaint(req, payload);
+  }
+
+  /**
+   * POST /order/buyer/request-refund — Buyer requests a refund
+   */
+  @UseGuards(AuthGuard)
+  @Post('/buyer/request-refund')
+  requestRefund(@Request() req, @Body() payload: any) {
+    return this.orderService.requestRefund(req, payload);
+  }
+
+  /**
+   * POST /order/vendor/bulk-update-status — Bulk update order statuses
+   */
+  @UseGuards(AuthGuard)
+  @Post('/vendor/bulk-update-status')
+  bulkUpdateOrderStatus(@Request() req, @Body() payload: any) {
+    return this.orderService.bulkUpdateOrderStatus(req, payload);
+  }
+
+  /**
+   * POST /order/vendor/add-stage-update — Vendor adds delivery stage with location
+   */
+  @UseGuards(AuthGuard)
+  @Post('/vendor/add-stage-update')
+  addDeliveryStageUpdate(@Request() req, @Body() payload: any) {
+    return this.orderService.addDeliveryStageUpdate(req, payload);
+  }
+
+  /**
    * Get delivery event timeline for an order product
    */
   @UseGuards(AuthGuard)

@@ -13,6 +13,10 @@ export class DidYouMeanService {
    * @param resultCount How many results the original query returned
    * @returns A suggested search term, or null if no good suggestion exists
    */
+  /**
+   * Suggests an alternative search term when results are sparse.
+   * If similarity > 0.7, auto-corrects transparently.
+   */
   async suggest(
     query: string,
     resultCount: number,
@@ -33,6 +37,29 @@ export class DidYouMeanService {
       return suggestion[0]?.searchTerm || null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Auto-correct: returns corrected term if similarity > 0.7 (high confidence).
+   * Used to transparently rewrite queries before search execution.
+   */
+  async autoCorrect(query: string): Promise<{ corrected: string | null; original: string }> {
+    try {
+      const suggestion = await this.prisma.$queryRawUnsafe<
+        Array<{ searchTerm: string; sim: number }>
+      >(
+        `SELECT DISTINCT "searchTerm", similarity("searchTerm", $1) as sim
+         FROM "ProductSearch"
+         WHERE clicked = true AND similarity("searchTerm", $1) > 0.7 AND "searchTerm" != $1
+         ORDER BY sim DESC LIMIT 1`,
+        query,
+      );
+
+      const corrected = suggestion[0]?.searchTerm || null;
+      return { corrected, original: query };
+    } catch {
+      return { corrected: null, original: query };
     }
   }
 }

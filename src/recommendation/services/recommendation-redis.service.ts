@@ -42,7 +42,15 @@ export class RecommendationRedisService implements OnModuleInit, OnModuleDestroy
   async getJson<T = unknown>(key: string): Promise<T | null> {
     try {
       const raw = await this.redis.get(key);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) return null; // Cache miss — normal
+      try {
+        return JSON.parse(raw);
+      } catch (parseErr) {
+        this.logger.error(`Redis PARSE ERROR for ${key}: corrupted data — ${parseErr.message}`);
+        // Delete corrupted key so next request triggers fresh computation
+        await this.redis.del(key).catch(() => {});
+        return null;
+      }
     } catch (error) {
       this.logger.warn(`Redis GET failed for ${key}: ${error.message}`);
       return null;
@@ -87,6 +95,17 @@ export class RecommendationRedisService implements OnModuleInit, OnModuleDestroy
       await this.redis.del(this.keys.lock(jobName));
     } catch {
       // Silent fail
+    }
+  }
+
+  /** Extend an existing lock TTL — used when cron jobs approach their lock timeout */
+  async extendLock(jobName: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      const key = this.keys.lock(jobName);
+      const result = await this.redis.expire(key, ttlSeconds);
+      return result === 1;
+    } catch {
+      return false;
     }
   }
 

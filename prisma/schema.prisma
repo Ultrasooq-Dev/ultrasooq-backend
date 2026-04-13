@@ -135,6 +135,8 @@ model User {
   refreshTokens                                 RefreshToken[]
   contentFilterLogs                             ContentFilterLog[]
   recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
+  complaints                                    Complaint[]              @relation("ComplaintBuyer")
+  refundRequests                                 RefundRequest[]          @relation("RefundBuyer")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -320,6 +322,7 @@ model UserProfile {
   updatedAt               DateTime                  @updatedAt
   userId                  Int
   annualPurchasingVolume  String?
+  crDocument              String?                   @db.VarChar(500)
   cc                      String?
   phoneNumber             String?
   user                    User                      @relation(fields: [userId], references: [id])
@@ -940,6 +943,7 @@ model Product {
   scrapedAutoParts                ScrapedAutoPart[]
   recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
   compatibilityRules              CompatibilityRule[] @relation("ProductCompatibility")
+  productVariants                 ProductVariant[] @relation("ProductVariants")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -1017,6 +1021,7 @@ model ProductPrice {
   productStateDetail              States?              @relation(fields: [productStateId], references: [id])
   productPrice_productPriceReview ProductPriceReview[]
   productPrice_productSellerImage ProductSellerImage[]
+  productPriceVariants            ProductVariant[] @relation("ProductPriceVariants")
 
   @@index([productId, status])
   @@index([adminId, status])
@@ -1039,6 +1044,9 @@ model ProductVariant {
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+
+  product        Product?       @relation("ProductVariants", fields: [productId], references: [id], onDelete: SetNull)
+  productPrice   ProductPrice?  @relation("ProductPriceVariants", fields: [productPriceId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([productPriceId])
@@ -1914,6 +1922,9 @@ model OrderProducts {
   // Delivery management relations
   deliveryEvents            DeliveryEvent[]
   pickupCode                PickupCode?
+  // Complaint & refund relations
+  complaints                Complaint[]
+  refundRequests            RefundRequest[]
 
   @@index([sellerId, status])
   @@index([orderId])
@@ -3959,6 +3970,9 @@ model RecommendationMetric {
   @@map("recommendation_metrics")
 }
 
+// NOTE: RecommendationFeedback uses UUID (String) as its own PK but references
+// Product.id (Int) and User.id (Int) as FKs. When joining with RecommendationMetric
+// (also UUID PK), aggregate by productId (Int) — don't join on the UUID PKs directly.
 model RecommendationFeedback {
   id         String   @id @default(uuid())
   recId      String   @db.VarChar(100)
@@ -4084,4 +4098,46 @@ model TermDisambiguation {
   @@index([term])
   @@index([categoryId])
   @@map("term_disambiguations")
+}
+
+// ─── Complaint & Refund ─────────────────────────────────────────
+
+model Complaint {
+  id              Int            @id @default(autoincrement())
+  orderProductId  Int
+  buyerId         Int
+  sellerId        Int?
+  reason          String         // damaged, wrong_item, missing, not_described, late, quality, seller, other
+  description     String         @db.Text
+  status          String         @default("OPEN") // OPEN, IN_REVIEW, RESOLVED, REJECTED
+  resolution      String?
+  resolvedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
+  buyer           User           @relation("ComplaintBuyer", fields: [buyerId], references: [id])
+
+  @@index([orderProductId])
+  @@index([buyerId])
+  @@index([status])
+}
+
+model RefundRequest {
+  id              Int            @id @default(autoincrement())
+  orderProductId  Int
+  buyerId         Int
+  amount          Decimal?       @db.Decimal(10, 2)
+  reason          String
+  notes           String?        @db.Text
+  status          String         @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
+  adminNote       String?
+  processedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
+  buyer           User           @relation("RefundBuyer", fields: [buyerId], references: [id])
+
+  @@index([orderProductId])
+  @@index([buyerId])
+  @@index([status])
 }

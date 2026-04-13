@@ -505,6 +505,19 @@ export class NotificationService {
   }
 
   /**
+   * Emit a real-time order status update to a user's socket room.
+   * Used for instant UI refresh on the buyer's order page.
+   */
+  emitOrderStatusUpdate(userId: number, orderProductId: number, status: string) {
+    try {
+      if (this.server) {
+        this.server.to(`user-${userId}`).emit('order:status', { orderProductId, status });
+      }
+    } catch {
+      // Non-blocking
+  }
+
+  /**
    * Get notifications for a user
    */
   async getNotifications(
