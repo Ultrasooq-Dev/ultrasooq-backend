@@ -220,7 +220,7 @@ Respond ONLY with valid JSON, no markdown or explanation.
               city: branch.city || '',
               mainOffice: createdBranches.length === 0 ? 1 : 0,
               status: 'ACTIVE',
-            },
+            } as any,
           });
           createdBranches.push(created);
         }
