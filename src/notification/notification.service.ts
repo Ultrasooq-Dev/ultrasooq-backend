@@ -515,6 +515,7 @@ export class NotificationService {
       }
     } catch {
       // Non-blocking
+    }
   }
 
   /**

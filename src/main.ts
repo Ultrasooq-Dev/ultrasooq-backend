@@ -105,6 +105,10 @@ async function bootstrap() {
   // Global exception filter for consistent error responses
   app.useGlobalFilters(new GlobalExceptionFilter());
 
+  // Request tracking middleware — generates/extracts X-Request-Id for every request
+  const { RequestTrackingMiddleware } = require('./common/middleware/request-tracking.middleware');
+  app.use(new RequestTrackingMiddleware().use.bind(new RequestTrackingMiddleware()));
+
   // Security headers via Helmet — sets various HTTP headers to help protect the app.
   // CSP and Cross-Origin-Embedder-Policy are disabled to avoid breaking frontend
   // asset loading and cross-origin iframe embeds during development.
