@@ -1694,4 +1694,181 @@ export class ChatService {
             }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    // ─── Messaging System — Channel & Room Management ──────────────
+
+    async getChannelSummary(userId: number) {
+        const participants = await this.prisma.roomParticipants.findMany({
+            where: { userId },
+            include: {
+                room: {
+                    include: {
+                        messages: {
+                            where: { status: 'UNREAD', userId: { not: userId } },
+                            select: { id: true },
+                        },
+                    },
+                },
+            },
+        });
+
+        let rfqCount = 0, rfqUnread = 0;
+        let orderCount = 0, orderUnread = 0;
+        let generalCount = 0, generalUnread = 0;
+
+        for (const p of participants) {
+            const room = p.room;
+            const unread = room.messages.length;
+            if (room.rfqId) { rfqCount++; rfqUnread += unread; }
+            else if (room.orderProductId) { orderCount++; orderUnread += unread; }
+            else { generalCount++; generalUnread += unread; }
+        }
+
+        return {
+            status: 200,
+            message: 'success',
+            data: {
+                channels: [
+                    { id: 'rfq', label: 'RFQ', totalRooms: rfqCount, unreadCount: rfqUnread },
+                    { id: 'order', label: 'Orders', totalRooms: orderCount, unreadCount: orderUnread },
+                    { id: 'general', label: 'General', totalRooms: generalCount, unreadCount: generalUnread },
+                ],
+            },
+        };
+    }
+
+    async getChannelConversations(userId: number, channelId: string, page: number, limit: number) {
+        const channelFilter = channelId === 'rfq'
+            ? { rfqId: { not: null } }
+            : channelId === 'order'
+                ? { orderProductId: { not: null } }
+                : { rfqId: null, orderProductId: null };
+
+        const skip = (page - 1) * limit;
+
+        const [participantRecords, total] = await Promise.all([
+            this.prisma.roomParticipants.findMany({
+                where: { userId, room: channelFilter },
+                include: {
+                    room: {
+                        include: {
+                            messages: {
+                                orderBy: { createdAt: 'desc' },
+                                take: 1,
+                                include: {
+                                    user: { select: { id: true, firstName: true, lastName: true } },
+                                },
+                            },
+                            participants: {
+                                include: {
+                                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: { room: { updatedAt: 'desc' } },
+                skip,
+                take: limit,
+            }),
+            this.prisma.roomParticipants.count({
+                where: { userId, room: channelFilter },
+            }),
+        ]);
+
+        const conversations = participantRecords.map(p => ({
+            roomId: p.room.id,
+            isPinned: p.isPinned,
+            isArchived: p.isArchived,
+            rfqId: p.room.rfqId,
+            orderProductId: p.room.orderProductId,
+            lastMessage: p.room.messages[0] ?? null,
+            participants: p.room.participants.map(rp => rp.user),
+            createdAt: p.room.createdAt,
+            updatedAt: p.room.updatedAt,
+        }));
+
+        return { status: 200, message: 'success', data: { conversations, total, page, limit } };
+    }
+
+    async togglePinRoom(userId: number, roomId: number) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { userId, roomId },
+        });
+        if (!participant) throw new NotFoundException('Room not found or user is not a participant');
+
+        const updated = await this.prisma.roomParticipants.update({
+            where: { id: participant.id },
+            data: { isPinned: !participant.isPinned },
+        });
+        return { status: 200, message: 'success', data: { isPinned: updated.isPinned } };
+    }
+
+    async toggleArchiveRoom(userId: number, roomId: number) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { userId, roomId },
+        });
+        if (!participant) throw new NotFoundException('Room not found or user is not a participant');
+
+        const updated = await this.prisma.roomParticipants.update({
+            where: { id: participant.id },
+            data: { isArchived: !participant.isArchived },
+        });
+        return { status: 200, message: 'success', data: { isArchived: updated.isArchived } };
+    }
+
+    async leaveRoom(userId: number, roomId: number) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { userId, roomId },
+        });
+        if (!participant) throw new NotFoundException('Room not found or user is not a participant');
+
+        await this.prisma.roomParticipants.delete({ where: { id: participant.id } });
+        return { status: 200, message: 'You have left the room', data: { roomId } };
+    }
+
+    async getRfqProductsForRoom(userId: number, roomId: number) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { userId, roomId },
+        });
+        if (!participant) throw new NotFoundException('Room not found or user is not a participant');
+
+        const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+        if (!room || !room.rfqId) throw new NotFoundException('Room has no associated RFQ');
+
+        const rfqProducts = await this.prisma.rfqQuotesProducts.findMany({
+            where: { rfqQuotesId: room.rfqId, status: 'ACTIVE' },
+            include: {
+                rfqProductDetails: {
+                    select: { id: true, productName: true, skuNo: true },
+                },
+                rfqProductPriceRequests: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                },
+                suggestedProducts: {
+                    where: { status: 'ACTIVE' },
+                },
+            },
+        });
+
+        return { status: 200, message: 'success', data: rfqProducts };
+    }
+
+    async updateRfqAlternative(userId: number, roomId: number, productId: number, payload: { price?: number; stock?: number }) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { userId, roomId },
+        });
+        if (!participant) throw new ForbiddenException('Not a participant of this room');
+
+        const updateData: any = {};
+        if (payload.price !== undefined) updateData.offerPrice = payload.price;
+        if (payload.stock !== undefined) updateData.quantity = payload.stock;
+
+        const updated = await this.prisma.rfqQuotesProducts.update({
+            where: { id: productId },
+            data: updateData,
+        });
+        return { status: 200, message: 'success', data: updated };
+    }
 }

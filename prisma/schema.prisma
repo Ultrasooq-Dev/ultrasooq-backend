@@ -2387,14 +2387,17 @@ model RfqSuggestedProduct {
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
 model RoomParticipants {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  roomId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  room      Room     @relation("RoomParticipants", fields: [roomId], references: [id])
-  user      User     @relation("UserRooms", fields: [userId], references: [id])
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  roomId     Int
+  isPinned   Boolean  @default(false)
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  room       Room     @relation("RoomParticipants", fields: [roomId], references: [id])
+  user       User     @relation("UserRooms", fields: [userId], references: [id])
 
+  @@unique([userId, roomId])
   @@index([userId])
   @@index([roomId])
 }
