@@ -4685,4 +4685,641 @@ export class AdminService {
       };
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // HELP CENTER — get-one & update-status
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getOneHelpCenter(queryId: any) {
+    try {
+      const id = parseInt(queryId);
+      if (!id) return { status: false, message: 'Invalid queryId', data: null };
+      const record = await this.prisma.helpCenter.findUnique({
+        where: { id },
+        include: { userDetail: true },
+      });
+      if (!record) return { status: false, message: 'Not found', data: null };
+      return { status: true, message: 'Fetched successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in getOneHelpCenter', error: getErrorMessage(error) };
+    }
+  }
+
+  async updateHelpCenterStatus(payload: any, req: any) {
+    try {
+      const id = parseInt(payload.helpCenterId);
+      if (!id) return { status: false, message: 'Invalid helpCenterId' };
+      const record = await this.prisma.helpCenter.findUnique({ where: { id } });
+      if (!record) return { status: false, message: 'Not found', data: null };
+      const updated = await this.prisma.helpCenter.update({
+        where: { id },
+        data: { status: payload.status || 'ACTIVE' },
+      });
+      return { status: true, message: 'Status updated successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in updateHelpCenterStatus', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PENDING ORGANIZATIONS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getPendingOrganizations(page: any, limit: any, searchTerm: any, req: any) {
+    try {
+      const Page = parseInt(page) || 1;
+      const pageSize = parseInt(limit) || 10;
+      const skip = (Page - 1) * pageSize;
+
+      const whereCondition: any = {
+        tradeRole: { in: ['COMPANY', 'FREELANCER'] },
+        status: 'WAITING',
+        deletedAt: null,
+      };
+      if (searchTerm) {
+        whereCondition.OR = [
+          { firstName: { contains: searchTerm, mode: 'insensitive' } },
+          { lastName: { contains: searchTerm, mode: 'insensitive' } },
+          { email: { contains: searchTerm, mode: 'insensitive' } },
+          { companyName: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
+
+      const [data, total] = await Promise.all([
+        this.prisma.user.findMany({
+          where: whereCondition,
+          include: { userProfile: true, userBranch: true },
+          orderBy: { id: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.user.count({ where: whereCondition }),
+      ]);
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+    } catch (error) {
+      return { status: false, message: 'Error in getPendingOrganizations', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // USER FULL DETAIL
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getUserFullDetail(userId: any, req: any) {
+    try {
+      const id = parseInt(userId);
+      if (!id) return { status: false, message: 'Invalid userId', data: null };
+      const user = await this.prisma.user.findUnique({
+        where: { id },
+        include: {
+          UserAddress: true,
+          userPhone: true,
+          userBranch: true,
+          userProfile: true,
+          userProfileBusinessType: true,
+          userSocialLink: true,
+          adminRoleDetail: true,
+          wallets: true,
+        },
+      });
+      if (!user) return { status: false, message: 'User not found', data: null };
+      return { status: true, message: 'Fetched successfully', data: user };
+    } catch (error) {
+      return { status: false, message: 'Error in getUserFullDetail', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AI STATUS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getAiStatus(req: any) {
+    try {
+      const slugs = ['ai-user-id-verification', 'ai-user-cr-verification', 'ai-product-generation'];
+      const settings = await this.prisma.pageSetting.findMany({
+        where: { slug: { in: slugs } },
+      });
+      const statusMap: Record<string, any> = {};
+      for (const s of settings) {
+        statusMap[s.slug] = s.setting;
+      }
+      return { status: true, message: 'AI status fetched', data: statusMap };
+    } catch (error) {
+      return { status: false, message: 'Error in getAiStatus', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VERIFY IDENTITY & CR DOCUMENT
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async verifyIdentity(payload: any, req: any) {
+    try {
+      const userId = parseInt(payload.userId);
+      if (!userId) return { status: false, message: 'Invalid userId' };
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return { status: false, message: 'User not found' };
+      // Update user identity verification status
+      const updated = await this.prisma.user.update({
+        where: { id: userId },
+        data: { statusNote: 'Identity verification triggered by admin' },
+      });
+      return { status: true, message: 'Identity verification initiated', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in verifyIdentity', error: getErrorMessage(error) };
+    }
+  }
+
+  async verifyCrDocument(payload: any, req: any) {
+    try {
+      const userId = parseInt(payload.userId);
+      if (!userId) return { status: false, message: 'Invalid userId' };
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return { status: false, message: 'User not found' };
+      const updated = await this.prisma.user.update({
+        where: { id: userId },
+        data: { statusNote: 'CR document verification triggered by admin' },
+      });
+      return { status: true, message: 'CR verification initiated', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in verifyCrDocument', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SERVICE DELETE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async deleteService(serviceId: any, req: any) {
+    try {
+      const id = parseInt(serviceId);
+      if (!id) return { status: false, message: 'Invalid serviceId' };
+      const updated = await this.prisma.service.update({
+        where: { id },
+        data: { status: 'DELETE', deletedAt: new Date() },
+      });
+      return { status: true, message: 'Service deleted successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in deleteService', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VENDOR RANK CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getAllRanks(page: any, limit: any, searchTerm: any, req: any) {
+    try {
+      const Page = parseInt(page) || 1;
+      const pageSize = parseInt(limit) || 10;
+      const skip = (Page - 1) * pageSize;
+
+      const whereCondition: any = {
+        status: { not: 'DELETE' },
+        deletedAt: null,
+      };
+      if (searchTerm) {
+        whereCondition.OR = [
+          { name_en: { contains: searchTerm, mode: 'insensitive' } },
+          { name_ar: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
+
+      const [data, total] = await Promise.all([
+        this.prisma.vendorRank.findMany({
+          where: whereCondition,
+          orderBy: { sortOrder: 'asc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.vendorRank.count({ where: whereCondition }),
+      ]);
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+    } catch (error) {
+      return { status: false, message: 'Error in getAllRanks', error: getErrorMessage(error) };
+    }
+  }
+
+  async getOneRank(id: any) {
+    try {
+      const rankId = parseInt(id);
+      if (!rankId) return { status: false, message: 'Invalid id', data: null };
+      const record = await this.prisma.vendorRank.findUnique({ where: { id: rankId } });
+      if (!record) return { status: false, message: 'Not found', data: null };
+      return { status: true, message: 'Fetched successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in getOneRank', error: getErrorMessage(error) };
+    }
+  }
+
+  async createRank(payload: any, req: any) {
+    try {
+      const record = await this.prisma.vendorRank.create({
+        data: {
+          name_en: payload.name_en,
+          name_ar: payload.name_ar || null,
+          description: payload.description || null,
+          minPoints: payload.minPoints || 0,
+          maxPoints: payload.maxPoints || null,
+          benefits: payload.benefits || null,
+          sortOrder: payload.sortOrder || 0,
+        },
+      });
+      return { status: true, message: 'Rank created successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in createRank', error: getErrorMessage(error) };
+    }
+  }
+
+  async updateRank(payload: any, req: any) {
+    try {
+      const id = parseInt(payload.id);
+      if (!id) return { status: false, message: 'Invalid id' };
+      const existing = await this.prisma.vendorRank.findUnique({ where: { id } });
+      if (!existing) return { status: false, message: 'Not found' };
+      const updated = await this.prisma.vendorRank.update({
+        where: { id },
+        data: {
+          name_en: payload.name_en ?? existing.name_en,
+          name_ar: payload.name_ar ?? existing.name_ar,
+          description: payload.description ?? existing.description,
+          minPoints: payload.minPoints ?? existing.minPoints,
+          maxPoints: payload.maxPoints ?? existing.maxPoints,
+          benefits: payload.benefits ?? existing.benefits,
+          sortOrder: payload.sortOrder ?? existing.sortOrder,
+          status: payload.status ?? existing.status,
+        },
+      });
+      return { status: true, message: 'Rank updated successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in updateRank', error: getErrorMessage(error) };
+    }
+  }
+
+  async deleteRank(id: any, req: any) {
+    try {
+      const rankId = parseInt(id);
+      if (!rankId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.vendorRank.update({
+        where: { id: rankId },
+        data: { status: 'DELETE', deletedAt: new Date() },
+      });
+      return { status: true, message: 'Rank deleted successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in deleteRank', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUBSCRIPTION PLAN CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getAllSubscriptions(page: any, limit: any, searchTerm: any, req: any) {
+    try {
+      const Page = parseInt(page) || 1;
+      const pageSize = parseInt(limit) || 10;
+      const skip = (Page - 1) * pageSize;
+
+      const whereCondition: any = {
+        status: { not: 'DELETE' },
+        deletedAt: null,
+      };
+      if (searchTerm) {
+        whereCondition.OR = [
+          { name_en: { contains: searchTerm, mode: 'insensitive' } },
+          { name_ar: { contains: searchTerm, mode: 'insensitive' } },
+        ];
+      }
+
+      const [data, total] = await Promise.all([
+        this.prisma.subscriptionPlan.findMany({
+          where: whereCondition,
+          orderBy: { sortOrder: 'asc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.subscriptionPlan.count({ where: whereCondition }),
+      ]);
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+    } catch (error) {
+      return { status: false, message: 'Error in getAllSubscriptions', error: getErrorMessage(error) };
+    }
+  }
+
+  async getOneSubscription(id: any) {
+    try {
+      const subId = parseInt(id);
+      if (!subId) return { status: false, message: 'Invalid id', data: null };
+      const record = await this.prisma.subscriptionPlan.findUnique({ where: { id: subId } });
+      if (!record) return { status: false, message: 'Not found', data: null };
+      return { status: true, message: 'Fetched successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in getOneSubscription', error: getErrorMessage(error) };
+    }
+  }
+
+  async createSubscription(payload: any, req: any) {
+    try {
+      const record = await this.prisma.subscriptionPlan.create({
+        data: {
+          name_en: payload.name_en,
+          name_ar: payload.name_ar || null,
+          description: payload.description || null,
+          price: payload.price || 0,
+          duration: payload.duration || 30,
+          features: payload.features || null,
+          sortOrder: payload.sortOrder || 0,
+        },
+      });
+      return { status: true, message: 'Subscription created successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in createSubscription', error: getErrorMessage(error) };
+    }
+  }
+
+  async updateSubscription(payload: any, req: any) {
+    try {
+      const id = parseInt(payload.id);
+      if (!id) return { status: false, message: 'Invalid id' };
+      const existing = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
+      if (!existing) return { status: false, message: 'Not found' };
+      const updated = await this.prisma.subscriptionPlan.update({
+        where: { id },
+        data: {
+          name_en: payload.name_en ?? existing.name_en,
+          name_ar: payload.name_ar ?? existing.name_ar,
+          description: payload.description ?? existing.description,
+          price: payload.price ?? existing.price,
+          duration: payload.duration ?? existing.duration,
+          features: payload.features ?? existing.features,
+          sortOrder: payload.sortOrder ?? existing.sortOrder,
+          status: payload.status ?? existing.status,
+        },
+      });
+      return { status: true, message: 'Subscription updated successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in updateSubscription', error: getErrorMessage(error) };
+    }
+  }
+
+  async deleteSubscription(id: any, req: any) {
+    try {
+      const subId = parseInt(id);
+      if (!subId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.subscriptionPlan.update({
+        where: { id: subId },
+        data: { status: 'DELETE', deletedAt: new Date() },
+      });
+      return { status: true, message: 'Subscription deleted successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in deleteSubscription', error: getErrorMessage(error) };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUPPORT SYSTEM CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+
+  async getSupportConversations(query: any, req: any) {
+    try {
+      const page = parseInt(query.page) || 1;
+      const pageSize = parseInt(query.limit) || 10;
+      const skip = (page - 1) * pageSize;
+
+      const whereCondition: any = { deletedAt: null };
+      if (query.status) whereCondition.status = query.status;
+      if (query.topic) whereCondition.topic = query.topic;
+      if (query.priority) whereCondition.priority = query.priority;
+
+      const [data, total] = await Promise.all([
+        this.prisma.supportConversation.findMany({
+          where: whereCondition,
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true } },
+            assignee: { select: { id: true, firstName: true, lastName: true, email: true } },
+            messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+          },
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.supportConversation.count({ where: whereCondition }),
+      ]);
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+    } catch (error) {
+      return { status: false, message: 'Error in getSupportConversations', error: getErrorMessage(error) };
+    }
+  }
+
+  async getSupportConversation(id: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id', data: null };
+      const record = await this.prisma.supportConversation.findUnique({
+        where: { id: convId },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true } },
+          assignee: { select: { id: true, firstName: true, lastName: true, email: true } },
+          messages: { orderBy: { createdAt: 'asc' } },
+        },
+      });
+      if (!record) return { status: false, message: 'Not found', data: null };
+      return { status: true, message: 'Fetched successfully', data: record };
+    } catch (error) {
+      return { status: false, message: 'Error in getSupportConversation', error: getErrorMessage(error) };
+    }
+  }
+
+  async replySupportConversation(id: any, payload: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id' };
+      const conversation = await this.prisma.supportConversation.findUnique({ where: { id: convId } });
+      if (!conversation) return { status: false, message: 'Conversation not found' };
+
+      const message = await this.prisma.supportMessage.create({
+        data: {
+          conversationId: convId,
+          senderId: req.user?.id || null,
+          senderType: 'admin',
+          content: payload.content,
+        },
+      });
+
+      await this.prisma.supportConversation.update({
+        where: { id: convId },
+        data: { status: conversation.status === 'open' ? 'in_progress' : conversation.status },
+      });
+
+      return { status: true, message: 'Reply sent successfully', data: message };
+    } catch (error) {
+      return { status: false, message: 'Error in replySupportConversation', error: getErrorMessage(error) };
+    }
+  }
+
+  async resolveSupportConversation(id: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.supportConversation.update({
+        where: { id: convId },
+        data: { status: 'resolved' },
+      });
+      return { status: true, message: 'Conversation resolved', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in resolveSupportConversation', error: getErrorMessage(error) };
+    }
+  }
+
+  async assignSupportConversation(id: any, payload: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.supportConversation.update({
+        where: { id: convId },
+        data: { assigneeId: parseInt(payload.assigneeId) },
+      });
+      return { status: true, message: 'Conversation assigned', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in assignSupportConversation', error: getErrorMessage(error) };
+    }
+  }
+
+  async setSupportPriority(id: any, payload: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.supportConversation.update({
+        where: { id: convId },
+        data: { priority: payload.priority },
+      });
+      return { status: true, message: 'Priority updated', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in setSupportPriority', error: getErrorMessage(error) };
+    }
+  }
+
+  async markSupportConversationRead(id: any, req: any) {
+    try {
+      const convId = parseInt(id);
+      if (!convId) return { status: false, message: 'Invalid id' };
+      const updated = await this.prisma.supportConversation.update({
+        where: { id: convId },
+        data: { isRead: true },
+      });
+      return { status: true, message: 'Marked as read', data: updated };
+    } catch (error) {
+      return { status: false, message: 'Error in markSupportConversationRead', error: getErrorMessage(error) };
+    }
+  }
+
+  async getSupportDashboard(req: any) {
+    try {
+      const [open, inProgress, resolved, total] = await Promise.all([
+        this.prisma.supportConversation.count({ where: { status: 'open', deletedAt: null } }),
+        this.prisma.supportConversation.count({ where: { status: 'in_progress', deletedAt: null } }),
+        this.prisma.supportConversation.count({ where: { status: 'resolved', deletedAt: null } }),
+        this.prisma.supportConversation.count({ where: { deletedAt: null } }),
+      ]);
+      return {
+        status: true,
+        message: 'Dashboard fetched',
+        data: { open, inProgress, resolved, total },
+      };
+    } catch (error) {
+      return { status: false, message: 'Error in getSupportDashboard', error: getErrorMessage(error) };
+    }
+  }
+
+  async getSupportEvents(days: any, req: any) {
+    try {
+      const d = parseInt(days) || 7;
+      const since = new Date();
+      since.setDate(since.getDate() - d);
+      const events = await this.prisma.supportConversation.findMany({
+        where: { createdAt: { gte: since }, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: { id: true, subject: true, status: true, priority: true, createdAt: true, updatedAt: true },
+      });
+      return { status: true, message: 'Events fetched', data: events };
+    } catch (error) {
+      return { status: false, message: 'Error in getSupportEvents', error: getErrorMessage(error) };
+    }
+  }
+
+  // ─── Knowledge Base ───────────────────────────────────────
+
+  async getKnowledgeBase(query: any, req: any) {
+    try {
+      const page = parseInt(query.page) || 1;
+      const pageSize = parseInt(query.limit) || 10;
+      const skip = (page - 1) * pageSize;
+
+      const whereCondition: any = { status: 'ACTIVE', deletedAt: null };
+      if (query.category) whereCondition.category = query.category;
+
+      const [data, total] = await Promise.all([
+        this.prisma.knowledgeBase.findMany({
+          where: whereCondition,
+          orderBy: { id: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.knowledgeBase.count({ where: whereCondition }),
+      ]);
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+    } catch (error) {
+      return { status: false, message: 'Error in getKnowledgeBase', error: getErrorMessage(error) };
+    }
+  }
+
+  async upsertKnowledgeBase(payload: any, req: any) {
+    try {
+      if (payload.id) {
+        const updated = await this.prisma.knowledgeBase.update({
+          where: { id: parseInt(payload.id) },
+          data: {
+            category: payload.category ?? undefined,
+            question: payload.question ?? undefined,
+            answer: payload.answer ?? undefined,
+          },
+        });
+        return { status: true, message: 'Updated successfully', data: updated };
+      }
+      const created = await this.prisma.knowledgeBase.create({
+        data: {
+          category: payload.category || null,
+          question: payload.question,
+          answer: payload.answer,
+        },
+      });
+      return { status: true, message: 'Created successfully', data: created };
+    } catch (error) {
+      return { status: false, message: 'Error in upsertKnowledgeBase', error: getErrorMessage(error) };
+    }
+  }
+
+  // ─── Bot Learning (stubbed) ───────────────────────────────
+
+  async getBotLearning(query: any, req: any) {
+    try {
+      return { status: true, message: 'Fetched successfully', data: [], totalCount: 0 };
+    } catch (error) {
+      return { status: false, message: 'Error in getBotLearning', error: getErrorMessage(error) };
+    }
+  }
+
+  async updateBotLearning(id: any, payload: any, req: any) {
+    try {
+      return { status: true, message: 'Updated successfully', data: { id: parseInt(id), ...payload } };
+    } catch (error) {
+      return { status: false, message: 'Error in updateBotLearning', error: getErrorMessage(error) };
+    }
+  }
 }

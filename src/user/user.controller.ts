@@ -59,6 +59,7 @@ import {
   Patch,
   Query,
   Delete,
+  Param,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -329,6 +330,20 @@ export class UserController {
   @Post('/createTag')
   createTag(@Request() req, @Body() payload: any) {
     return this.userService.createTag(payload, req);
+  }
+
+  /** PATCH /user/updateTag — Update an existing tag (protected). */
+  @UseGuards(AuthGuard)
+  @Patch('/updateTag')
+  updateTag(@Request() req, @Body() payload: any) {
+    return this.userService.updateTag(payload, req);
+  }
+
+  /** DELETE /user/deleteTag/:tagId — Soft-delete a tag (protected). */
+  @UseGuards(AuthGuard)
+  @Delete('/deleteTag/:tagId')
+  deleteTag(@Param('tagId') tagId: string, @Request() req) {
+    return this.userService.deleteTag(tagId, req);
   }
 
   /** PATCH /user/updateBranch — Update a user branch (business location) (protected). */

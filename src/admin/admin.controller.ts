@@ -1547,4 +1547,241 @@ export class AdminController {
   markProductsListViewViewed(@Request() req) {
     return this.adminService.markProductsListViewViewed(req);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // HELP CENTER — get-one & update-status
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/help-center/get-one')
+  getOneHelpCenter(@Query('queryId') queryId: string) {
+    return this.adminService.getOneHelpCenter(queryId);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/help-center/update-status')
+  updateHelpCenterStatus(@Body() payload: any, @Request() req) {
+    return this.adminService.updateHelpCenterStatus(payload, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PENDING ORGANIZATIONS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/pending-organizations')
+  getPendingOrganizations(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('searchTerm') searchTerm: string,
+    @Request() req,
+  ) {
+    return this.adminService.getPendingOrganizations(page, limit, searchTerm, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // USER FULL DETAIL
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/user/:userId/full-detail')
+  getUserFullDetail(@Param('userId') userId: string, @Request() req) {
+    return this.adminService.getUserFullDetail(userId, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AI STATUS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/ai-status')
+  getAiStatus(@Request() req) {
+    return this.adminService.getAiStatus(req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VERIFY IDENTITY & CR DOCUMENT
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/verifyIdentity')
+  verifyIdentity(@Body() payload: any, @Request() req) {
+    return this.adminService.verifyIdentity(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/verifyCrDocument')
+  verifyCrDocument(@Body() payload: any, @Request() req) {
+    return this.adminService.verifyCrDocument(payload, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SERVICE DELETE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Delete('/service/delete/:serviceId')
+  deleteService(@Param('serviceId') serviceId: string, @Request() req) {
+    return this.adminService.deleteService(serviceId, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VENDOR RANK CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/ranks/get-all')
+  getAllRanks(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('searchTerm') searchTerm: string,
+    @Request() req,
+  ) {
+    return this.adminService.getAllRanks(page, limit, searchTerm, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/ranks/get-one')
+  getOneRank(@Query('id') id: string) {
+    return this.adminService.getOneRank(id);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/ranks/create')
+  createRank(@Body() payload: any, @Request() req) {
+    return this.adminService.createRank(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/ranks/update')
+  updateRank(@Body() payload: any, @Request() req) {
+    return this.adminService.updateRank(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Delete('/ranks/delete/:id')
+  deleteRank(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteRank(id, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUBSCRIPTION PLAN CRUD
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/subscriptions/get-all')
+  getAllSubscriptions(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('searchTerm') searchTerm: string,
+    @Request() req,
+  ) {
+    return this.adminService.getAllSubscriptions(page, limit, searchTerm, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/subscriptions/get-one')
+  getOneSubscription(@Query('id') id: string) {
+    return this.adminService.getOneSubscription(id);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/subscriptions/create')
+  createSubscription(@Body() payload: any, @Request() req) {
+    return this.adminService.createSubscription(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/subscriptions/update')
+  updateSubscription(@Body() payload: any, @Request() req) {
+    return this.adminService.updateSubscription(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Delete('/subscriptions/delete/:id')
+  deleteSubscription(@Param('id') id: string, @Request() req) {
+    return this.adminService.deleteSubscription(id, req);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUPPORT SYSTEM
+  // ═══════════════════════════════════════════════════════════════════════
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/conversations')
+  getSupportConversations(@Query() query: any, @Request() req) {
+    return this.adminService.getSupportConversations(query, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/conversations/:id')
+  getSupportConversation(@Param('id') id: string, @Request() req) {
+    return this.adminService.getSupportConversation(id, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/support/conversations/:id/reply')
+  replySupportConversation(@Param('id') id: string, @Body() payload: any, @Request() req) {
+    return this.adminService.replySupportConversation(id, payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/support/conversations/:id/resolve')
+  resolveSupportConversation(@Param('id') id: string, @Request() req) {
+    return this.adminService.resolveSupportConversation(id, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/support/conversations/:id/assign')
+  assignSupportConversation(@Param('id') id: string, @Body() payload: any, @Request() req) {
+    return this.adminService.assignSupportConversation(id, payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/support/conversations/:id/priority')
+  setSupportPriority(@Param('id') id: string, @Body() payload: any, @Request() req) {
+    return this.adminService.setSupportPriority(id, payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/support/conversations/:id/read')
+  markSupportConversationRead(@Param('id') id: string, @Request() req) {
+    return this.adminService.markSupportConversationRead(id, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/dashboard')
+  getSupportDashboard(@Request() req) {
+    return this.adminService.getSupportDashboard(req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/events')
+  getSupportEvents(@Query('days') days: string, @Request() req) {
+    return this.adminService.getSupportEvents(days, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/knowledge-base')
+  getKnowledgeBase(@Query() query: any, @Request() req) {
+    return this.adminService.getKnowledgeBase(query, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Post('/support/knowledge-base')
+  upsertKnowledgeBase(@Body() payload: any, @Request() req) {
+    return this.adminService.upsertKnowledgeBase(payload, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/support/learning')
+  getBotLearning(@Query() query: any, @Request() req) {
+    return this.adminService.getBotLearning(query, req);
+  }
+
+  @UseGuards(SuperAdminAuthGuard)
+  @Patch('/support/learning/:id')
+  updateBotLearning(@Param('id') id: string, @Body() payload: any, @Request() req) {
+    return this.adminService.updateBotLearning(id, payload, req);
+  }
 }
