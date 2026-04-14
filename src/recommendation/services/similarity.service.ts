@@ -20,6 +20,9 @@ const JOB_NAME = 'similarity-builder';
 
 const SIMILAR_LIMIT = 15;
 
+/** Cache TTL for vendor business type lookups (1 hour) */
+const VENDOR_BTYPE_TTL = 60 * 60;
+
 @Injectable()
 export class SimilarityService {
   private readonly logger = new Logger(SimilarityService.name);
@@ -106,13 +109,27 @@ export class SimilarityService {
   /**
    * Compute a similarity score between a base product and a candidate.
    * Score components:
-   *   - Same category: +3.0
-   *   - Same brand:    +2.0
-   *   - Price within 20% range: +2.0
+   *   - Same category:            +3.0
+   *   - Same brand:               +2.0
+   *   - Price within 20% range:   +2.0
+   *   - Overlapping vendor btype: +1.5
+   *   - Matching sell type:       +1.0
    */
   computeSimilarityScore(
-    base: { categoryId: number | null; brandId: number | null; productPrice: number },
-    candidate: { categoryId: number | null; brandId: number | null; productPrice: number },
+    base: {
+      categoryId: number | null;
+      brandId: number | null;
+      productPrice: number;
+      vendorBTypes?: number[];
+      sellTypes?: string[];
+    },
+    candidate: {
+      categoryId: number | null;
+      brandId: number | null;
+      productPrice: number;
+      vendorBTypes?: number[];
+      sellTypes?: string[];
+    },
   ): number {
     let score = 0;
     if (base.categoryId && candidate.categoryId === base.categoryId) score += 3.0;
@@ -121,6 +138,21 @@ export class SimilarityService {
       const ratio = candidate.productPrice / base.productPrice;
       if (ratio >= 0.8 && ratio <= 1.2) score += 2.0;
     }
+
+    // Vendor business type overlap
+    if (base.vendorBTypes?.length && candidate.vendorBTypes?.length) {
+      const baseSet = new Set(base.vendorBTypes);
+      const hasOverlap = candidate.vendorBTypes.some((bt) => baseSet.has(bt));
+      if (hasOverlap) score += 1.5;
+    }
+
+    // Sell type overlap
+    if (base.sellTypes?.length && candidate.sellTypes?.length) {
+      const baseSet = new Set(base.sellTypes);
+      const hasOverlap = candidate.sellTypes.some((st) => baseSet.has(st));
+      if (hasOverlap) score += 1.0;
+    }
+
     return score;
   }
 
@@ -150,7 +182,7 @@ export class SimilarityService {
   }
 
   /**
-   * Get the top N most-viewed active products.
+   * Get the top N most-viewed active products with seller and sell-type data.
    */
   private async getTopViewedProducts(limit: number) {
     return this.prisma.product.findMany({
@@ -160,6 +192,12 @@ export class SimilarityService {
         categoryId: true,
         brandId: true,
         productPrice: true,
+        userId: true,
+        product_productPrice: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { sellType: true, adminId: true },
+          take: 10,
+        },
       },
       orderBy: { productViewCount: 'desc' },
       take: limit,
@@ -167,7 +205,7 @@ export class SimilarityService {
   }
 
   /**
-   * Find the top 15 most similar products to the given product using attribute scoring.
+   * Find the top 15 most similar products to the given product using attribute + vendor scoring.
    * Returns an empty array if the product has no categoryId.
    */
   private async findSimilar(product: {
@@ -175,6 +213,8 @@ export class SimilarityService {
     categoryId: number | null;
     brandId: number | null;
     productPrice: any;
+    userId?: number | null;
+    product_productPrice?: Array<{ sellType: string | null; adminId: number | null }>;
   }): Promise<number[]> {
     if (!product.categoryId) return [];
 
@@ -185,16 +225,92 @@ export class SimilarityService {
         status: 'ACTIVE',
         deletedAt: null,
       },
-      select: { id: true, categoryId: true, brandId: true, productPrice: true },
+      select: {
+        id: true,
+        categoryId: true,
+        brandId: true,
+        productPrice: true,
+        userId: true,
+        product_productPrice: {
+          where: { status: 'ACTIVE', deletedAt: null },
+          select: { sellType: true, adminId: true },
+          take: 10,
+        },
+      },
       take: 100,
     });
 
+    // Collect all seller IDs to batch-fetch business types
+    const allSellerIds = new Set<number>();
+    if (product.userId) allSellerIds.add(product.userId);
+    for (const c of candidates) {
+      if (c.userId) allSellerIds.add(c.userId);
+      for (const pp of c.product_productPrice) {
+        if (pp.adminId) allSellerIds.add(pp.adminId);
+      }
+    }
+    if (product.product_productPrice) {
+      for (const pp of product.product_productPrice) {
+        if (pp.adminId) allSellerIds.add(pp.adminId);
+      }
+    }
+
+    // Batch-fetch vendor business types (check Redis cache first, then DB)
+    const sellerBTypeMap = await this.getSellerBusinessTypeMap(
+      Array.from(allSellerIds),
+    );
+
+    // Helper to get all business type IDs for a product's sellers
+    const getProductVendorBTypes = (p: {
+      userId?: number | null;
+      product_productPrice?: Array<{ adminId: number | null }>;
+    }): number[] => {
+      const bTypes = new Set<number>();
+      if (p.userId) {
+        for (const bt of sellerBTypeMap.get(p.userId) ?? []) bTypes.add(bt);
+      }
+      if (p.product_productPrice) {
+        for (const pp of p.product_productPrice) {
+          if (pp.adminId) {
+            for (const bt of sellerBTypeMap.get(pp.adminId) ?? []) bTypes.add(bt);
+          }
+        }
+      }
+      return Array.from(bTypes);
+    };
+
+    const getSellTypes = (
+      pps?: Array<{ sellType: string | null }>,
+    ): string[] => {
+      if (!pps) return [];
+      const types = new Set<string>();
+      for (const pp of pps) {
+        if (pp.sellType) types.add(pp.sellType);
+      }
+      return Array.from(types);
+    };
+
     const basePrice = Number(product.productPrice) || 0;
+    const baseVendorBTypes = getProductVendorBTypes(product);
+    const baseSellTypes = getSellTypes(product.product_productPrice);
+
     const scored = candidates.map((c) => ({
       id: c.id,
       score: this.computeSimilarityScore(
-        { categoryId: product.categoryId, brandId: product.brandId, productPrice: basePrice },
-        { categoryId: c.categoryId, brandId: c.brandId, productPrice: Number(c.productPrice) || 0 },
+        {
+          categoryId: product.categoryId,
+          brandId: product.brandId,
+          productPrice: basePrice,
+          vendorBTypes: baseVendorBTypes,
+          sellTypes: baseSellTypes,
+        },
+        {
+          categoryId: c.categoryId,
+          brandId: c.brandId,
+          productPrice: Number(c.productPrice) || 0,
+          vendorBTypes: getProductVendorBTypes(c),
+          sellTypes: getSellTypes(c.product_productPrice),
+        },
       ),
     }));
 
@@ -202,6 +318,64 @@ export class SimilarityService {
       .sort((a, b) => b.score - a.score)
       .slice(0, SIMILAR_LIMIT)
       .map((s) => s.id);
+  }
+
+  /**
+   * Batch-fetch business type tag IDs for a list of seller user IDs.
+   * Caches each seller's business types in Redis for 1 hour.
+   */
+  private async getSellerBusinessTypeMap(
+    sellerIds: number[],
+  ): Promise<Map<number, number[]>> {
+    const map = new Map<number, number[]>();
+    if (sellerIds.length === 0) return map;
+
+    // Try Redis cache first
+    const cacheKeys = sellerIds.map((id) =>
+      this.recRedis.keys.vendorBusinessTypes(id),
+    );
+    const cached = await this.recRedis.mgetJson<number[]>(cacheKeys);
+
+    const missingIds: number[] = [];
+    for (let i = 0; i < sellerIds.length; i++) {
+      if (cached[i]) {
+        map.set(sellerIds[i], cached[i]!);
+      } else {
+        missingIds.push(sellerIds[i]);
+      }
+    }
+
+    // Fetch missing from DB
+    if (missingIds.length > 0) {
+      const rows = await this.prisma.userProfileBusinessType.findMany({
+        where: {
+          userId: { in: missingIds },
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+        select: { userId: true, businessTypeId: true },
+      });
+
+      const dbMap = new Map<number, number[]>();
+      for (const r of rows) {
+        const arr = dbMap.get(r.userId) ?? [];
+        arr.push(r.businessTypeId);
+        dbMap.set(r.userId, arr);
+      }
+
+      // Cache results and fill map
+      for (const sellerId of missingIds) {
+        const bTypes = dbMap.get(sellerId) ?? [];
+        map.set(sellerId, bTypes);
+        await this.recRedis.setJson(
+          this.recRedis.keys.vendorBusinessTypes(sellerId),
+          bTypes,
+          VENDOR_BTYPE_TTL,
+        );
+      }
+    }
+
+    return map;
   }
 
   private sleep(ms: number): Promise<void> {

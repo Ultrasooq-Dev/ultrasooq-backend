@@ -442,6 +442,10 @@ export class RecommendationService {
       trending: 'Trending in your region',
       crosssell: 'Complete your order',
       editorial: 'Editor picks',
+      dropship_recs: 'Dropship opportunities',
+      rfq_recs: 'Available for bulk quotes',
+      wholesale_recs: 'Wholesale pricing available',
+      services_recs: 'Services for you',
     };
     return reasons[algorithm] || 'You might like';
   }

@@ -42,6 +42,10 @@ interface BehaviorProfile {
   locale: string;
   tradeRole: string;
   lastComputed: string;
+  /** Vendor business-type tag IDs the user has engaged with (weighted) */
+  vendorBusinessTypes: Record<string, number>;
+  /** Sell types from ProductPrice that the user has interacted with (weighted) */
+  preferredSellTypes: Record<string, number>;
 }
 
 @Injectable()
@@ -209,6 +213,8 @@ export class ProfileBuilderService {
       const productScores: Record<number, number> = {};
       const flowCounts: Record<string, number> = {};
       const prices: number[] = [];
+      const vendorBTypeScores: Record<string, number> = {};
+      const sellTypeScores: Record<string, number> = {};
 
       // --- Process views ---
       for (const v of views) {
@@ -296,6 +302,80 @@ export class ProfileBuilderService {
         }
       }
 
+      // --- Compute vendor business types & sell types from engaged products ---
+      const engagedProductIds = Object.keys(productScores).map(Number);
+      if (engagedProductIds.length > 0) {
+        // Batch-fetch product → seller → business types + sell types
+        const productSellers = await this.prisma.product.findMany({
+          where: { id: { in: engagedProductIds.slice(0, 500) } },
+          select: {
+            id: true,
+            userId: true,
+            product_productPrice: {
+              where: { status: 'ACTIVE', deletedAt: null },
+              select: { sellType: true, adminId: true },
+              take: 5,
+            },
+          },
+        });
+
+        // Collect unique seller IDs
+        const sellerIds = new Set<number>();
+        for (const p of productSellers) {
+          if (p.userId) sellerIds.add(p.userId);
+          for (const pp of p.product_productPrice) {
+            if (pp.adminId) sellerIds.add(pp.adminId);
+          }
+        }
+
+        // Batch-fetch seller business types
+        const sellerBTypes = sellerIds.size > 0
+          ? await this.prisma.userProfileBusinessType.findMany({
+              where: {
+                userId: { in: Array.from(sellerIds) },
+                status: 'ACTIVE',
+                deletedAt: null,
+              },
+              select: { userId: true, businessTypeId: true },
+            })
+          : [];
+
+        // Build seller → business type IDs map
+        const sellerBTypeMap = new Map<number, number[]>();
+        for (const sbt of sellerBTypes) {
+          const arr = sellerBTypeMap.get(sbt.userId) ?? [];
+          arr.push(sbt.businessTypeId);
+          sellerBTypeMap.set(sbt.userId, arr);
+        }
+
+        // Score vendor business types and sell types by product engagement
+        for (const p of productSellers) {
+          const pScore = productScores[p.id] ?? 0;
+          if (pScore <= 0) continue;
+
+          // Vendor business types from product owner
+          if (p.userId) {
+            const bTypes = sellerBTypeMap.get(p.userId) ?? [];
+            for (const btId of bTypes) {
+              this.addScore(vendorBTypeScores, String(btId), pScore);
+            }
+          }
+
+          // Vendor business types from ProductPrice sellers + sell types
+          for (const pp of p.product_productPrice) {
+            if (pp.adminId) {
+              const bTypes = sellerBTypeMap.get(pp.adminId) ?? [];
+              for (const btId of bTypes) {
+                this.addScore(vendorBTypeScores, String(btId), pScore * 0.5);
+              }
+            }
+            if (pp.sellType) {
+              this.addScore(sellTypeScores, pp.sellType, pScore);
+            }
+          }
+        }
+      }
+
       // --- Compute top products ---
       const topProducts = Object.entries(productScores)
         .sort((a, b) => b[1] - a[1])
@@ -338,6 +418,8 @@ export class ProfileBuilderService {
         locale,
         tradeRole,
         lastComputed: new Date().toISOString(),
+        vendorBusinessTypes: vendorBTypeScores,
+        preferredSellTypes: sellTypeScores,
       };
 
       await this.recRedis.setJson(
