@@ -1,0 +1,4 @@
+id,userId,status,firstName,lastName,phoneNumber,cc,address,city,province,country,postCode,rfqDate,countryId,stateId,cityId,deletedAt,createdAt,updatedAt
+1,6,ACTIVE,Test,Seller,"","","","","","","",2026-04-06 08:16:51.996,,,,,2026-04-06 08:16:52.031,2026-04-06 08:16:52.031
+2,,ACTIVE,Test,Buyer,+96812345679,+968,42 Al Khuwair Street,Muscat,Muscat,Oman,112,2026-04-24 12:50:32.124,,,,,2026-04-10 12:50:32.124,2026-04-10 12:50:32.124
+3,6,ACTIVE,Test,Seller,"","","","","","","",2026-04-12 05:11:00.01,,,,,2026-04-12 05:11:00.368,2026-04-12 05:11:00.368
