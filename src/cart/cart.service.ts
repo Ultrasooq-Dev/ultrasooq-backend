@@ -1101,7 +1101,15 @@ export class CartService {
       let pageSize = parseInt(limit) || 10;
       const skip = (Page - 1) * pageSize; // Calculate the offset
 
-      let where: Prisma.RFQCartWhereInput = {};
+      let where: Prisma.RFQCartWhereInput = {
+        // Exclude draft items (rfqCartType 'R') — those are RequestListPanel drafts.
+        // Real cart items have rfqCartType = null, 'DEFAULT', or 'P'.
+        // Prisma: NOT 'R' must use OR to include nulls (SQL NULL != 'R' is unknown).
+        OR: [
+          { rfqCartType: { not: 'R' } },
+          { rfqCartType: null },
+        ],
+      };
       if (req?.user?.id) {
         where = { ...where, userId: req?.user?.id };
       } else {

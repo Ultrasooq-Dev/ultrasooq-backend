@@ -2203,6 +2203,53 @@ export class ProductController {
     return this.productService.rfqFindOne(productId, userId, req);
   }
 
+  /**
+   * @method getRfqAnalytics
+   * @description Returns aggregate summary cards and per-RFQ performance metrics
+   *   (views, responses, offers, prices, response rate, time-to-first-response)
+   *   for the authenticated buyer.
+   *
+   * @usage `GET /product/rfq-analytics` (AuthGuard protected)
+   */
+  @UseGuards(AuthGuard)
+  @Get('/rfq-analytics')
+  getRfqAnalytics(@Request() req) {
+    return this.productService.getRfqAnalytics(req);
+  }
+
+  /**
+   * @method saveDraftItems
+   * @description Saves RequestListPanel draft items to the backend for persistence across refreshes.
+   * @usage `POST /product/rfq-draft-items` (AuthGuard protected)
+   */
+  @UseGuards(AuthGuard)
+  @Post('/rfq-draft-items')
+  saveDraftItems(@Request() req, @Body() payload: any) {
+    return this.productService.saveDraftItems(payload, req);
+  }
+
+  /**
+   * @method loadDraftItems
+   * @description Loads RequestListPanel draft items for a given session.
+   * @usage `GET /product/rfq-draft-items?sessionId=X` (AuthGuard protected)
+   */
+  @UseGuards(AuthGuard)
+  @Get('/rfq-draft-items')
+  loadDraftItems(@Request() req, @Query('sessionId') sessionId: string) {
+    return this.productService.loadDraftItems(sessionId, req);
+  }
+
+  /**
+   * @method listDraftSessions
+   * @description Lists all draft sessions for the authenticated buyer.
+   * @usage `GET /product/rfq-draft-sessions` (AuthGuard protected)
+   */
+  @UseGuards(AuthGuard)
+  @Get('/rfq-draft-sessions')
+  listDraftSessions(@Request() req) {
+    return this.productService.listDraftSessions(req);
+  }
+
   // ---- **** RFQ PRODUCT END **** ----
 
   // ---- **** CUSTOM FIELD FOR PRODUCT BEGINS **** ----
