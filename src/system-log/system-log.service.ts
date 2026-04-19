@@ -197,7 +197,7 @@ export class SystemLogService {
       this.prisma.systemLog.findMany({
         where: {
           createdAt: { gte: oneDayAgo },
-          metadata: { path: ['delay'] },
+          metadata: { path: ['delay'] } as any,
         },
         select: { path: true, method: true, metadata: true, requestId: true, createdAt: true },
         orderBy: { createdAt: 'desc' },

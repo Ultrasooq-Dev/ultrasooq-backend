@@ -137,6 +137,8 @@ model User {
   recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
   complaints                                    Complaint[]              @relation("ComplaintBuyer")
   refundRequests                                 RefundRequest[]          @relation("RefundBuyer")
+  supportConversations                           SupportConversation[]    @relation("SupportUser")
+  assignedSupportConversations                   SupportConversation[]    @relation("SupportAssignee")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -2385,14 +2387,17 @@ model RfqSuggestedProduct {
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
 model RoomParticipants {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  roomId    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  room      Room     @relation("RoomParticipants", fields: [roomId], references: [id])
-  user      User     @relation("UserRooms", fields: [userId], references: [id])
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  roomId     Int
+  isPinned   Boolean  @default(false)
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  room       Room     @relation("RoomParticipants", fields: [roomId], references: [id])
+  user       User     @relation("UserRooms", fields: [userId], references: [id])
 
+  @@unique([userId, roomId])
   @@index([userId])
   @@index([roomId])
 }
@@ -4140,4 +4145,95 @@ model RefundRequest {
   @@index([orderProductId])
   @@index([buyerId])
   @@index([status])
+}
+
+// ─── Vendor Ranks ──────────────────────────────────────────
+// VendorRank — Defines vendor ranking tiers based on points/performance.
+// Used by admin to configure rank levels, benefits, and thresholds.
+
+model VendorRank {
+  id          Int       @id @default(autoincrement())
+  name_en     String
+  name_ar     String?
+  description String?
+  minPoints   Int       @default(0)
+  maxPoints   Int?
+  benefits    Json?
+  sortOrder   Int       @default(0)
+  status      Status    @default(ACTIVE)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Subscription Plans ────────────────────────────────────
+// SubscriptionPlan — Platform subscription tiers for vendors/sellers.
+// Admin manages plans with pricing, duration, and feature sets.
+
+model SubscriptionPlan {
+  id          Int       @id @default(autoincrement())
+  name_en     String
+  name_ar     String?
+  description String?
+  price       Decimal   @db.Decimal(10, 2)
+  duration    Int       @default(30)
+  features    Json?
+  sortOrder   Int       @default(0)
+  status      Status    @default(ACTIVE)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─── Support System ────────────────────────────────────────
+// SupportConversation — Admin support ticket/conversation threads.
+// Tracks user inquiries with priority, assignment, and resolution status.
+
+model SupportConversation {
+  id         Int              @id @default(autoincrement())
+  userId     Int?
+  userEmail  String?
+  topic      String?
+  subject    String?
+  priority   String           @default("normal")
+  status     String           @default("open")
+  assigneeId Int?
+  isRead     Boolean          @default(false)
+  deletedAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  user       User?            @relation("SupportUser", fields: [userId], references: [id])
+  assignee   User?            @relation("SupportAssignee", fields: [assigneeId], references: [id])
+  messages   SupportMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([assigneeId])
+}
+
+// SupportMessage — Individual messages within a support conversation.
+
+model SupportMessage {
+  id             Int                 @id @default(autoincrement())
+  conversationId Int
+  senderId       Int?
+  senderType     String              @default("user")
+  content        String              @db.Text
+  createdAt      DateTime            @default(now())
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+}
+
+// KnowledgeBase — Admin-managed FAQ / knowledge base articles for support.
+
+model KnowledgeBase {
+  id        Int       @id @default(autoincrement())
+  category  String?
+  question  String    @db.Text
+  answer    String    @db.Text
+  status    Status    @default(ACTIVE)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }

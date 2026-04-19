@@ -22,7 +22,7 @@
  *   applicable; some endpoints delegate envelope construction to the service layer.
  * - File uploads use `FileFieldsInterceptor` from `@nestjs/platform-express`.
  */
-import { Controller, Get, Post, Body, Query, HttpException, HttpStatus, Put, Patch, UseGuards, UseInterceptors, UploadedFiles, Request, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, HttpException, HttpStatus, Put, Patch, Delete, Param, UseGuards, UseInterceptors, UploadedFiles, Request, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -35,6 +35,7 @@ import { AuthGuard } from 'src/guards/AuthGuard';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { S3service } from 'src/user/s3.service';
 import { Throttle } from '@nestjs/throttler';
+import { UpdateRfqAlternativeDto } from './dto/update-rfq-alternative.dto';
 
 /**
  * @class ChatController
@@ -429,5 +430,73 @@ export class ChatController {
     const limitNum = limit ? parseInt(limit, 10) : 50;
 
     return this.chatService.getVendorProductsForSuggestion(vendorId, { page: pageNum, limit: limitNum, term });
+  }
+
+  // ─── Messaging System — Channel & Room Management ──────────────
+
+  @UseGuards(AuthGuard)
+  @Get('/channels/summary')
+  async getChannelSummary(@Request() req: any) {
+    return this.chatService.getChannelSummary(req.user.id);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('/channels/:channelId/conversations')
+  async getChannelConversations(
+    @Param('channelId') channelId: string,
+    @Request() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 50;
+    return this.chatService.getChannelConversations(req.user.id, channelId, pageNum, limitNum);
+  }
+
+  @UseGuards(AuthGuard)
+  @Patch('/rooms/:roomId/pin')
+  async togglePinRoom(
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Request() req: any,
+  ) {
+    return this.chatService.togglePinRoom(req.user.id, roomId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Patch('/rooms/:roomId/archive')
+  async toggleArchiveRoom(
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Request() req: any,
+  ) {
+    return this.chatService.toggleArchiveRoom(req.user.id, roomId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete('/rooms/:roomId')
+  async leaveRoom(
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Request() req: any,
+  ) {
+    return this.chatService.leaveRoom(req.user.id, roomId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('/rooms/:roomId/rfq-products')
+  async getRfqProductsForRoom(
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Request() req: any,
+  ) {
+    return this.chatService.getRfqProductsForRoom(req.user.id, roomId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('/rooms/:roomId/rfq-products/:productId')
+  async updateRfqAlternative(
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Param('productId', ParseIntPipe) productId: number,
+    @Body() payload: UpdateRfqAlternativeDto,
+    @Request() req: any,
+  ) {
+    return this.chatService.updateRfqAlternative(req.user.id, roomId, productId, payload);
   }
 }

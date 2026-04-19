@@ -5081,7 +5081,7 @@ export class OrderService {
       }
 
       this.analyticsService.logOrderEvent({
-        orderProductId: opId, orderId: orderProduct.orderId || undefined,
+        orderProductId: Number(orderProductId), orderId: orderProduct.orderId || undefined,
         sellerId: orderProduct.sellerId || undefined, buyerId: req.user.id,
         event: 'RECEIVED', previousStatus: 'DELIVERED',
       }).catch(() => {});
@@ -5510,7 +5510,7 @@ export class OrderService {
         return { status: false, message: 'Order product not found or does not belong to you' };
       }
 
-      const complaint = await this.prisma.complaint.create({
+      const complaint = await (this.prisma as any).complaint.create({
         data: {
           orderProductId: orderProduct.id,
           buyerId: req.user.id,
@@ -5556,14 +5556,14 @@ export class OrderService {
       }
 
       // Check for existing pending refund
-      const existing = await this.prisma.refundRequest.findFirst({
+      const existing = await (this.prisma as any).refundRequest.findFirst({
         where: { orderProductId: orderProduct.id, buyerId: req.user.id, status: 'PENDING' },
       });
       if (existing) {
         return { status: false, message: 'A refund request is already pending for this order' };
       }
 
-      const refundRequest = await this.prisma.refundRequest.create({
+      const refundRequest = await (this.prisma as any).refundRequest.create({
         data: {
           orderProductId: orderProduct.id,
           buyerId: req.user.id,
@@ -5642,7 +5642,7 @@ export class OrderService {
 
       if (!orderProduct) {
         // Try admin resolution for team members
-        const adminId = await this.resolveAdminId(req.user.id);
+        const adminId = await (this as any).resolveAdminId(req.user.id);
         const opCheck = await this.prisma.orderProducts.findFirst({
           where: { id: opId, sellerId: adminId, deletedAt: null },
         });

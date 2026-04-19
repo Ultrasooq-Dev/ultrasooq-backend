@@ -20,4 +20,5 @@ export const REC_KEYS = {
   metaProductCount: 'rec:meta:productCount',
   metaUserCount: 'rec:meta:userCount',
   lock: (jobName: string) => `rec:lock:${jobName}`,
+  vendorBusinessTypes: (sellerId: number) => `rec:vendor:btype:${sellerId}`,
 } as const;

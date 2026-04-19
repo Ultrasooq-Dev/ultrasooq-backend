@@ -48,6 +48,8 @@ interface BehaviorProfile {
   topProducts: number[];
   locale: string;
   tradeRole: string;
+  vendorBusinessTypes?: Record<string, number>;
+  preferredSellTypes?: Record<string, number>;
 }
 
 interface ScoredProduct {
@@ -228,11 +230,49 @@ export class PersonalRecommendationService {
           brandId: true,
           productPrice: true,
           createdAt: true,
+          userId: true,
+          product_productPrice: {
+            where: { status: 'ACTIVE', deletedAt: null },
+            select: { sellType: true, adminId: true },
+            take: 5,
+          },
         },
         take: CANDIDATE_LIMIT,
       });
 
-      // Step 5: Score each candidate
+      // Step 5: Batch-fetch seller business types for vendor-aware scoring
+      const allSellerIds = new Set<number>();
+      for (const c of candidates) {
+        if (c.userId) allSellerIds.add(c.userId);
+        for (const pp of c.product_productPrice) {
+          if (pp.adminId) allSellerIds.add(pp.adminId);
+        }
+      }
+
+      const sellerBTypeMap = new Map<number, number[]>();
+      if (allSellerIds.size > 0) {
+        const rows = await this.prisma.userProfileBusinessType.findMany({
+          where: {
+            userId: { in: Array.from(allSellerIds) },
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          select: { userId: true, businessTypeId: true },
+        });
+        for (const r of rows) {
+          const arr = sellerBTypeMap.get(r.userId) ?? [];
+          arr.push(r.businessTypeId);
+          sellerBTypeMap.set(r.userId, arr);
+        }
+      }
+
+      // Precompute user's preferred vendor business types and sell types
+      const userVendorBTypes = profile.vendorBusinessTypes ?? {};
+      const userSellTypes = profile.preferredSellTypes ?? {};
+      const hasVendorPrefs = Object.keys(userVendorBTypes).length > 0;
+      const hasSellTypePrefs = Object.keys(userSellTypes).length > 0;
+
+      // Step 6: Score each candidate
       const viewedSet = new Set(viewedIds);
       const avgPrice = profile.priceRange.avg;
 
@@ -269,6 +309,39 @@ export class PersonalRecommendationService {
           score += RECENCY_30_DAYS;
         }
 
+        // Vendor business type match: +1.0 if seller's business type overlaps
+        if (hasVendorPrefs) {
+          const productBTypes = new Set<number>();
+          if (product.userId) {
+            for (const bt of sellerBTypeMap.get(product.userId) ?? []) {
+              productBTypes.add(bt);
+            }
+          }
+          for (const pp of product.product_productPrice) {
+            if (pp.adminId) {
+              for (const bt of sellerBTypeMap.get(pp.adminId) ?? []) {
+                productBTypes.add(bt);
+              }
+            }
+          }
+          for (const btId of productBTypes) {
+            if (userVendorBTypes[String(btId)]) {
+              score += 1.0;
+              break;
+            }
+          }
+        }
+
+        // Sell type match: +1.0 if product has a sell type the user prefers
+        if (hasSellTypePrefs) {
+          for (const pp of product.product_productPrice) {
+            if (pp.sellType && userSellTypes[pp.sellType]) {
+              score += 1.0;
+              break;
+            }
+          }
+        }
+
         // Already-viewed penalty
         if (viewedSet.has(product.id)) {
           score *= VIEWED_PENALTY;
@@ -277,11 +350,11 @@ export class PersonalRecommendationService {
         return { id: product.id, score };
       });
 
-      // Step 6: Sort and take top 30
+      // Step 7: Sort and take top 30
       scored.sort((a, b) => b.score - a.score);
       const personalTop = scored.slice(0, PERSONAL_TOP_N).map((s) => s.id);
 
-      // Step 7: Blend in 20% segment trending for diversity
+      // Step 8: Blend in 20% segment trending for diversity
       const trendingCount = Math.ceil(PERSONAL_TOP_N * TRENDING_BLEND);
       const personalCount = PERSONAL_TOP_N - trendingCount;
 

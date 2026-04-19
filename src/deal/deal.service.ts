@@ -187,13 +187,13 @@ export class DealService {
           productPrice_product: {
             select: {
               id: true,
-              productName_en: true,
+              productName: true,
               productName_ar: true,
               productImages: true,
               status: true,
             },
           },
-        },
+        } as any,
         orderBy: { createdAt: sort === 'oldest' ? 'asc' : 'desc' },
       });
 
@@ -348,12 +348,12 @@ export class DealService {
           productPrice_product: {
             select: {
               id: true,
-              productName_en: true,
+              productName: true,
               productName_ar: true,
               productImages: true,
             },
           },
-        },
+        } as any,
       });
 
       if (!price) {

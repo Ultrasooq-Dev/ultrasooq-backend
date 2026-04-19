@@ -2499,6 +2499,38 @@ export class UserService {
     }
   }
 
+  async updateTag(payload: any, req: any) {
+    try {
+      const tagId = parseInt(payload.tagId || payload.id);
+      if (!tagId) return { status: false, message: 'Invalid tagId' };
+      const existing = await this.prisma.tags.findUnique({ where: { id: tagId } });
+      if (!existing) return { status: false, message: 'Tag not found', data: null };
+      const updated = await this.prisma.tags.update({
+        where: { id: tagId },
+        data: {
+          tagName: payload.tagName ?? existing.tagName,
+        },
+      });
+      return { status: true, message: 'Tag updated successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'error in updateTag', error: getErrorMessage(error) };
+    }
+  }
+
+  async deleteTag(tagId: any, req: any) {
+    try {
+      const id = parseInt(tagId);
+      if (!id) return { status: false, message: 'Invalid tagId' };
+      const updated = await this.prisma.tags.update({
+        where: { id },
+        data: { status: 'DELETE', deletedAt: new Date() },
+      });
+      return { status: true, message: 'Tag deleted successfully', data: updated };
+    } catch (error) {
+      return { status: false, message: 'error in deleteTag', error: getErrorMessage(error) };
+    }
+  }
+
   /**
    * Adds a new branch to an already-existing profile (post-edit scenario).
    *
