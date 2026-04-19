@@ -1,0 +1,4 @@
+id,userId,deviceId,rfqProductId,quantity,productType,rfqCartType,status,deletedAt,createdAt,updatedAt,productId,offerPrice,note,offerPriceFrom,offerPriceTo
+9,6,,,1,SIMILAR,R,ACTIVE,,2026-04-15 05:47:01.451,2026-04-15 05:47:01.451,,,"[9]{""id"":""item-1775997599634-0"",""name"":""car"",""attachments"":[]}",,
+12,6,,,1,SIMILAR,R,ACTIVE,,2026-04-15 05:47:05.994,2026-04-15 05:47:05.994,,,"[rfq-1776232024966]{""id"":""item-1775997599634-0"",""name"":""car"",""attachments"":[]}",,
+14,6,,,1,SAME,,ACTIVE,,2026-04-15 05:49:14.336,2026-04-15 05:49:14.336,2398,,,,

@@ -2007,4 +2007,415 @@ export class ProductRfqService {
       };
     }
   }
+
+  // ── Draft Item Persistence ──────────────────────────────────────
+
+  /**
+   * @method saveDraftItems
+   * @description Bulk-saves the buyer's RequestListPanel draft items to RFQCart.
+   *   Replaces all existing draft items (rfqCartType='R', productId=null) for the user.
+   */
+  async saveDraftItems(payload: { sessionId: string; items: any[] }, req: any) {
+    try {
+      const userId = req?.user?.id;
+      if (!userId) return { status: false, message: 'Unauthorized' };
+
+      const { sessionId, items } = payload;
+      if (!sessionId) return { status: false, message: 'sessionId is required' };
+
+      // Delete existing draft items for this user+session
+      await this.prisma.rFQCart.deleteMany({
+        where: {
+          userId,
+          rfqCartType: 'R',
+          note: { startsWith: `[${sessionId}]` },
+        },
+      });
+
+      // Insert new draft items
+      if (items && items.length > 0) {
+        const data = items.map((item: any) => ({
+          userId,
+          quantity: item.quantity || 1,
+          productType: item.type || 'SIMILAR',
+          rfqCartType: 'R' as const,
+          note: `[${sessionId}]${JSON.stringify({
+            id: item.id,
+            name: item.name,
+            budgetFrom: item.budgetFrom,
+            budgetTo: item.budgetTo,
+            attachments: item.attachments,
+            notes: item.notes,
+          })}`,
+          offerPriceFrom: item.budgetFrom || undefined,
+          offerPriceTo: item.budgetTo || undefined,
+        }));
+
+        await this.prisma.rFQCart.createMany({ data });
+      }
+
+      return { status: true, message: 'Draft items saved', data: { count: items?.length || 0 } };
+    } catch (error) {
+      return { status: false, message: 'Error saving draft items', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * @method loadDraftItems
+   * @description Loads the buyer's RequestListPanel draft items from RFQCart.
+   */
+  async loadDraftItems(sessionId: string, req: any) {
+    try {
+      const userId = req?.user?.id;
+      if (!userId) return { status: false, message: 'Unauthorized', data: [] };
+
+      if (!sessionId) return { status: false, message: 'sessionId is required', data: [] };
+
+      const rows = await this.prisma.rFQCart.findMany({
+        where: {
+          userId,
+          rfqCartType: 'R',
+          note: { startsWith: `[${sessionId}]` },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const items = rows.map((row) => {
+        try {
+          const jsonStr = (row.note || '').replace(`[${sessionId}]`, '');
+          const parsed = JSON.parse(jsonStr);
+          return {
+            id: parsed.id || `draft-${row.id}`,
+            name: parsed.name || '',
+            quantity: row.quantity || 1,
+            budgetFrom: row.offerPriceFrom ? Number(row.offerPriceFrom) : undefined,
+            budgetTo: row.offerPriceTo ? Number(row.offerPriceTo) : undefined,
+            type: (row.productType as 'SAME' | 'SIMILAR') || 'SIMILAR',
+            attachments: parsed.attachments || [],
+            notes: parsed.notes,
+          };
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+
+      return { status: true, message: 'Draft items loaded', data: items };
+    } catch (error) {
+      return { status: false, message: 'Error loading draft items', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * @method listDraftSessions
+   * @description Lists all draft sessions for the buyer (distinct sessionIds).
+   */
+  async listDraftSessions(req: any) {
+    try {
+      const userId = req?.user?.id;
+      if (!userId) return { status: false, message: 'Unauthorized', data: [] };
+
+      const rows = await this.prisma.rFQCart.findMany({
+        where: { userId, rfqCartType: 'R' },
+        select: { note: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Extract unique sessionIds
+      const sessionMap = new Map<string, { count: number; lastUpdated: Date }>();
+      for (const row of rows) {
+        const match = (row.note || '').match(/^\[([^\]]+)\]/);
+        if (match) {
+          const sid = match[1];
+          const existing = sessionMap.get(sid);
+          if (existing) {
+            existing.count++;
+            if (row.createdAt > existing.lastUpdated) existing.lastUpdated = row.createdAt;
+          } else {
+            sessionMap.set(sid, { count: 1, lastUpdated: row.createdAt });
+          }
+        }
+      }
+
+      const sessions = Array.from(sessionMap.entries()).map(([id, info]) => ({
+        sessionId: id,
+        itemCount: info.count,
+        lastUpdated: info.lastUpdated,
+      }));
+
+      return { status: true, message: 'Draft sessions listed', data: sessions };
+    } catch (error) {
+      return { status: false, message: 'Error listing draft sessions', error: getErrorMessage(error) };
+    }
+  }
+
+  /**
+   * @method getRfqAnalytics
+   * @description Aggregates RFQ performance metrics for a buyer: summary cards
+   *   (totals, response rate, best savings) and per-RFQ stats (views, responses,
+   *   offers, prices, time-to-first-response).
+   *
+   * @usage Called from `GET /product/rfq-analytics` (AuthGuard protected)
+   */
+  async getRfqAnalytics(req: any) {
+    try {
+      let buyerID = req?.user?.id;
+
+      // Resolve parent account for MEMBER sub-accounts
+      const adminDetail = await this.prisma.user.findUnique({
+        where: { id: buyerID },
+        select: { id: true, tradeRole: true, addedBy: true },
+      });
+      if (adminDetail?.tradeRole === 'MEMBER') {
+        buyerID = adminDetail.addedBy;
+      }
+
+      // Fetch all active RFQ quotes for this buyer with full relations
+      const rfqQuotes = await this.prisma.rfqQuotes.findMany({
+        where: { status: 'ACTIVE', buyerID },
+        include: {
+          rfqQuotes_rfqQuoteAddress: true,
+          rfqQuotesProducts: {
+            include: {
+              rfqProductPriceRequests: true,
+              suggestedProducts: true,
+              rfqProductDetails: {
+                include: { productImages: true },
+              },
+            },
+          },
+          rfqQuotes_rfqQuotesUsers: {
+            include: {
+              rfqProductPriceRequests: true,
+              messagaes: {
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { createdAt: true },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Build per-RFQ analytics
+      let totalOffers = 0;
+      let totalVendors = 0;
+      let totalResponded = 0;
+      let bestSavingsPercent = 0;
+      let pendingResponses = 0;
+
+      const perRfq = rfqQuotes.map((rfq) => {
+        const vendors = rfq.rfqQuotes_rfqQuotesUsers || [];
+        const products = rfq.rfqQuotesProducts || [];
+        const address = rfq.rfqQuotes_rfqQuoteAddress;
+
+        // Views = total vendors matched
+        const views = vendors.length;
+        totalVendors += views;
+
+        // Responses = vendors who sent at least one message
+        const responded = vendors.filter(
+          (v) => v.messagaes && v.messagaes.length > 0,
+        ).length;
+        totalResponded += responded;
+
+        // Offers = price requests across all products
+        const allPriceRequests = products.flatMap(
+          (p) => p.rfqProductPriceRequests || [],
+        );
+        const offerCount = allPriceRequests.length;
+        totalOffers += offerCount;
+
+        // Best / Avg price from price requests
+        const prices = allPriceRequests
+          .map((pr) => pr.requestedPrice)
+          .filter((p) => p != null && p > 0);
+        const bestPrice = prices.length > 0 ? Math.min(...prices) : null;
+        const avgPrice =
+          prices.length > 0
+            ? Math.round(
+                (prices.reduce((a, b) => a + b, 0) / prices.length) * 100,
+              ) / 100
+            : null;
+
+        // Response rate
+        const responseRate =
+          views > 0 ? Math.round((responded / views) * 100) : 0;
+
+        // Time to first response
+        let timeToFirstResponse: string | null = null;
+        const firstMessage = vendors
+          .flatMap((v) => v.messagaes || [])
+          .sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          )[0];
+        if (firstMessage) {
+          const diffMs =
+            new Date(firstMessage.createdAt).getTime() -
+            new Date(rfq.createdAt).getTime();
+          const diffHrs = Math.floor(diffMs / 3600000);
+          const diffMins = Math.floor((diffMs % 3600000) / 60000);
+          timeToFirstResponse =
+            diffHrs > 0 ? `${diffHrs}h ${diffMins}m` : `${diffMins}m`;
+        }
+
+        // Status: active if rfqDate > now, expired otherwise
+        const rfqDate = address?.rfqDate;
+        const isActive = rfqDate ? new Date(rfqDate) > new Date() : true;
+
+        // Savings calculation: compare best offer vs buyer's budget (offerPriceTo)
+        if (bestPrice && products.length > 0) {
+          for (const product of products) {
+            const budget = product.offerPriceTo
+              ? Number(product.offerPriceTo)
+              : null;
+            if (budget && budget > 0 && bestPrice < budget) {
+              const savings = Math.round(
+                ((budget - bestPrice) / budget) * 100,
+              );
+              if (savings > bestSavingsPercent) bestSavingsPercent = savings;
+            }
+          }
+        }
+
+        // Pending = vendors with no messages yet
+        const pendingForThisRfq = vendors.filter(
+          (v) => !v.messagaes || v.messagaes.length === 0,
+        ).length;
+        pendingResponses += pendingForThisRfq;
+
+        // Product images for display
+        const productImages = products
+          .map((p) => p.rfqProductDetails?.productImages?.[0]?.image)
+          .filter(Boolean);
+
+        // Build mini timeline: daily activity data points
+        const timelineMap = new Map<
+          string,
+          { views: number; responses: number; offers: number }
+        >();
+
+        // Day 0: RFQ created
+        const createdDay = new Date(rfq.createdAt)
+          .toISOString()
+          .slice(0, 10);
+        timelineMap.set(createdDay, { views: 0, responses: 0, offers: 0 });
+
+        // Vendors matched (views) — group by creation date
+        for (const v of vendors) {
+          const day = new Date(v.createdAt).toISOString().slice(0, 10);
+          const entry = timelineMap.get(day) || {
+            views: 0,
+            responses: 0,
+            offers: 0,
+          };
+          entry.views++;
+          timelineMap.set(day, entry);
+        }
+
+        // Vendor responses — group first message by date
+        for (const v of vendors) {
+          if (v.messagaes && v.messagaes.length > 0) {
+            const day = new Date(v.messagaes[0].createdAt)
+              .toISOString()
+              .slice(0, 10);
+            const entry = timelineMap.get(day) || {
+              views: 0,
+              responses: 0,
+              offers: 0,
+            };
+            entry.responses++;
+            timelineMap.set(day, entry);
+          }
+        }
+
+        // Price offers — group by creation date
+        for (const pr of allPriceRequests) {
+          const day = new Date(pr.createdAt).toISOString().slice(0, 10);
+          const entry = timelineMap.get(day) || {
+            views: 0,
+            responses: 0,
+            offers: 0,
+          };
+          entry.offers++;
+          timelineMap.set(day, entry);
+        }
+
+        // Ensure "today" is always in the timeline for a second data point
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (!timelineMap.has(todayStr)) {
+          timelineMap.set(todayStr, { views: 0, responses: 0, offers: 0 });
+        }
+
+        // Convert to sorted array with cumulative totals
+        const sortedDays = Array.from(timelineMap.entries())
+          .sort(([a], [b]) => a.localeCompare(b));
+        let cumViews = 0,
+          cumResponses = 0,
+          cumOffers = 0;
+        const timeline = sortedDays.map(([day, data]) => {
+          cumViews += data.views;
+          cumResponses += data.responses;
+          cumOffers += data.offers;
+          const d = new Date(day);
+          const label =
+            d.toLocaleDateString('en', { month: 'short', day: '2-digit' });
+          return {
+            date: label,
+            views: cumViews,
+            responses: cumResponses,
+            offers: cumOffers,
+          };
+        });
+
+        return {
+          rfqId: rfq.id,
+          rfqNumber: `RFQ${String(rfq.id).padStart(5, '0')}`,
+          productCount: products.length,
+          productImages,
+          views,
+          responses: responded,
+          offers: offerCount,
+          bestPrice,
+          avgPrice,
+          responseRate,
+          timeToFirstResponse,
+          status: isActive ? 'active' : 'expired',
+          createdAt: rfq.createdAt,
+          rfqDate: address?.rfqDate,
+          timeline,
+        };
+      });
+
+      const totalRfqs = rfqQuotes.length;
+      const activeRfqs = perRfq.filter((r) => r.status === 'active').length;
+      const avgResponseRate =
+        totalVendors > 0
+          ? Math.round((totalResponded / totalVendors) * 100)
+          : 0;
+
+      return {
+        status: true,
+        message: 'RFQ analytics retrieved',
+        data: {
+          summary: {
+            totalRfqs,
+            activeRfqs,
+            totalOffers,
+            avgResponseRate,
+            bestSavingsPercent,
+            pendingResponses,
+          },
+          perRfq,
+        },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error in getRfqAnalytics',
+        error: getErrorMessage(error),
+      };
+    }
+  }
 }

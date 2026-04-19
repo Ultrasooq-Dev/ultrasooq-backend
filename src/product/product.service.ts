@@ -7950,6 +7950,26 @@ export class ProductService {
     return this.productRfqService.hideRfqRequest(rfqQuotesUserId, isHidden, req);
   }
 
+  /**
+   * @method getRfqAnalytics
+   * @description Returns aggregate and per-RFQ analytics for the authenticated buyer.
+   */
+  async getRfqAnalytics(req: any) {
+    return this.productRfqService.getRfqAnalytics(req);
+  }
+
+  async saveDraftItems(payload: any, req: any) {
+    return this.productRfqService.saveDraftItems(payload, req);
+  }
+
+  async loadDraftItems(sessionId: string, req: any) {
+    return this.productRfqService.loadDraftItems(sessionId, req);
+  }
+
+  async listDraftSessions(req: any) {
+    return this.productRfqService.listDraftSessions(req);
+  }
+
   // ---- **** CUSTOM FIELD FOR PRODUCT BEGINS **** ----
 
   /**

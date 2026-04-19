@@ -1,0 +1,2 @@
+id,userId,userAccountId,currencyCode,balance,frozenBalance,status,createdAt,updatedAt,deletedAt
+1,6,,USD,0.00,0.00,ACTIVE,2026-03-31 23:05:51.374,2026-03-31 23:05:51.374,
