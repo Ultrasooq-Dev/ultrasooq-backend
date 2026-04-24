@@ -70,6 +70,16 @@ export class S3service {
    *        (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY).
    */
   async getS3() {
+    if (process.env.R2_ACCOUNT_ID) {
+      return new S3({
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        region: 'auto',
+        signatureVersion: 'v4',
+        s3ForcePathStyle: true,
+      });
+    }
     return new S3({
       accessKeyId: process.env.AWS_ACCESS_KEY_ID,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -131,7 +141,7 @@ export class S3service {
     const contentType = mimetype
 
     const uploadParams = {
-      Bucket: process.env.AWS_BUCKET, //'ultrasooq',
+      Bucket: (process.env.R2_BUCKET || process.env.AWS_BUCKET), //'ultrasooq',
       Key: path,
       Body: file,
       ContentType: contentType,
@@ -140,10 +150,13 @@ export class S3service {
     };
     try {
       let s3Response = await s3.upload(uploadParams).promise()
+      const location = process.env.R2_PUBLIC_URL
+        ? `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/${path}`
+        : s3Response.Location;
       return {
         status: true,
         message: 'Uploaded Successfully',
-        data: s3Response.Location,
+        data: location,
       };
 
     } catch (error) {
@@ -179,7 +192,7 @@ export class S3service {
     const contentType = mimetype
 
     const uploadParams = {
-      Bucket: process.env.AWS_BUCKET, //'ultrasooq',
+      Bucket: (process.env.R2_BUCKET || process.env.AWS_BUCKET), //'ultrasooq',
       Key: path,
       Body: file,
       ContentType: contentType,
@@ -188,7 +201,9 @@ export class S3service {
     };
     try {
       let s3Response = await s3.upload(uploadParams).promise()
-      return s3Response.Location
+      return process.env.R2_PUBLIC_URL
+        ? `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/${path}`
+        : s3Response.Location
 
     } catch (error) {
       return {
@@ -212,7 +227,7 @@ export class S3service {
     const s3 = await this.getS3();
 
     // Specify the bucket name and object key (path) to delete
-    const bucketName = process.env.AWS_BUCKET;
+    const bucketName = (process.env.R2_BUCKET || process.env.AWS_BUCKET);
     const objectKey = payload?.key; // This is the path of the object you want to delete
 
     // Set the parameters for the deleteObject operation
@@ -256,7 +271,7 @@ export class S3service {
     const binaryData = Buffer.from(base64Image.replace(/^data:image\/[a-z]+;base64,/, ''), 'base64');
 
     const uploadParams = {
-      Bucket: process.env.AWS_BUCKET,
+      Bucket: (process.env.R2_BUCKET || process.env.AWS_BUCKET),
       ACL: 'public-read',
       ContentDisposition: 'inline',
     };
@@ -294,13 +309,13 @@ export class S3service {
     async getPresignedUrl(fileKey: string): Promise<string> {
       const s3 = await this.getS3();
             const params = {
-        Bucket: process.env.AWS_BUCKET,
+        Bucket: (process.env.R2_BUCKET || process.env.AWS_BUCKET),
         Key: fileKey,
       };
       try {
         await s3.headObject(params).promise();
         const urlParams = {
-          Bucket: process.env.AWS_BUCKET,
+          Bucket: (process.env.R2_BUCKET || process.env.AWS_BUCKET),
           Key: fileKey,
           Expires: 60 * 5,
           ResponseContentDisposition: 'attachment' 
