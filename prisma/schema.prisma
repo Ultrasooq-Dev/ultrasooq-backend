@@ -128,17 +128,17 @@ model User {
   userSocialLink                                UserSocialLink[]
   wallets                                       Wallet[]
   walletSettings                                WalletSettings[]
-  walletUserAccount                             Wallet[] @relation("WalletUserAccount")
-  productViews                                  ProductView[] @relation("UserProductViews")
-  productSearches                               ProductSearch[] @relation("UserProductSearches")
-  productClicks                                 ProductClick[] @relation("UserProductClicks")
+  walletUserAccount                             Wallet[]                      @relation("WalletUserAccount")
+  productViews                                  ProductView[]                 @relation("UserProductViews")
+  productSearches                               ProductSearch[]               @relation("UserProductSearches")
+  productClicks                                 ProductClick[]                @relation("UserProductClicks")
   refreshTokens                                 RefreshToken[]
   contentFilterLogs                             ContentFilterLog[]
-  recommendationFeedback                        RecommendationFeedback[] @relation("UserRecommendationFeedback")
-  complaints                                    Complaint[]              @relation("ComplaintBuyer")
-  refundRequests                                 RefundRequest[]          @relation("RefundBuyer")
-  supportConversations                           SupportConversation[]    @relation("SupportUser")
-  assignedSupportConversations                   SupportConversation[]    @relation("SupportAssignee")
+  recommendationFeedback                        RecommendationFeedback[]      @relation("UserRecommendationFeedback")
+  complaints                                    Complaint[]                   @relation("ComplaintBuyer")
+  refundRequests                                RefundRequest[]               @relation("RefundBuyer")
+  supportConversations                          SupportConversation[]         @relation("SupportUser")
+  assignedSupportConversations                  SupportConversation[]         @relation("SupportAssignee")
 
   @@index([parentUserId])
   @@index([masterAccountId])
@@ -152,14 +152,14 @@ model User {
 // Each token is tied to a user, has an expiry, and can be revoked.
 // replacedBy tracks token rotation chains for security auditing.
 model RefreshToken {
-  id          Int      @id @default(autoincrement())
-  token       String   @unique
-  userId      Int
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  revoked     Boolean  @default(false)
-  replacedBy  String?
+  id         Int      @id @default(autoincrement())
+  token      String   @unique
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  revoked    Boolean  @default(false)
+  replacedBy String?
 
   @@index([userId])
   @@index([token])
@@ -574,21 +574,21 @@ model Category {
   category_userBusinessCategory    UserBusinessCategory[]
 
   // ── Multi-category & Spec Template relations (Phase 1) ──
-  specTemplates                    SpecTemplate[]
-  categoryKeywords                 CategoryKeyword[]
-  productCategoryMaps              ProductCategoryMap[]
-  categoryTags                     CategoryTag[]
-  serviceCategoryMaps              ServiceCategoryMap[]    @relation("ServiceCategoryMaps")
+  specTemplates       SpecTemplate[]
+  categoryKeywords    CategoryKeyword[]
+  productCategoryMaps ProductCategoryMap[]
+  categoryTags        CategoryTag[]
+  serviceCategoryMaps ServiceCategoryMap[] @relation("ServiceCategoryMaps")
 
   // ── Mega Scraper relations ──
-  scrapingJobs                     ScrapingJob[]
-  categoryMappings                 CategoryMapping[]
-  crossSellAsSource                CrossSellRule[] @relation("CrossSellSource")
-  crossSellAsTarget                CrossSellRule[] @relation("CrossSellTarget")
-  useCaseMappings                  UseCaseMapping[] @relation("CategoryUseCases")
-  accessoryAsSource                AccessoryLink[] @relation("AccessorySource")
-  accessoryAsTarget                AccessoryLink[] @relation("AccessoryTarget")
-  termDisambiguations              TermDisambiguation[] @relation("TermDisambiguation")
+  scrapingJobs        ScrapingJob[]
+  categoryMappings    CategoryMapping[]
+  crossSellAsSource   CrossSellRule[]      @relation("CrossSellSource")
+  crossSellAsTarget   CrossSellRule[]      @relation("CrossSellTarget")
+  useCaseMappings     UseCaseMapping[]     @relation("CategoryUseCases")
+  accessoryAsSource   AccessoryLink[]      @relation("AccessorySource")
+  accessoryAsTarget   AccessoryLink[]      @relation("AccessoryTarget")
+  termDisambiguations TermDisambiguation[] @relation("TermDisambiguation")
 
   @@index([parentId])
   @@index([menuId])
@@ -858,7 +858,7 @@ model policy {
 //   SellerReward/SharedLink (referral rewards), Wishlist.
 // Products default to INACTIVE status and require activation/approval before being visible.
 model Product {
-  id                              Int                       @id @default(autoincrement())
+  id                              String                    @id @default(cuid())
   productName                     String
   categoryId                      Int?
   skuNo                           String                    @unique
@@ -882,7 +882,7 @@ model Product {
   typeProduct                     TypeProduct?
   productViewCount                Int?                      @default(0)
   // Dropshipping fields
-  originalProductId               Int?
+  originalProductId               String?
   dropshipVendorId                Int?
   dropshipMarkup                  Decimal?                  @db.Decimal(8, 2)
   originalVendorId                Int?
@@ -896,10 +896,10 @@ model Product {
   dropshipMaxMarkup               Decimal?                  @db.Decimal(5, 2)
   dropshipSettings                Json?
   // Scrap product markup (for admin bulk add from scrap)
-  scrapMarkup                      Decimal?                  @db.Decimal(10, 2)
-  searchTokens                     String?
+  scrapMarkup                     Decimal?                  @db.Decimal(10, 2)
+  searchTokens                    String?
   // Full-text search vector (managed by DB trigger, not Prisma)
-  search_vector                    Unsupported("tsvector")?
+  search_vector                   Unsupported("tsvector")?
   cart                            Cart[]
   cartProductServices             CartProductService[]
   product_customizeProduct        CustomizeProduct[]
@@ -928,24 +928,24 @@ model Product {
   product_rfqCart                 RFQCart[]
   rfqProduct                      RFQProduct[]
   product_rfqQuotesProducts       RfqQuotesProducts[]
-  suggestedAsAlternative          RfqSuggestedProduct[] @relation("SuggestedProduct")
+  suggestedAsAlternative          RfqSuggestedProduct[]     @relation("SuggestedProduct")
   sellerRewardDetail              SellerReward[]
   sharedLink                      SharedLink[]
   product_wishlist                Wishlist[]
-  productViews                    ProductView[] @relation("ProductViews")
-  productSearches                 ProductSearch[] @relation("ProductSearches")
-  productClicks                   ProductClick[] @relation("ProductClicks")
+  productViews                    ProductView[]             @relation("ProductViews")
+  productSearches                 ProductSearch[]           @relation("ProductSearches")
+  productClicks                   ProductClick[]            @relation("ProductClicks")
 
   // ── Multi-category & Spec Template relations (Phase 1) ──
-  productCategories               ProductCategoryMap[]
-  productSpecValues               ProductSpecValue[]
+  productCategories ProductCategoryMap[]
+  productSpecValues ProductSpecValue[]
 
   // ── Mega Scraper relation ──
-  scrapedProductRaw               ScrapedProductRaw[]
-  scrapedAutoParts                ScrapedAutoPart[]
-  recommendationFeedback          RecommendationFeedback[] @relation("ProductRecommendationFeedback")
-  compatibilityRules              CompatibilityRule[] @relation("ProductCompatibility")
-  productVariants                 ProductVariant[] @relation("ProductVariants")
+  scrapedProductRaw      ScrapedProductRaw[]
+  scrapedAutoParts       ScrapedAutoPart[]
+  recommendationFeedback RecommendationFeedback[] @relation("ProductRecommendationFeedback")
+  compatibilityRules     CompatibilityRule[]      @relation("ProductCompatibility")
+  productVariants        ProductVariant[]         @relation("ProductVariants")
 
   @@index([categoryId, status, deletedAt])
   @@index([userId, status])
@@ -971,7 +971,7 @@ model Product {
 // This is the key join table enabling the multi-seller marketplace: many sellers can offer different prices for one product.
 model ProductPrice {
   id                              Int                  @id @default(autoincrement())
-  productId                       Int?
+  productId                       String?
   adminId                         Int?
   productPrice                    Decimal              @db.Decimal(8, 2)
   offerPrice                      Decimal              @db.Decimal(8, 2)
@@ -1023,7 +1023,7 @@ model ProductPrice {
   productStateDetail              States?              @relation(fields: [productStateId], references: [id])
   productPrice_productPriceReview ProductPriceReview[]
   productPrice_productSellerImage ProductSellerImage[]
-  productPriceVariants            ProductVariant[] @relation("ProductPriceVariants")
+  productPriceVariants            ProductVariant[]     @relation("ProductPriceVariants")
 
   @@index([productId, status])
   @@index([adminId, status])
@@ -1039,7 +1039,7 @@ model ProductPrice {
 // Variant data is stored as flexible JSON to accommodate varying attribute schemas per category.
 model ProductVariant {
   id             Int       @id @default(autoincrement())
-  productId      Int?
+  productId      String?
   productPriceId Int?
   object         Json?
   status         Status    @default(ACTIVE)
@@ -1047,8 +1047,8 @@ model ProductVariant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  product        Product?       @relation("ProductVariants", fields: [productId], references: [id], onDelete: SetNull)
-  productPrice   ProductPrice?  @relation("ProductPriceVariants", fields: [productPriceId], references: [id], onDelete: SetNull)
+  product      Product?      @relation("ProductVariants", fields: [productId], references: [id], onDelete: SetNull)
+  productPrice ProductPrice? @relation("ProductPriceVariants", fields: [productPriceId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([productPriceId])
@@ -1060,7 +1060,7 @@ model ProductVariant {
 // Part of geographic sell restrictions: sellers specify which countries they will serve for a given product.
 model ProductSellCountry {
   id             Int        @id @default(autoincrement())
-  productId      Int?
+  productId      String?
   productPriceId Int?
   countryName    String?
   countryId      Int?
@@ -1081,7 +1081,7 @@ model ProductSellCountry {
 // State-level geographic sell restriction, used alongside ProductSellCountry and ProductSellCity.
 model ProductSellState {
   id             Int       @id @default(autoincrement())
-  productId      Int?
+  productId      String?
   productPriceId Int?
   stateName      String?
   stateId        Int?
@@ -1102,7 +1102,7 @@ model ProductSellState {
 // City-level geographic sell restriction, the most granular sell-region control for products.
 model ProductSellCity {
   id             Int       @id @default(autoincrement())
-  productId      Int?
+  productId      String?
   productPriceId Int?
   cityName       String?
   cityId         Int?
@@ -1143,7 +1143,7 @@ model ProductSellerImage {
 // Multiple rows per product allow structured spec display (e.g., "Weight: 1.5kg", "Material: Steel").
 model ProductSpecification {
   id                           Int       @id @default(autoincrement())
-  productId                    Int?
+  productId                    String?
   adminId                      Int?
   specification                String?
   status                       Status    @default(ACTIVE)
@@ -1162,7 +1162,7 @@ model ProductSpecification {
 // Allows structured short descriptions, potentially per-seller or per-admin.
 model ProductShortDescription {
   id                              Int       @id @default(autoincrement())
-  productId                       Int?
+  productId                       String?
   adminId                         Int?
   shortDescription                String?
   status                          Status    @default(ACTIVE)
@@ -1180,7 +1180,7 @@ model ProductShortDescription {
 // Tags improve product discoverability via search and filtering.
 model ProductTags {
   id                  Int       @id @default(autoincrement())
-  productId           Int
+  productId           String
   tagId               Int
   status              Status    @default(ACTIVE)
   deletedAt           DateTime?
@@ -1200,7 +1200,7 @@ model ProductTags {
 // These are the canonical product images shared across all sellers, unlike ProductSellerImage which is per-seller.
 model ProductImages {
   id                    Int       @id @default(autoincrement())
-  productId             Int
+  productId             String
   image                 String?
   video                 String?
   status                Status    @default(ACTIVE)
@@ -1222,7 +1222,7 @@ model ProductImages {
 // Sellers create reward programs; affiliates share links and earn rewards per sale via SharedLink.
 model SellerReward {
   id               Int       @id @default(autoincrement())
-  productId        Int?
+  productId        String?
   adminId          Int?
   rewardPercentage Decimal?  @db.Decimal(8, 2)
   minimumOrder     Int?
@@ -1248,7 +1248,7 @@ model SellerReward {
 model SharedLink {
   id                    Int       @id @default(autoincrement())
   sellerRewardId        Int?
-  productId             Int?
+  productId             String?
   adminId               Int?
   generatedLink         String?
   linkGeneratedBy       Int?
@@ -1273,7 +1273,7 @@ model SharedLink {
 model ProductReview {
   id                    Int       @id @default(autoincrement())
   userId                Int?
-  productId             Int?
+  productId             String?
   status                Status    @default(ACTIVE)
   title                 String?
   description           String?
@@ -1297,7 +1297,7 @@ model ProductPriceReview {
   id                              Int           @id @default(autoincrement())
   userId                          Int?
   productPriceId                  Int?
-  productId                       Int?
+  productId                       String?
   status                          Status        @default(ACTIVE)
   title                           String?
   description                     String?
@@ -1315,18 +1315,18 @@ model ProductPriceReview {
 }
 
 model ProductView {
-  id            Int       @id @default(autoincrement())
-  userId        Int?
-  deviceId      String?
-  productId     Int
-  viewCount     Int       @default(1)
-  lastViewedAt  DateTime  @default(now())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id           Int       @id @default(autoincrement())
+  userId       Int?
+  deviceId     String?
+  productId    String
+  viewCount    Int       @default(1)
+  lastViewedAt DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  user          User?     @relation("UserProductViews", fields: [userId], references: [id])
-  product       Product   @relation("ProductViews", fields: [productId], references: [id])
+  user    User?   @relation("UserProductViews", fields: [userId], references: [id])
+  product Product @relation("ProductViews", fields: [productId], references: [id])
 
   @@unique([userId, productId])
   @@unique([deviceId, productId])
@@ -1338,18 +1338,18 @@ model ProductView {
 }
 
 model ProductSearch {
-  id            Int       @id @default(autoincrement())
-  userId        Int?
-  deviceId      String?
-  searchTerm    String
-  productId     Int?
-  clicked       Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id         Int       @id @default(autoincrement())
+  userId     Int?
+  deviceId   String?
+  searchTerm String
+  productId  String?
+  clicked    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
 
-  user          User?     @relation("UserProductSearches", fields: [userId], references: [id])
-  product       Product?  @relation("ProductSearches", fields: [productId], references: [id])
+  user    User?    @relation("UserProductSearches", fields: [userId], references: [id])
+  product Product? @relation("ProductSearches", fields: [productId], references: [id])
 
   @@index([userId])
   @@index([deviceId])
@@ -1360,16 +1360,16 @@ model ProductSearch {
 }
 
 model ProductClick {
-  id            Int       @id @default(autoincrement())
-  userId        Int?
-  deviceId      String?
-  productId     Int
-  clickSource   String?
-  createdAt     DateTime  @default(now())
-  deletedAt     DateTime?
+  id          Int       @id @default(autoincrement())
+  userId      Int?
+  deviceId    String?
+  productId   String
+  clickSource String?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
 
-  user          User?     @relation("UserProductClicks", fields: [userId], references: [id])
-  product       Product   @relation("ProductClicks", fields: [productId], references: [id])
+  user    User?   @relation("UserProductClicks", fields: [userId], references: [id])
+  product Product @relation("ProductClicks", fields: [productId], references: [id])
 
   @@index([userId])
   @@index([deviceId])
@@ -1386,7 +1386,7 @@ model ProductClick {
 // Supports a public Q&A section where buyers ask and sellers/other buyers answer questions.
 model ProductQuestion {
   id                          Int                     @id @default(autoincrement())
-  productId                   Int?
+  productId                   String?
   status                      Status                  @default(ACTIVE)
   question                    String?
   questionByuserId            Int?
@@ -1413,7 +1413,7 @@ model ProductQuestion {
 // Enables threaded answers: multiple users can answer the same product/service question.
 model ProductQuestionAnswer {
   id                 Int              @id @default(autoincrement())
-  productId          Int?
+  productId          String?
   status             Status           @default(ACTIVE)
   productQuestionId  Int?
   answer             String?
@@ -1437,7 +1437,7 @@ model ProductDuplicateRfq {
   id        Int       @id @default(autoincrement())
   adminId   Int?
   userId    Int?
-  productId Int?
+  productId String?
   status    Status    @default(ACTIVE)
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -1452,7 +1452,7 @@ model ProductDuplicateFactories {
   id        Int       @id @default(autoincrement())
   adminId   Int?
   userId    Int?
-  productId Int?
+  productId String?
   status    Status    @default(ACTIVE)
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -1469,7 +1469,7 @@ model CustomizeProduct {
   id                          Int                     @id @default(autoincrement())
   sellerId                    Int?
   buyerId                     Int?
-  productId                   Int?
+  productId                   String?
   status                      Status                  @default(ACTIVE)
   note                        String?
   deletedAt                   DateTime?
@@ -1493,7 +1493,7 @@ model CustomizeProduct {
 // Buyers attach reference images or design files to illustrate their customization requirements.
 model CustomizeProductImage {
   id                     Int               @id @default(autoincrement())
-  productId              Int?
+  productId              String?
   customizeProductId     Int?
   status                 Status            @default(ACTIVE)
   link                   String?
@@ -1516,7 +1516,7 @@ model FactoriesCart {
   userId                 Int?
   deviceId               String?
   customizeProductId     Int?
-  productId              Int?
+  productId              String?
   quantity               Int?
   status                 Status            @default(ACTIVE)
   deletedAt              DateTime?
@@ -1542,7 +1542,7 @@ model FactoriesRequest {
   sellerId               Int?
   RequestNo              String?
   customizeProductId     Int?
-  productId              Int?
+  productId              String?
   quantity               Int?
   status                 Status            @default(ACTIVE)
   deletedAt              DateTime?
@@ -1574,7 +1574,7 @@ model FactoriesRequest {
 // Buyers create RFQ products to request quotes; these can reference catalog products or be custom-described items.
 model RFQProduct {
   id                 Int                @id @default(autoincrement())
-  productId          Int?
+  productId          String?
   status             Status             @default(ACTIVE)
   adminId            Int?
   userId             Int?
@@ -1667,7 +1667,7 @@ model Cart {
   id                  Int                  @id @default(autoincrement())
   userId              Int?
   deviceId            String?
-  productId           Int?
+  productId           String?
   quantity            Int?
   cartType            CartType             @default(DEFAULT)
   status              Status               @default(ACTIVE)
@@ -1716,7 +1716,7 @@ model CartServiceFeature {
 // Supports bundled purchases where a product and service are bought together (e.g., product + installation).
 model CartProductService {
   id              Int     @id @default(autoincrement())
-  productId       Int
+  productId       String
   serviceId       Int
   cartId          Int
   cartType        String?
@@ -1746,7 +1746,7 @@ model RFQCart {
   deletedAt              DateTime?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
-  productId              Int?
+  productId              String?
   offerPrice             Decimal?     @db.Decimal(8, 2)
   note                   String?
   offerPriceFrom         Decimal?     @db.Decimal(8, 2)
@@ -1782,8 +1782,8 @@ model Order {
   deletedAt               DateTime?
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
-  transactionId           Int?            // For payment gateway (Paymob) transactions
-  walletTransactionId     Int?            // For wallet transactions (internal platform)
+  transactionId           Int? // For payment gateway (Paymob) transactions
+  walletTransactionId     Int? // For wallet transactions (internal platform)
   totalCashbackToCustomer Decimal?        @db.Decimal(10, 2)
   totalCustomerPay        Decimal?        @db.Decimal(10, 2)
   totalDiscount           Decimal?        @db.Decimal(10, 2)
@@ -1823,28 +1823,28 @@ model OrderSaveCardToken {
 // Relations: orderProductDetail -> OrderProducts[], serviceDetail -> Service.
 // Each seller in a multi-seller order can have a separate shipping record and method.
 model OrderShipping {
-  id                  Int               @id @default(autoincrement())
-  orderId             Int?
-  sellerId            Int?
-  orderShippingType   OrderShippingType
-  serviceId           Int?
-  status              String
-  shippingDate        DateTime?
-  shippingCharge      Decimal?          @db.Decimal(10, 2)
-  deletedAt           DateTime?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  receipt             String?
-  fromTime            DateTime?
-  toTime              DateTime?
+  id                 Int               @id @default(autoincrement())
+  orderId            Int?
+  sellerId           Int?
+  orderShippingType  OrderShippingType
+  serviceId          Int?
+  status             String
+  shippingDate       DateTime?
+  shippingCharge     Decimal?          @db.Decimal(10, 2)
+  deletedAt          DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  receipt            String?
+  fromTime           DateTime?
+  toTime             DateTime?
   // Delivery management fields
-  proofOfDeliveryUrl  String?           // S3 URL for delivery proof photo
-  autoConfirmAt       DateTime?         // When to auto-confirm receipt (DELIVERED + N days)
-  carrierCode         String?           // Normalized carrier: "aramex", "dhl", "fedex"
-  carrierTrackingUrl  String?           // Computed tracking URL for buyer
-  orderProductDetail  OrderProducts[]
-  serviceDetail       Service?          @relation(fields: [serviceId], references: [id])
-  deliveryEvents      DeliveryEvent[]
+  proofOfDeliveryUrl String? // S3 URL for delivery proof photo
+  autoConfirmAt      DateTime? // When to auto-confirm receipt (DELIVERED + N days)
+  carrierCode        String? // Normalized carrier: "aramex", "dhl", "fedex"
+  carrierTrackingUrl String? // Computed tracking URL for buyer
+  orderProductDetail OrderProducts[]
+  serviceDetail      Service?          @relation(fields: [serviceId], references: [id])
+  deliveryEvents     DeliveryEvent[]
 
   @@index([orderId])
   @@index([sellerId])
@@ -1887,7 +1887,7 @@ model OrderProducts {
   id                        Int                   @id @default(autoincrement())
   userId                    Int?
   orderId                   Int?
-  productId                 Int?
+  productId                 String?
   salePrice                 Decimal?              @db.Decimal(10, 2)
   purchasePrice             Decimal?              @db.Decimal(10, 2)
   deletedAt                 DateTime?
@@ -1944,7 +1944,7 @@ model OrderProducts {
 // Persists the product-service bundle pairing from CartProductService into the fulfilled order.
 model OrderProductService {
   id                    Int           @id @default(autoincrement())
-  productId             Int
+  productId             String
   serviceId             Int
   orderProductId        Int
   orderProductType      String?
@@ -1963,11 +1963,11 @@ model DeliveryEvent {
   id              Int            @id @default(autoincrement())
   orderProductId  Int
   orderShippingId Int?
-  event           String         // "CONFIRMED", "SHIPPED", "OFD", "DELIVERED", "RECEIVED", "TRACKING_ADDED", "PICKUP_READY", etc.
-  actor           String         // "SELLER", "BUYER", "SYSTEM", "CARRIER"
+  event           String // "CONFIRMED", "SHIPPED", "OFD", "DELIVERED", "RECEIVED", "TRACKING_ADDED", "PICKUP_READY", etc.
+  actor           String // "SELLER", "BUYER", "SYSTEM", "CARRIER"
   actorUserId     Int?
   note            String?
-  metadata        Json?          // { photoUrl, trackingSnapshot, carrierStatus, pickupCode }
+  metadata        Json? // { photoUrl, trackingSnapshot, carrierStatus, pickupCode }
   createdAt       DateTime       @default(now())
   orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
   orderShipping   OrderShipping? @relation(fields: [orderShippingId], references: [id])
@@ -1982,12 +1982,12 @@ model DeliveryEvent {
 model PickupCode {
   id                Int           @id @default(autoincrement())
   orderProductId    Int           @unique
-  code              String        // 6-char alphanumeric code
-  qrPayload         String        // JSON: { orderProductId, code, sellerId }
+  code              String // 6-char alphanumeric code
+  qrPayload         String // JSON: { orderProductId, code, sellerId }
   status            String        @default("PENDING") // PENDING, COLLECTED, EXPIRED, CANCELLED
   pickupWindowStart DateTime?
   pickupWindowEnd   DateTime?
-  expiresAt         DateTime?     // Auto-cancel deadline
+  expiresAt         DateTime? // Auto-cancel deadline
   collectedAt       DateTime?
   collectedByUserId Int?
   createdAt         DateTime      @default(now())
@@ -2060,7 +2060,7 @@ model DynamicForm {
   id                              Int                   @id @default(autoincrement())
   formData                        String?
   formName                        String?
-  productId                       Int?
+  productId                       String?
   deletedAt                       DateTime?
   createdAt                       DateTime              @default(now())
   updatedAt                       DateTime              @updatedAt
@@ -2177,7 +2177,7 @@ model RfqQuotes {
 model RfqQuotesProducts {
   id                      Int                           @id @default(autoincrement())
   rfqQuotesId             Int?
-  rfqProductId            Int?
+  rfqProductId            String?
   status                  Status                        @default(ACTIVE)
   deletedAt               DateTime?
   createdAt               DateTime                      @default(now())
@@ -2236,7 +2236,7 @@ model Wishlist {
   id                     Int       @id @default(autoincrement())
   status                 Status    @default(ACTIVE)
   userId                 Int?
-  productId              Int?
+  productId              String?
   deletedAt              DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
@@ -2357,24 +2357,24 @@ model RfqQuoteProductPriceRequest {
 }
 
 model RfqSuggestedProduct {
-  id                Int             @id @default(autoincrement())
-  messageId         Int
-  rfqQuoteProductId Int
-  suggestedProductId Int
-  vendorId          Int
-  rfqQuotesUserId   Int
-  offerPrice        Decimal?        @db.Decimal(8, 2)
-  quantity          Int?
-  isSelectedByBuyer Boolean         @default(false)
-  status            Status          @default(ACTIVE)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  deletedAt         DateTime?
-  message           Message         @relation("MessageRfqSuggestedProduct", fields: [messageId], references: [id], onDelete: Cascade)
-  rfqQuoteProduct   RfqQuotesProducts @relation(fields: [rfqQuoteProductId], references: [id])
-  suggestedProduct  Product         @relation("SuggestedProduct", fields: [suggestedProductId], references: [id])
-  vendor            User            @relation("VendorSuggestions", fields: [vendorId], references: [id])
-  rfqQuotesUser     RfqQuotesUsers  @relation(fields: [rfqQuotesUserId], references: [id])
+  id                 Int               @id @default(autoincrement())
+  messageId          Int
+  rfqQuoteProductId  Int
+  suggestedProductId String
+  vendorId           Int
+  rfqQuotesUserId    Int
+  offerPrice         Decimal?          @db.Decimal(8, 2)
+  quantity           Int?
+  isSelectedByBuyer  Boolean           @default(false)
+  status             Status            @default(ACTIVE)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  deletedAt          DateTime?
+  message            Message           @relation("MessageRfqSuggestedProduct", fields: [messageId], references: [id], onDelete: Cascade)
+  rfqQuoteProduct    RfqQuotesProducts @relation(fields: [rfqQuoteProductId], references: [id])
+  suggestedProduct   Product           @relation("SuggestedProduct", fields: [suggestedProductId], references: [id])
+  vendor             User              @relation("VendorSuggestions", fields: [vendorId], references: [id])
+  rfqQuotesUser      RfqQuotesUsers    @relation(fields: [rfqQuotesUserId], references: [id])
 
   @@index([rfqQuoteProductId])
   @@index([vendorId])
@@ -2410,7 +2410,7 @@ model CustomField {
   id        Int       @id @default(autoincrement())
   adminId   Int?
   userId    Int?
-  productId Int?
+  productId String?
   formName  String?
   formData  String?
   status    Status    @default(ACTIVE)
@@ -2782,76 +2782,76 @@ model AccountSession {
 }
 
 model Wallet {
-  id            Int      @id @default(autoincrement())
+  id            Int                 @id @default(autoincrement())
   userId        Int
   userAccountId Int?
-  currencyCode  String   @default("USD")
-  balance       Decimal  @default(0.00) @db.Decimal(15, 2)
-  frozenBalance Decimal  @default(0.00) @db.Decimal(15, 2)
-  status        WalletStatus @default(ACTIVE)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  currencyCode  String              @default("USD")
+  balance       Decimal             @default(0.00) @db.Decimal(15, 2)
+  frozenBalance Decimal             @default(0.00) @db.Decimal(15, 2)
+  status        WalletStatus        @default(ACTIVE)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
-  user          User     @relation(fields: [userId], references: [id])
-  userAccount   User?    @relation("WalletUserAccount", fields: [userAccountId], references: [id])
+  user          User                @relation(fields: [userId], references: [id])
+  userAccount   User?               @relation("WalletUserAccount", fields: [userAccountId], references: [id])
   transactions  WalletTransaction[]
-  transfersFrom WalletTransfer[] @relation("FromWallet")
-  transfersTo   WalletTransfer[] @relation("ToWallet")
+  transfersFrom WalletTransfer[]    @relation("FromWallet")
+  transfersTo   WalletTransfer[]    @relation("ToWallet")
 
   @@unique([userId, userAccountId, currencyCode])
 }
 
 model WalletTransaction {
-  id              Int                    @id @default(autoincrement())
+  id              Int                     @id @default(autoincrement())
   walletId        Int
   transactionType WalletTransactionType
-  amount          Decimal                @db.Decimal(15, 2)
-  balanceBefore   Decimal                @db.Decimal(15, 2)
-  balanceAfter    Decimal                @db.Decimal(15, 2)
+  amount          Decimal                 @db.Decimal(15, 2)
+  balanceBefore   Decimal                 @db.Decimal(15, 2)
+  balanceAfter    Decimal                 @db.Decimal(15, 2)
   referenceId     String?
   referenceType   WalletReferenceType?
   description     String?
   metadata        Json?
   status          WalletTransactionStatus @default(PENDING)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
   deletedAt       DateTime?
-  wallet          Wallet                 @relation(fields: [walletId], references: [id])
+  wallet          Wallet                  @relation(fields: [walletId], references: [id])
 
   @@index([walletId, status])
   @@index([referenceType, referenceId])
 }
 
 model WalletTransfer {
-  id            Int                    @id @default(autoincrement())
-  fromWalletId  Int
-  toWalletId    Int
-  amount        Decimal                @db.Decimal(15, 2)
-  transferFee   Decimal                @default(0.00) @db.Decimal(15, 2)
-  description   String?
-  status        WalletTransactionStatus @default(PENDING)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  deletedAt     DateTime?
-  fromWallet    Wallet                 @relation("FromWallet", fields: [fromWalletId], references: [id])
-  toWallet      Wallet                 @relation("ToWallet", fields: [toWalletId], references: [id])
+  id           Int                     @id @default(autoincrement())
+  fromWalletId Int
+  toWalletId   Int
+  amount       Decimal                 @db.Decimal(15, 2)
+  transferFee  Decimal                 @default(0.00) @db.Decimal(15, 2)
+  description  String?
+  status       WalletTransactionStatus @default(PENDING)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  deletedAt    DateTime?
+  fromWallet   Wallet                  @relation("FromWallet", fields: [fromWalletId], references: [id])
+  toWallet     Wallet                  @relation("ToWallet", fields: [toWalletId], references: [id])
 
   @@index([fromWalletId])
   @@index([toWalletId])
 }
 
 model WalletSettings {
-  id                      Int      @id @default(autoincrement())
-  userId                  Int      @unique
-  autoWithdraw            Boolean  @default(false)
-  withdrawLimit           Decimal  @default(0.00) @db.Decimal(15, 2)
-  dailyLimit              Decimal  @default(0.00) @db.Decimal(15, 2)
-  monthlyLimit            Decimal  @default(0.00) @db.Decimal(15, 2)
+  id                      Int       @id @default(autoincrement())
+  userId                  Int       @unique
+  autoWithdraw            Boolean   @default(false)
+  withdrawLimit           Decimal   @default(0.00) @db.Decimal(15, 2)
+  dailyLimit              Decimal   @default(0.00) @db.Decimal(15, 2)
+  monthlyLimit            Decimal   @default(0.00) @db.Decimal(15, 2)
   notificationPreferences Json?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
   deletedAt               DateTime?
-  user                    User     @relation(fields: [userId], references: [id])
+  user                    User      @relation(fields: [userId], references: [id])
 }
 
 // ExistingProduct — A product from the admin-curated catalog that sellers can adopt/list (pre-approved product template).
@@ -2922,10 +2922,10 @@ model ExistingProductTags {
 model Notification {
   id        Int       @id @default(autoincrement())
   userId    Int
-  type      String    // ORDER, MESSAGE, RFQ, REVIEW, SYSTEM, PAYMENT, SHIPMENT, ACCOUNT
+  type      String // ORDER, MESSAGE, RFQ, REVIEW, SYSTEM, PAYMENT, SHIPMENT, ACCOUNT
   title     String
   message   String    @db.Text
-  data      Json?     // Additional context data
+  data      Json? // Additional context data
   read      Boolean   @default(false)
   readAt    DateTime?
   createdAt DateTime  @default(now())
@@ -3296,23 +3296,23 @@ enum BannerPosition {
 }
 
 model Banner {
-  id          BigInt        @id @default(autoincrement())
+  id          BigInt         @id @default(autoincrement())
   title       String
   subtitle    String?
-  description String?       @db.Text
-  image       String        @db.VarChar(500)
-  link        String?       @db.VarChar(500)
-  buttonText  String?       @default("Shop Now") @db.VarChar(100)
+  description String?        @db.Text
+  image       String         @db.VarChar(500)
+  link        String?        @db.VarChar(500)
+  buttonText  String?        @default("Shop Now") @db.VarChar(100)
   position    BannerPosition @default(MAIN)
-  isActive    Boolean       @default(true)
-  priority    Int           @default(0)
+  isActive    Boolean        @default(true)
+  priority    Int            @default(0)
   startDate   DateTime?
   endDate     DateTime?
-  targetUrl   String?       @db.VarChar(500)
-  clicks      Int           @default(0)
-  views       Int           @default(0)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  targetUrl   String?        @db.VarChar(500)
+  clicks      Int            @default(0)
+  views       Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   @@index([position])
   @@index([isActive])
@@ -3323,23 +3323,23 @@ model Banner {
 }
 
 model SystemLog {
-  id            Int       @id @default(autoincrement())
-  level         String    // ERROR, WARN, INFO, DEBUG
-  message       String    @db.Text
-  context       String?   // Module/Controller name
-  userId        Int?      // User who triggered the action
-  requestId     String?   // Request correlation ID
-  method        String?   // HTTP method
-  path          String?   // API endpoint
-  statusCode    Int?      // HTTP status code
-  errorStack    String?   @db.Text // Stack trace for errors
-  metadata      Json?     // Additional data (request body, query params, etc.)
-  ipAddress     String?
-  userAgent     String?
-  createdAt     DateTime  @default(now())
-  
-  user          User?     @relation(fields: [userId], references: [id])
-  
+  id         Int      @id @default(autoincrement())
+  level      String // ERROR, WARN, INFO, DEBUG
+  message    String   @db.Text
+  context    String? // Module/Controller name
+  userId     Int? // User who triggered the action
+  requestId  String? // Request correlation ID
+  method     String? // HTTP method
+  path       String? // API endpoint
+  statusCode Int? // HTTP status code
+  errorStack String?  @db.Text // Stack trace for errors
+  metadata   Json? // Additional data (request body, query params, etc.)
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
   @@index([level])
   @@index([createdAt])
   @@index([userId])
@@ -3358,18 +3358,18 @@ model SystemLog {
 //   source ("manual"|"keyword"|"tag"|"ai" — how the mapping was created).
 // Replaces the single Product.categoryId FK for multi-category discovery.
 model ProductCategoryMap {
-  id          Int       @id @default(autoincrement())
-  productId   Int
-  categoryId  Int
-  isPrimary   Boolean   @default(false)
-  source      String?   // "manual" | "keyword" | "tag" | "ai"
-  status      Status    @default(ACTIVE)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  productId  String
+  categoryId Int
+  isPrimary  Boolean   @default(false)
+  source     String? // "manual" | "keyword" | "tag" | "ai"
+  status     Status    @default(ACTIVE)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([productId, categoryId])
   @@index([productId])
@@ -3381,15 +3381,15 @@ model ProductCategoryMap {
 // When a product's name/tags/description contains a keyword, it auto-maps to the category.
 // Example: categoryId=5 (Smartphones), keyword="mobile phone" or "cell phone".
 model CategoryKeyword {
-  id          Int       @id @default(autoincrement())
-  categoryId  Int
-  keyword     String
-  status      Status    @default(ACTIVE)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  categoryId Int
+  keyword    String
+  status     Status    @default(ACTIVE)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([categoryId, keyword])
   @@index([keyword])
@@ -3401,16 +3401,16 @@ model CategoryKeyword {
 // Tags become the universal connector: shared tags link products, services, and business types to categories.
 // When a product/service has tags that match a category's tags, it auto-maps to that category.
 model CategoryTag {
-  id          Int       @id @default(autoincrement())
-  categoryId  Int
-  tagId       Int
-  status      Status    @default(ACTIVE)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  categoryId Int
+  tagId      Int
+  status     Status    @default(ACTIVE)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  tag         Tags      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  tag      Tags     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([categoryId, tagId])
   @@index([categoryId])
@@ -3421,18 +3421,18 @@ model CategoryTag {
 // ServiceCategoryMap — Multi-category mapping for services (mirrors ProductCategoryMap for products).
 // Allows services to belong to multiple categories with a primary designation and source tracking.
 model ServiceCategoryMap {
-  id          Int       @id @default(autoincrement())
-  serviceId   Int
-  categoryId  Int
-  isPrimary   Boolean   @default(false)
-  source      String?   // "manual" | "tag" | "ai"
-  status      Status    @default(ACTIVE)
-  deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  serviceId  Int
+  categoryId Int
+  isPrimary  Boolean   @default(false)
+  source     String? // "manual" | "tag" | "ai"
+  status     Status    @default(ACTIVE)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  service     Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  category    Category  @relation("ServiceCategoryMaps", fields: [categoryId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  category Category @relation("ServiceCategoryMaps", fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([serviceId, categoryId])
   @@index([serviceId])
@@ -3462,24 +3462,24 @@ enum SpecDataType {
 //   isRequired (must fill), isFilterable (appears in filter sidebar),
 //   sortOrder (display order), groupName (visual grouping: "Display", "Performance").
 model SpecTemplate {
-  id            Int          @id @default(autoincrement())
-  categoryId    Int
-  name          String       // "Screen Size", "RAM", "Weight"
-  key           String       // "screen_size", "ram", "weight"
-  dataType      SpecDataType @default(TEXT)
-  unit          String?      // "inches", "GB", "kg"
-  options       String?      // for SELECT/MULTI_SELECT: comma-separated e.g. "64GB,128GB,256GB"
-  isRequired    Boolean      @default(false)
-  isFilterable  Boolean      @default(true)
-  sortOrder     Int          @default(0)
-  groupName     String?      // "Display", "Performance", "Physical"
-  status        Status       @default(ACTIVE)
-  deletedAt     DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id           Int          @id @default(autoincrement())
+  categoryId   Int
+  name         String // "Screen Size", "RAM", "Weight"
+  key          String // "screen_size", "ram", "weight"
+  dataType     SpecDataType @default(TEXT)
+  unit         String? // "inches", "GB", "kg"
+  options      String? // for SELECT/MULTI_SELECT: comma-separated e.g. "64GB,128GB,256GB"
+  isRequired   Boolean      @default(false)
+  isFilterable Boolean      @default(true)
+  sortOrder    Int          @default(0)
+  groupName    String? // "Display", "Performance", "Physical"
+  status       Status       @default(ACTIVE)
+  deletedAt    DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  category      Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  specValues    ProductSpecValue[]
+  category   Category           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  specValues ProductSpecValue[]
 
   @@unique([categoryId, key])
   @@index([categoryId, isFilterable])
@@ -3491,18 +3491,18 @@ model SpecTemplate {
 // Fields: value (string representation), numericValue (parsed decimal for range filters).
 // Join between Product and SpecTemplate: each product fills the template's fields.
 model ProductSpecValue {
-  id              Int       @id @default(autoincrement())
-  productId       Int
-  specTemplateId  Int
-  value           String?   // "6.1", "128GB", "true"
-  numericValue    Decimal?  @db.Decimal(12, 4) // parsed numeric for range filters
-  status          Status    @default(ACTIVE)
-  deletedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             Int       @id @default(autoincrement())
+  productId      String
+  specTemplateId Int
+  value          String? // "6.1", "128GB", "true"
+  numericValue   Decimal?  @db.Decimal(12, 4) // parsed numeric for range filters
+  status         Status    @default(ACTIVE)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  product         Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
-  specTemplate    SpecTemplate  @relation(fields: [specTemplateId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  specTemplate SpecTemplate @relation(fields: [specTemplateId], references: [id], onDelete: Cascade)
 
   @@unique([productId, specTemplateId])
   @@index([specTemplateId, value])
@@ -3518,12 +3518,12 @@ model ProductSpecValue {
 // SystemHealthLog — Records health check results for system components.
 // Used by the HealthModule to track database, Redis, S3, and API health over time.
 model SystemHealthLog {
-  id          Int       @id @default(autoincrement())
-  component   String    // "database", "redis", "s3", "openrouter", "sendgrid"
-  status      String    // "healthy", "degraded", "down"
-  responseMs  Int?      // response time in ms
-  details     Json?     // extra diagnostic info
-  checkedAt   DateTime  @default(now())
+  id         Int      @id @default(autoincrement())
+  component  String // "database", "redis", "s3", "openrouter", "sendgrid"
+  status     String // "healthy", "degraded", "down"
+  responseMs Int? // response time in ms
+  details    Json? // extra diagnostic info
+  checkedAt  DateTime @default(now())
 
   @@index([component, checkedAt])
   @@map("system_health_log")
@@ -3537,40 +3537,40 @@ model SystemHealthLog {
 // Created when admin clicks "Run Test". Updated as the test progresses.
 // Relations: StrategyLabCombo (combos in this run), StrategyLabTrade (trades in this run).
 model StrategyLabRun {
-  id              Int       @id @default(autoincrement())
-  name            String?   // Optional name for the run (e.g. "XAUUSD solo M15+H1")
-  mode            String    // "solo" or "combined"
-  configJson      Json      // Full config: assets, timeframes, strategies, equity, stages, min_grade
-  statusRun       String    @default("pending") // "pending", "running", "done", "failed"
-  progress        Int       @default(0) // 0-100 percentage
+  id         Int     @id @default(autoincrement())
+  name       String? // Optional name for the run (e.g. "XAUUSD solo M15+H1")
+  mode       String // "solo" or "combined"
+  configJson Json // Full config: assets, timeframes, strategies, equity, stages, min_grade
+  statusRun  String  @default("pending") // "pending", "running", "done", "failed"
+  progress   Int     @default(0) // 0-100 percentage
 
   // Aggregate results (filled when done)
-  totalCombos     Int       @default(0)
-  qualifiedCombos Int       @default(0)
-  totalTrades     Int       @default(0)
-  totalPnl        Float     @default(0)
-  finalEquity     Float     @default(0)
-  startingEquity  Float     @default(10000)
-  returnPct       Float     @default(0)
-  elapsedSeconds  Float     @default(0)
+  totalCombos     Int   @default(0)
+  qualifiedCombos Int   @default(0)
+  totalTrades     Int   @default(0)
+  totalPnl        Float @default(0)
+  finalEquity     Float @default(0)
+  startingEquity  Float @default(10000)
+  returnPct       Float @default(0)
+  elapsedSeconds  Float @default(0)
 
   // Solo-specific summaries
-  gradesJson      Json?     // {"A": 5, "B": 12, "C": 8, ...}
-  assetSummary    Json?     // Per-asset aggregates
-  strategySummary Json?     // Per-strategy aggregates
-  tfSummary       Json?     // Per-TF aggregates
+  gradesJson      Json? // {"A": 5, "B": 12, "C": 8, ...}
+  assetSummary    Json? // Per-asset aggregates
+  strategySummary Json? // Per-strategy aggregates
+  tfSummary       Json? // Per-TF aggregates
 
   // Combined-specific
-  equityCurve     Json?     // [{stage, equity, time}, ...]
-  stageReports    Json?     // [{stage, trades, pnl, equity, active, paused}, ...]
+  equityCurve  Json? // [{stage, equity, time}, ...]
+  stageReports Json? // [{stage, trades, pnl, equity, active, paused}, ...]
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime? @updatedAt
-  deletedAt       DateTime?
-  status          Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+  deletedAt DateTime?
+  status    Status    @default(ACTIVE)
 
-  combos          StrategyLabCombo[]
-  trades          StrategyLabTrade[]
+  combos StrategyLabCombo[]
+  trades StrategyLabTrade[]
 
   @@index([mode, statusRun])
   @@index([createdAt])
@@ -3580,48 +3580,48 @@ model StrategyLabRun {
 // StrategyLabCombo — Results for one asset×TF×strategy combo within a run.
 // In solo mode: independent metrics. In combined mode: includes stage history and risk multiplier.
 model StrategyLabCombo {
-  id              Int       @id @default(autoincrement())
-  runId           Int
-  run             StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id    Int            @id @default(autoincrement())
+  runId Int
+  run   StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
-  asset           String    // e.g. "XAUUSD"
-  timeframe       String    // e.g. "H1"
-  strategy        String    // e.g. "Momentum"
-  comboKey        String    // e.g. "XAUUSD_Momentum_H1"
-  tier            Int       @default(1) // Asset risk tier 1/2/3
+  asset     String // e.g. "XAUUSD"
+  timeframe String // e.g. "H1"
+  strategy  String // e.g. "Momentum"
+  comboKey  String // e.g. "XAUUSD_Momentum_H1"
+  tier      Int    @default(1) // Asset risk tier 1/2/3
 
   // Metrics
-  totalTrades     Int       @default(0)
-  wins            Int       @default(0)
-  losses          Int       @default(0)
-  winRate         Float     @default(0)
-  profitFactor    Float     @default(0)
-  totalPnl        Float     @default(0)
-  maxDrawdown     Float     @default(0)
-  avgPnl          Float     @default(0)
-  bestTrade       Float     @default(0)
-  worstTrade      Float     @default(0)
+  totalTrades  Int   @default(0)
+  wins         Int   @default(0)
+  losses       Int   @default(0)
+  winRate      Float @default(0)
+  profitFactor Float @default(0)
+  totalPnl     Float @default(0)
+  maxDrawdown  Float @default(0)
+  avgPnl       Float @default(0)
+  bestTrade    Float @default(0)
+  worstTrade   Float @default(0)
 
   // Hit counts
-  tp1Hits         Int       @default(0)
-  tp2Hits         Int       @default(0)
-  tp3Hits         Int       @default(0)
-  slHits          Int       @default(0)
-  expireHits      Int       @default(0)
+  tp1Hits    Int @default(0)
+  tp2Hits    Int @default(0)
+  tp3Hits    Int @default(0)
+  slHits     Int @default(0)
+  expireHits Int @default(0)
 
   // Solo grading
-  grade           String?   // "A", "B", "C", "D", "F"
+  grade String? // "A", "B", "C", "D", "F"
 
   // Combined staging
-  paused          Boolean   @default(false)
-  finalRiskMult   Float     @default(1.0)
-  stageHistory    Json?     // [{stage, pf, trades, pnl, action, risk_mult}, ...]
+  paused        Boolean @default(false)
+  finalRiskMult Float   @default(1.0)
+  stageHistory  Json? // [{stage, pf, trades, pnl, action, risk_mult}, ...]
 
-  createdAt       DateTime  @default(now())
-  deletedAt       DateTime?
-  status          Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  status    Status    @default(ACTIVE)
 
-  trades          StrategyLabTrade[]
+  trades StrategyLabTrade[]
 
   @@index([runId])
   @@index([asset, timeframe, strategy])
@@ -3633,35 +3633,35 @@ model StrategyLabCombo {
 // StrategyLabTrade — Individual trade record within a lab test.
 // Full detail: entry, exit, P&L, level hits, timing, stage number.
 model StrategyLabTrade {
-  id              Int       @id @default(autoincrement())
-  runId           Int
-  run             StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-  comboId         Int
-  combo           StrategyLabCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  id      Int              @id @default(autoincrement())
+  runId   Int
+  run     StrategyLabRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  comboId Int
+  combo   StrategyLabCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
 
-  asset           String
-  timeframe       String
-  strategy        String
-  direction       String    // "buy" or "sell"
-  entryPrice      Float
-  exitPrice       Float?
-  pnl             Float     @default(0)
-  barsHeld        Int       @default(0)
+  asset      String
+  timeframe  String
+  strategy   String
+  direction  String // "buy" or "sell"
+  entryPrice Float
+  exitPrice  Float?
+  pnl        Float  @default(0)
+  barsHeld   Int    @default(0)
 
-  entryTime       String?   // ISO timestamp string
-  exitTime        String?
-  day             String?   // Date string (YYYY-MM-DD)
+  entryTime String? // ISO timestamp string
+  exitTime  String?
+  day       String? // Date string (YYYY-MM-DD)
 
   // Level hits as JSON: [["TP1", 45.20], ["SL", -30.10]]
-  hitsJson        Json?
+  hitsJson Json?
 
   // Combined mode extras
-  stageNumber     Int?
-  riskMult        Float?
+  stageNumber Int?
+  riskMult    Float?
 
-  createdAt       DateTime  @default(now())
-  deletedAt       DateTime?
-  status          Status    @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  status    Status    @default(ACTIVE)
 
   @@index([runId])
   @@index([comboId])
@@ -3675,47 +3675,47 @@ model StrategyLabTrade {
 
 // ScrapingJob — Tracks each scraping task (one per platform+category+region combo).
 model ScrapingJob {
-  id              Int               @id @default(autoincrement())
-  platform        String            // amazon | alibaba | aliexpress | taobao
-  region          String?           // us | ae | uk | de | fr | jp | au | etc.
-  categorySource  String            // source platform category path
-  categoryId      Int?              // mapped Ultrasooq category
-  status          ScrapingJobStatus @default(QUEUED)
-  priority        Int               @default(5) // 1=highest, 10=lowest
+  id             Int               @id @default(autoincrement())
+  platform       String // amazon | alibaba | aliexpress | taobao
+  region         String? // us | ae | uk | de | fr | jp | au | etc.
+  categorySource String // source platform category path
+  categoryId     Int? // mapped Ultrasooq category
+  status         ScrapingJobStatus @default(QUEUED)
+  priority       Int               @default(5) // 1=highest, 10=lowest
 
   // Progress tracking
-  totalProducts   Int               @default(0)
-  scrapedCount    Int               @default(0)
-  failedCount     Int               @default(0)
-  translatedCount Int               @default(0)
-  importedCount   Int               @default(0)
+  totalProducts   Int @default(0)
+  scrapedCount    Int @default(0)
+  failedCount     Int @default(0)
+  translatedCount Int @default(0)
+  importedCount   Int @default(0)
 
   // Anti-blocking
-  retryCount      Int               @default(0)
-  lastError       String?
-  blockedAt       DateTime?
-  cooldownUntil   DateTime?
-  nodeId          String?           // which server processed this
+  retryCount    Int       @default(0)
+  lastError     String?
+  blockedAt     DateTime?
+  cooldownUntil DateTime?
+  nodeId        String? // which server processed this
 
   // Source
   sourceUrl       String
-  sourcePageStart Int               @default(1)
+  sourcePageStart Int    @default(1)
   sourcePageEnd   Int?
 
   // Output
-  exportFilePath  String?
-  batchId         String?           @unique
+  exportFilePath String?
+  batchId        String? @unique
 
   // Timestamps
-  startedAt       DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  deletedAt       DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
   // Relations
-  category        Category?         @relation(fields: [categoryId], references: [id])
-  scrapedProducts ScrapedProductRaw[]
+  category         Category?           @relation(fields: [categoryId], references: [id])
+  scrapedProducts  ScrapedProductRaw[]
   scrapedAutoParts ScrapedAutoPart[]
 
   @@index([platform, status])
@@ -3726,38 +3726,38 @@ model ScrapingJob {
 
 // ScrapedProductRaw — Raw scraped data staging table before processing.
 model ScrapedProductRaw {
-  id              Int                  @id @default(autoincrement())
-  jobId           Int
+  id    Int @id @default(autoincrement())
+  jobId Int
 
   // Raw scraped data (full JSON as-is from scraper)
-  rawData         Json
-  sourceUrl       String               @unique
-  sourcePlatform  String
+  rawData        Json
+  sourceUrl      String @unique
+  sourcePlatform String
 
   // Extracted key fields for querying
-  productName     String?
-  productNameEn   String?              // translated English name
-  priceOriginal   Decimal?             @db.Decimal(10, 2)
-  priceCurrency   String?              // CNY, USD, EUR, etc.
-  priceUsd        Decimal?             @db.Decimal(10, 2) // converted to USD
+  productName   String?
+  productNameEn String? // translated English name
+  priceOriginal Decimal? @db.Decimal(10, 2)
+  priceCurrency String? // CNY, USD, EUR, etc.
+  priceUsd      Decimal? @db.Decimal(10, 2) // converted to USD
 
   // Processing pipeline status
-  status          ScrapedProductStatus @default(RAW)
-  translatedAt    DateTime?
-  mappedAt        DateTime?
-  importedAt      DateTime?
-  productId       Int?                 // FK to Product after import
+  status       ScrapedProductStatus @default(RAW)
+  translatedAt DateTime?
+  mappedAt     DateTime?
+  importedAt   DateTime?
+  productId    String? // FK to Product after import
 
   // Translation cache
-  translatedData  Json?                // full translated version of rawData
-  imageTexts      Json?                // OCR-extracted text from product images
+  translatedData Json? // full translated version of rawData
+  imageTexts     Json? // OCR-extracted text from product images
 
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  job             ScrapingJob          @relation(fields: [jobId], references: [id])
-  product         Product?             @relation(fields: [productId], references: [id])
+  job     ScrapingJob @relation(fields: [jobId], references: [id])
+  product Product?    @relation(fields: [productId], references: [id])
 
   @@index([jobId, status])
   @@index([sourcePlatform, status])
@@ -3767,25 +3767,25 @@ model ScrapedProductRaw {
 
 // CategoryMapping — Maps source platform categories to Ultrasooq categories.
 model CategoryMapping {
-  id                  Int       @id @default(autoincrement())
-  sourcePlatform      String    // amazon | alibaba | aliexpress | taobao
-  sourcePath          String    // e.g. "Electronics > Smartphones > Android"
-  sourceId            String?   // platform's own category ID
+  id             Int     @id @default(autoincrement())
+  sourcePlatform String // amazon | alibaba | aliexpress | taobao
+  sourcePath     String // e.g. "Electronics > Smartphones > Android"
+  sourceId       String? // platform's own category ID
 
   // Mapping result
   ultrasooqCategoryId Int?
-  confidence          Float     @default(0) // AI confidence 0.0–1.0
-  isVerified          Boolean   @default(false) // human reviewed?
-  aiReasoning         String?   // AI's reasoning for the mapping
+  confidence          Float   @default(0) // AI confidence 0.0–1.0
+  isVerified          Boolean @default(false) // human reviewed?
+  aiReasoning         String? // AI's reasoning for the mapping
 
   // Stats
-  productCount        Int       @default(0)
+  productCount Int @default(0)
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  category            Category? @relation(fields: [ultrasooqCategoryId], references: [id])
+  category Category? @relation(fields: [ultrasooqCategoryId], references: [id])
 
   @@unique([sourcePlatform, sourcePath])
   @@index([ultrasooqCategoryId])
@@ -3818,65 +3818,65 @@ enum ScrapedProductStatus {
 // ═══════════════════════════════════════════════════════════════
 
 model ScrapedAutoPart {
-  id              Int       @id @default(autoincrement())
-  jobId           Int?
+  id    Int  @id @default(autoincrement())
+  jobId Int?
 
   // Part identification
-  partNumber      String
-  partNumberAlt   String[]  @default([])
-  name            String
-  nameOriginal    String?
-  description     String?
+  partNumber    String
+  partNumberAlt String[] @default([])
+  name          String
+  nameOriginal  String?
+  description   String?
 
   // Pricing
-  price           Decimal?  @db.Decimal(10, 2)
-  currency        String?
-  msrp            Decimal?  @db.Decimal(10, 2)
+  price    Decimal? @db.Decimal(10, 2)
+  currency String?
+  msrp     Decimal? @db.Decimal(10, 2)
 
   // Categorization
-  category        String
-  subcategory     String?
-  partGroup       String?
+  category    String
+  subcategory String?
+  partGroup   String?
 
   // Vehicle compatibility (stored as JSON array)
-  vehicles        Json      @default("[]")
-  fitmentNotes    String?
+  vehicles     Json    @default("[]")
+  fitmentNotes String?
 
   // Images and diagrams
-  images          Json?     @default("[]")
+  images          Json?   @default("[]")
   diagramId       String?
   diagramPosition String?
 
   // Source
-  sourceUrl       String    @unique
-  sourcePlatform  String
-  brand           String?
-  isGenuine       Boolean   @default(true)
+  sourceUrl      String  @unique
+  sourcePlatform String
+  brand          String?
+  isGenuine      Boolean @default(true)
 
   // Stock
-  inStock         Boolean?
-  stockQuantity   Int?
-  leadTime        String?
+  inStock       Boolean?
+  stockQuantity Int?
+  leadTime      String?
 
   // Cross-references
-  crossReferences String[]  @default([])
+  crossReferences String[] @default([])
   supersededBy    String?
-  interchangeWith String[]  @default([])
+  interchangeWith String[] @default([])
 
   // Processing
-  status          ScrapedProductStatus @default(RAW)
-  translatedAt    DateTime?
-  importedAt      DateTime?
-  productId       Int?
+  status       ScrapedProductStatus @default(RAW)
+  translatedAt DateTime?
+  importedAt   DateTime?
+  productId    String?
 
   // Raw data
-  rawData         Json?
+  rawData Json?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  job             ScrapingJob? @relation(fields: [jobId], references: [id])
-  product         Product?     @relation(fields: [productId], references: [id])
+  job     ScrapingJob? @relation(fields: [jobId], references: [id])
+  product Product?     @relation(fields: [productId], references: [id])
 
   @@index([partNumber])
   @@index([sourcePlatform, status])
@@ -3887,31 +3887,31 @@ model ScrapedAutoPart {
 }
 
 model PartsDiagram {
-  id              Int       @id @default(autoincrement())
-  diagramId       String    @unique
-  name            String
-  imageUrl        String
-  svgUrl          String?
+  id        Int     @id @default(autoincrement())
+  diagramId String  @unique
+  name      String
+  imageUrl  String
+  svgUrl    String?
 
   // Vehicle
-  vehicleMake     String
-  vehicleModel    String
-  vehicleYear     Int?
-  vehicleEngine   String?
+  vehicleMake   String
+  vehicleModel  String
+  vehicleYear   Int?
+  vehicleEngine String?
 
   // Categorization
-  category        String
-  subcategory     String?
+  category    String
+  subcategory String?
 
   // Parts in this diagram (JSON array of DiagramPart)
-  parts           Json      @default("[]")
+  parts Json @default("[]")
 
   // Source
-  sourceUrl       String
-  sourcePlatform  String
+  sourceUrl      String
+  sourcePlatform String
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([vehicleMake, vehicleModel])
   @@index([sourcePlatform])
@@ -3983,7 +3983,7 @@ model RecommendationFeedback {
   recId      String   @db.VarChar(100)
   userId     Int?
   deviceId   String?  @db.VarChar(100)
-  productId  Int
+  productId  String
   algorithm  String   @db.VarChar(50)
   placement  String   @db.VarChar(50)
   position   Int
@@ -3992,8 +3992,8 @@ model RecommendationFeedback {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user    User?    @relation("UserRecommendationFeedback", fields: [userId], references: [id])
-  product Product  @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
+  user    User?   @relation("UserRecommendationFeedback", fields: [userId], references: [id])
+  product Product @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
 
   @@index([createdAt])
   @@index([recId])
@@ -4033,18 +4033,19 @@ model RecommendationConfig {
 // ── Search Intelligence: Knowledge Graph Models ──────────────────────────────
 
 model UseCaseMapping {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   categoryId   Int
-  useCase      String   @db.VarChar(100)
+  useCase      String    @db.VarChar(100)
   impliedSpecs Json
   impliedTags  Json?
-  weight       Decimal  @default(0.8) @db.Decimal(3,2)
-  source       String   @default("manual") @db.VarChar(20)
-  status       Status   @default(ACTIVE)
+  weight       Decimal   @default(0.8) @db.Decimal(3, 2)
+  source       String    @default("manual") @db.VarChar(20)
+  status       Status    @default(ACTIVE)
   deletedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  category     Category @relation("CategoryUseCases", fields: [categoryId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  category     Category  @relation("CategoryUseCases", fields: [categoryId], references: [id])
+
   @@unique([categoryId, useCase])
   @@index([categoryId])
   @@index([useCase])
@@ -4052,20 +4053,21 @@ model UseCaseMapping {
 }
 
 model CompatibilityRule {
-  id           Int      @id @default(autoincrement())
-  productId    Int
-  vehicleMake  String?  @db.VarChar(100)
-  vehicleModel String?  @db.VarChar(100)
+  id           Int       @id @default(autoincrement())
+  productId    String
+  vehicleMake  String?   @db.VarChar(100)
+  vehicleModel String?   @db.VarChar(100)
   yearFrom     Int?
   yearTo       Int?
-  deviceBrand  String?  @db.VarChar(100)
-  deviceModel  String?  @db.VarChar(100)
-  compatType   String   @db.VarChar(20)
-  status       Status   @default(ACTIVE)
+  deviceBrand  String?   @db.VarChar(100)
+  deviceModel  String?   @db.VarChar(100)
+  compatType   String    @db.VarChar(20)
+  status       Status    @default(ACTIVE)
   deletedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  product      Product  @relation("ProductCompatibility", fields: [productId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  product      Product   @relation("ProductCompatibility", fields: [productId], references: [id])
+
   @@index([productId])
   @@index([vehicleMake, vehicleModel])
   @@index([deviceBrand, deviceModel])
@@ -4073,33 +4075,35 @@ model CompatibilityRule {
 }
 
 model AccessoryLink {
-  id                  Int      @id @default(autoincrement())
+  id                  Int       @id @default(autoincrement())
   sourceCategoryId    Int
   accessoryCategoryId Int
-  strength            Decimal  @default(0.8) @db.Decimal(3,2)
-  bidirectional       Boolean  @default(false)
-  status              Status   @default(ACTIVE)
+  strength            Decimal   @default(0.8) @db.Decimal(3, 2)
+  bidirectional       Boolean   @default(false)
+  status              Status    @default(ACTIVE)
   deletedAt           DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  sourceCategory      Category @relation("AccessorySource", fields: [sourceCategoryId], references: [id])
-  accessoryCategory   Category @relation("AccessoryTarget", fields: [accessoryCategoryId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  sourceCategory      Category  @relation("AccessorySource", fields: [sourceCategoryId], references: [id])
+  accessoryCategory   Category  @relation("AccessoryTarget", fields: [accessoryCategoryId], references: [id])
+
   @@unique([sourceCategoryId, accessoryCategoryId])
   @@index([sourceCategoryId])
   @@map("accessory_links")
 }
 
 model TermDisambiguation {
-  id              Int      @id @default(autoincrement())
-  term            String   @db.VarChar(100)
+  id              Int       @id @default(autoincrement())
+  term            String    @db.VarChar(100)
   categoryId      Int
-  resolvedMeaning String   @db.VarChar(200)
-  priority        Int      @default(0)
-  status          Status   @default(ACTIVE)
+  resolvedMeaning String    @db.VarChar(200)
+  priority        Int       @default(0)
+  status          Status    @default(ACTIVE)
   deletedAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  category        Category @relation("TermDisambiguation", fields: [categoryId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  category        Category  @relation("TermDisambiguation", fields: [categoryId], references: [id])
+
   @@index([term])
   @@index([categoryId])
   @@map("term_disambiguations")
@@ -4108,19 +4112,19 @@ model TermDisambiguation {
 // ─── Complaint & Refund ─────────────────────────────────────────
 
 model Complaint {
-  id              Int            @id @default(autoincrement())
-  orderProductId  Int
-  buyerId         Int
-  sellerId        Int?
-  reason          String         // damaged, wrong_item, missing, not_described, late, quality, seller, other
-  description     String         @db.Text
-  status          String         @default("OPEN") // OPEN, IN_REVIEW, RESOLVED, REJECTED
-  resolution      String?
-  resolvedAt      DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
-  buyer           User           @relation("ComplaintBuyer", fields: [buyerId], references: [id])
+  id             Int           @id @default(autoincrement())
+  orderProductId Int
+  buyerId        Int
+  sellerId       Int?
+  reason         String // damaged, wrong_item, missing, not_described, late, quality, seller, other
+  description    String        @db.Text
+  status         String        @default("OPEN") // OPEN, IN_REVIEW, RESOLVED, REJECTED
+  resolution     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  orderProduct   OrderProducts @relation(fields: [orderProductId], references: [id])
+  buyer          User          @relation("ComplaintBuyer", fields: [buyerId], references: [id])
 
   @@index([orderProductId])
   @@index([buyerId])
@@ -4128,19 +4132,19 @@ model Complaint {
 }
 
 model RefundRequest {
-  id              Int            @id @default(autoincrement())
-  orderProductId  Int
-  buyerId         Int
-  amount          Decimal?       @db.Decimal(10, 2)
-  reason          String
-  notes           String?        @db.Text
-  status          String         @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
-  adminNote       String?
-  processedAt     DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  orderProduct    OrderProducts  @relation(fields: [orderProductId], references: [id])
-  buyer           User           @relation("RefundBuyer", fields: [buyerId], references: [id])
+  id             Int           @id @default(autoincrement())
+  orderProductId Int
+  buyerId        Int
+  amount         Decimal?      @db.Decimal(10, 2)
+  reason         String
+  notes          String?       @db.Text
+  status         String        @default("PENDING") // PENDING, APPROVED, REJECTED, PROCESSED
+  adminNote      String?
+  processedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  orderProduct   OrderProducts @relation(fields: [orderProductId], references: [id])
+  buyer          User          @relation("RefundBuyer", fields: [buyerId], references: [id])
 
   @@index([orderProductId])
   @@index([buyerId])

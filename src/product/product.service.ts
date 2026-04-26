@@ -1715,7 +1715,7 @@ export class ProductService {
 
       var otherSeller;
 
-      const productID = parseInt(productId);
+      const productID = String(productId);
 
       // Return cached result for anonymous views (no userId, no sharedLinkId)
       const isAnonymous = !userId && !req?.query?.sharedLinkId;

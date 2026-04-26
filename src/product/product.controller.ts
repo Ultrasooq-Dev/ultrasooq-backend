@@ -324,7 +324,7 @@ export class ProductController {
   @Get('/findOne')
   findOne(
     @Request() req,
-    @Query('productId') productId: number,
+    @Query('productId') productId: string,
     @Query('userId') userId: number,
   ) {
     return this.productService.findOne(productId, req, userId);

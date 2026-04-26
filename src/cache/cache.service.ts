@@ -16,7 +16,7 @@ export const CACHE_KEYS = {
   CATEGORY_MENU: (categoryId: number) => `categories:menu:${categoryId}`,
   CATEGORY_LEVEL_ONE: 'categories:levelone',
   CATEGORY_SPECS: (catId: number) => `categories:${catId}:specs`,
-  PRODUCT_DETAIL: (productId: number) => `product:${productId}`,
+  PRODUCT_DETAIL: (productId: string | number) => `product:${productId}`,
   PRODUCT_LIST_CATEGORY: (categoryId: string, page: number) => `products:cat:${categoryId}:page:${page}`,
   FILTER_VALUES: (catId: number) => `filters:${catId}`,
   CATEGORY_TAGS: (catId: number) => `categories:${catId}:tags`,
@@ -166,20 +166,20 @@ export class CacheService implements OnModuleInit {
   }
 
   // ── Product Detail ──
-  async getProductDetail<T>(productId: number): Promise<T | null> {
+  async getProductDetail<T>(productId: string | number): Promise<T | null> {
     return this.get<T>(CACHE_KEYS.PRODUCT_DETAIL(productId));
   }
 
-  async setProductDetail<T>(productId: number, product: T): Promise<void> {
+  async setProductDetail<T>(productId: string | number, product: T): Promise<void> {
     await this.set(CACHE_KEYS.PRODUCT_DETAIL(productId), product, CACHE_TTL.PRODUCT_DETAIL);
   }
 
-  async invalidateProduct(productId: number): Promise<void> {
+  async invalidateProduct(productId: string | number): Promise<void> {
     await this.del(CACHE_KEYS.PRODUCT_DETAIL(productId));
   }
 
   // ── Bulk Invalidation ──
-  async invalidateProductAndFilters(productId: number, categoryIds: number[]): Promise<void> {
+  async invalidateProductAndFilters(productId: string | number, categoryIds: number[]): Promise<void> {
     await this.invalidateProduct(productId);
     for (const catId of categoryIds) {
       await this.del(CACHE_KEYS.FILTER_VALUES(catId));
