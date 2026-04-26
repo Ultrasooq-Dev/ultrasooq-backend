@@ -1,9 +1,9 @@
 export const REC_KEYS = {
   profile: (userId: number) => `rec:profile:${userId}`,
   personal: (userId: number) => `rec:personal:${userId}`,
-  cobought: (productId: number) => `rec:cobought:${productId}`,
-  similar: (productId: number) => `rec:similar:${productId}`,
-  crosssell: (productId: number) => `rec:crosssell:${productId}`,
+  cobought: (productId: string) => `rec:cobought:${productId}`,
+  similar: (productId: string) => `rec:similar:${productId}`,
+  crosssell: (productId: string) => `rec:crosssell:${productId}`,
   segTrending: (locale: string, role: string) => `rec:seg:${locale}:${role}:trending`,
   segTrendingCat: (locale: string, role: string, catId: number) => `rec:seg:${locale}:${role}:trending:${catId}`,
   segNew: (locale: string, role: string) => `rec:seg:${locale}:${role}:new`,

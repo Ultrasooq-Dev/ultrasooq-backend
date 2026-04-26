@@ -41,7 +41,7 @@ export class RecommendationController {
   @Get('product/:productId')
   @ApiOperation({ summary: 'Get product-based recommendations' })
   async getProductRecs(
-    @Param('productId', ParseIntPipe) productId: number,
+    @Param('productId') productId: string,
     @Query() query: ProductRecommendationQueryDto,
     @Req() req: any,
   ) {

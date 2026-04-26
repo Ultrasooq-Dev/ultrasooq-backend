@@ -115,7 +115,7 @@ export class UpdatedProductPriceDto {
   productPriceId: number;
 
   // @IsNumber()
-  // productId: number;
+  // productId: string;
 
   /** @description Updated seller unit price (up to 2 decimal places, min 0). */
   @IsOptional()

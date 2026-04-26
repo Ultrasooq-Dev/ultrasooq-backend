@@ -35,7 +35,7 @@ export class WishlistService {
    * Note: The success response key is `messsage` (three s's) -- a known typo
    * preserved here to maintain API compatibility.
    *
-   * @param payload - Request body; expected shape: `{ productId: number }`.
+   * @param payload - Request body; expected shape: `{ productId: string }`.
    * @param req     - Express request object; `req.user.id` provides the authenticated user ID.
    * @returns Object with `status`, `messsage`/`message`, and `data`.
    */
@@ -221,7 +221,7 @@ export class WishlistService {
   async deleteWishList(productId: any, req: any) {
     try {
       const userId = req?.user?.id;
-      const productID = parseInt(productId);
+      const productID = productId;
 
       // Look up the wishlist entry by user and product
       let existWishList = await this.prisma.wishlist.findFirst({

@@ -125,7 +125,7 @@ export class ScrapedProductMapper {
      */
     static toDropshipProductDto(
         scrapedProduct: ScrapedProduct,
-        originalProductId: number,
+        originalProductId: string,
         vendorId: number,
         markupPercentage: number,
         options?: {
@@ -136,7 +136,7 @@ export class ScrapedProductMapper {
         }
     ): CreateProductFromScrapedDataDto & {
         isDropshipped: boolean;
-        originalProductId: number;
+        originalProductId: string;
         dropshipVendorId: number;
         dropshipMarkup: number;
     } {

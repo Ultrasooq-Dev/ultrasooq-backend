@@ -261,7 +261,7 @@ export class ChatController {
    */
   @UseGuards(AuthGuard)
   @Get('/product')
-  async getProduct(@Query('productId', ParseIntPipe) productId: number) {
+  async getProduct(@Query('productId') productId: string) {
     return this.chatService.getProductDetails(productId);
   }
 
@@ -285,7 +285,7 @@ export class ChatController {
   @UseGuards(AuthGuard)
   @Get('/product/messages')
   async getMessage(
-    @Query('productId', ParseIntPipe) productId: number,
+    @Query('productId') productId: string,
     @Query('sellerId', ParseIntPipe) sellerId: number,
   ) {
     return this.chatService.getMessagesByUsers(productId, sellerId);
@@ -493,7 +493,7 @@ export class ChatController {
   @Put('/rooms/:roomId/rfq-products/:productId')
   async updateRfqAlternative(
     @Param('roomId', ParseIntPipe) roomId: number,
-    @Param('productId', ParseIntPipe) productId: number,
+    @Param('productId') productId: string,
     @Body() payload: UpdateRfqAlternativeDto,
     @Request() req: any,
   ) {

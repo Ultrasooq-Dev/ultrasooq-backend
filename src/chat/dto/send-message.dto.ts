@@ -26,7 +26,7 @@ import { Filterable } from '../../content-filter/decorators/filterable.decorator
 export class SuggestedProductItemDto {
   @IsNotEmpty()
   @IsNumber()
-  suggestedProductId: number;
+  suggestedProductId: string;
 
   @IsOptional()
   @IsNumber()

@@ -184,7 +184,7 @@ export class BuygroupSchedulerService {
   private async sendBuygroupNotification(
     userIds: number[],
     productName: string,
-    productId: number,
+    productId: string,
     productPriceId: number,
     saleType: 'coming_soon' | 'started' | 'ending_soon',
     timeRemaining?: number,

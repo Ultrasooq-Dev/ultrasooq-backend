@@ -59,7 +59,7 @@ export class AttributeExtractorService {
    *
    * Returns the number of spec values upserted.
    */
-  async extractAndSave(productId: number): Promise<number> {
+  async extractAndSave(productId: string): Promise<number> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: {

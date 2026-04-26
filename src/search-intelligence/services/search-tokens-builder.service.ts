@@ -63,7 +63,7 @@ export class SearchTokensBuilderService {
   /**
    * Build and persist searchTokens + search_vector for a single product.
    */
-  async buildAndSave(productId: number): Promise<void> {
+  async buildAndSave(productId: string): Promise<void> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: {

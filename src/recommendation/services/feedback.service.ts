@@ -14,7 +14,7 @@ export class FeedbackService {
   async trackFeedback(
     data: {
       recId: string;
-      productId: number;
+      productId: string;
       action: string;
       placement?: string;
       position?: number;

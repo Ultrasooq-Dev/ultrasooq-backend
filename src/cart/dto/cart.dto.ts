@@ -195,7 +195,7 @@ export class AddCartServiceProdDto {
   @IsNotEmpty()
   @IsInt()
   @IsPositive()
-  productId: number;
+  productId: string;
 
   /**
    * @property productPriceId

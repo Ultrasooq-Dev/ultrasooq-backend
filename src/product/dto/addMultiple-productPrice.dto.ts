@@ -74,7 +74,7 @@ export class ProductPriceDTO {
   @IsNotEmpty()
   @IsInt()
   @IsPositive()
-  productId: number;
+  productId: string;
 
   /** @description Seller's listed unit price. */
   @IsOptional()

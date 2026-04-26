@@ -63,7 +63,7 @@ export class UpdateProductTypeDTO {
     /** @property {number} productId - The unique identifier of the product to update. Required, must be a number. */
     @IsNotEmpty()
     @IsNumber()
-    productId: number;
+    productId: string;
 
     /** @property {TypeProduct} [typeProduct] - The new product type classification. Optional; must be one of the {@link TypeProduct} enum values when provided. */
     @IsOptional()

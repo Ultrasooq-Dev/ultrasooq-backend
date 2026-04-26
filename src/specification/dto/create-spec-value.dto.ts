@@ -20,7 +20,7 @@ export class SpecValueInput {
 
 export class CreateSpecValuesDto {
   @IsInt()
-  productId: number;
+  productId: string;
 
   @IsArray()
   @ValidateNested({ each: true })

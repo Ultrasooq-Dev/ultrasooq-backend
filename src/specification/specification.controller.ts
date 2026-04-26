@@ -90,7 +90,7 @@ export class SpecificationController {
   }
 
   @Get('value/:productId')
-  getSpecValues(@Param('productId', ParseIntPipe) productId: number) {
+  getSpecValues(@Param('productId') productId: string) {
     return this.specService.getSpecValues(productId);
   }
 
@@ -136,20 +136,20 @@ export class SpecificationController {
 
   @Post('product-categories/:productId')
   setProductCategories(
-    @Param('productId', ParseIntPipe) productId: number,
+    @Param('productId') productId: string,
     @Body() body: { categoryIds: number[]; primaryCategoryId?: number },
   ) {
     return this.specService.setProductCategories(productId, body.categoryIds, body.primaryCategoryId);
   }
 
   @Get('product-categories/:productId')
-  getProductCategories(@Param('productId', ParseIntPipe) productId: number) {
+  getProductCategories(@Param('productId') productId: string) {
     return this.specService.getProductCategories(productId);
   }
 
   @Post('auto-categorize/:productId')
   @HttpCode(HttpStatus.OK)
-  autoCategorize(@Param('productId', ParseIntPipe) productId: number) {
+  autoCategorize(@Param('productId') productId: string) {
     return this.specService.autoCategorize(productId);
   }
 

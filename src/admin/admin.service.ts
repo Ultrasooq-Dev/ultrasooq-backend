@@ -818,7 +818,7 @@ export class AdminService {
   // not in use
   async getOneProductOld(productId: any, req: any) {
     try {
-      const productID = parseInt(productId);
+      const productID = productId;
       let productDetail = await this.prisma.product.findUnique({
         where: { id: productID },
         include: {
@@ -910,7 +910,7 @@ export class AdminService {
    */
   async getOneProduct(productId: any, req: any) {
     try {
-      const productID = parseInt(productId);
+      const productID = productId;
       let productDetail = await this.prisma.product.findUnique({
         where: { id: productID },
         include: {
@@ -1017,7 +1017,7 @@ export class AdminService {
       let Page = parseInt(page) || 1;
       let pageSize = parseInt(limit) || 10;
       const skip = (Page - 1) * pageSize; // Calculate the offset
-      let productID = parseInt(productId);
+      let productID = productId;
       let sort = {};
       if (sortType == 'oldest') {
         sort = { createdAt: 'asc' };
@@ -1142,7 +1142,7 @@ export class AdminService {
    */
   async deleteProduct(productId: any, req: any) {
     try {
-      let ID = parseInt(productId);
+      let ID = productId;
       let updatedProduct = await this.prisma.product.update({
         where: { id: ID },
         data: {

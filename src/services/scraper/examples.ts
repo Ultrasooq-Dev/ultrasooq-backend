@@ -124,7 +124,7 @@ export async function example3_createProduct(
 export async function example4_dropshippingProduct(
     scraperService: ScraperService,
     prisma: PrismaClient,
-    originalProductId: number,
+    originalProductId: string,
     vendorId: number,
     categoryId: number
 ) {
@@ -283,7 +283,7 @@ export async function example7_tagsManagement(
 export async function example8_priceMonitoring(
     scraperService: ScraperService,
     prisma: PrismaClient,
-    productId: number
+    productId: string
 ) {
     // Get product from database
     const product = await prisma.product.findUnique({

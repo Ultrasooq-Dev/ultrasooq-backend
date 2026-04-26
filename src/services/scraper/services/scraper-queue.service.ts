@@ -148,7 +148,7 @@ export class ScraperQueueService {
 
   /** Add a batch text-translation job. */
   async addTranslateJob(data: {
-    productIds: number[];
+    productIds: string[];
     batchIndex: number;
   }): Promise<Job> {
     return this.translateTextQueue.add(
@@ -164,7 +164,7 @@ export class ScraperQueueService {
 
   /** Add an image-translation job for a single product. */
   async addImageTranslateJob(data: {
-    productId: number;
+    productId: string;
     imageUrls: string[];
   }): Promise<Job> {
     return this.translateImageQueue.add(
@@ -188,7 +188,7 @@ export class ScraperQueueService {
     region?: string;
     format: 'json' | 'csv';
     batchId: string;
-    productIds: number[];
+    productIds: string[];
   }): Promise<Job> {
     return this.exportQueue.add(`export-${data.batchId}`, data, {
       attempts: 1,

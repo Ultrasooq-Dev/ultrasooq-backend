@@ -71,7 +71,7 @@ export class WishlistController {
    */
   @UseGuards(AuthGuard)
   @Delete('/delete')
-  deleteWishList(@Request() req, @Query('productId') productId: number) {
+  deleteWishList(@Request() req, @Query('productId') productId: string) {
     return this.wishlistService.deleteWishList(productId, req);
   }
 

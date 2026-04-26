@@ -61,7 +61,7 @@ export async function notifyNewMessage(
   senderName: string,
   messageId: number,
   roomId: number,
-  productId?: number,
+  productId?: string,
 ) {
   const link = productId
     ? `/trending/${productId}?chat=true`
@@ -107,7 +107,7 @@ export async function notifyNewReview(
   userId: number,
   productName: string,
   reviewId: number,
-  productId: number,
+  productId: string,
 ) {
   return notificationService.createNotification({
     userId,
@@ -192,7 +192,7 @@ export async function notifyStockChange(
   notificationService: NotificationService,
   userId: number,
   productName: string,
-  productId: number,
+  productId: string,
   productPriceId: number,
   stockLevel: number,
   changeType: 'out_of_stock' | 'back_in_stock' | 'low_stock',
@@ -241,7 +241,7 @@ export async function notifyPriceChange(
   notificationService: NotificationService,
   userId: number,
   productName: string,
-  productId: number,
+  productId: string,
   productPriceId: number,
   oldPrice: number,
   newPrice: number,
@@ -280,7 +280,7 @@ export async function notifyBuygroupSale(
   notificationService: NotificationService,
   userId: number,
   productName: string,
-  productId: number,
+  productId: string,
   productPriceId: number,
   saleType: 'coming_soon' | 'started' | 'ending_soon',
   timeRemaining?: number,
@@ -402,7 +402,7 @@ async function getAllAdminUserIds(prisma: PrismaService): Promise<number[]> {
  */
 export async function notifyAdminsNewProduct(
   notificationService: NotificationService,
-  productId: number,
+  productId: string,
   productName: string,
   userId: number,
   prisma: PrismaService,
@@ -497,7 +497,7 @@ export async function notifyAdminsIdentityProofUpload(
  */
 export async function notifyAdminsDropshipableProduct(
   notificationService: NotificationService,
-  productId: number,
+  productId: string,
   productName: string,
   userId: number,
   prisma: PrismaService,

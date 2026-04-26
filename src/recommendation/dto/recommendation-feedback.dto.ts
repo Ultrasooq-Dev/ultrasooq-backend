@@ -9,7 +9,7 @@ export class RecommendationFeedbackDto {
 
   @ApiProperty({ example: 1 })
   @IsInt()
-  productId: number;
+  productId: string;
 
   @ApiProperty({ enum: ['impression', 'click', 'cart', 'purchase', 'dismiss'] })
   @IsIn(['impression', 'click', 'cart', 'purchase', 'dismiss'])

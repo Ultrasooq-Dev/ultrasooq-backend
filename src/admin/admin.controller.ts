@@ -353,7 +353,7 @@ export class AdminController {
    */
   @UseGuards(SuperAdminAuthGuard)
   @Get('/getOneProduct')
-  getOneProduct(@Request() req, @Query('productId') productId: number) {
+  getOneProduct(@Request() req, @Query('productId') productId: string) {
     return this.adminService.getOneProduct(productId, req);
   }
 
@@ -386,7 +386,7 @@ export class AdminController {
     @Request() req,
     @Query('page') page: number,
     @Query('limit') limit: number,
-    @Query('productId') productId: number,
+    @Query('productId') productId: string,
     @Query('sortType') sortType: string,
   ) {
     return this.adminService.getOneProductAllQuestion(
@@ -454,7 +454,7 @@ export class AdminController {
   @UseGuards(SuperAdminAuthGuard)
   @Delete('/deleteProduct/:productId')
   deleteProduct(
-    @Param('productId') productId: number,
+    @Param('productId') productId: string,
     @Request() req,
     @Body() payload: any,
   ) {

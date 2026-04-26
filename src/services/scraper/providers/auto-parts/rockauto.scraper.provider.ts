@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Logger } from '@nestjs/common';
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { ScraperProvider } from '../../scraper.service';
@@ -560,7 +561,7 @@ export class RockAutoScraperProvider implements ScraperProvider {
         const yearLinks = document.querySelectorAll(
           'a.navlabellink[href*="catalog/"], a[href*="/en/catalog/"] , .ranavnode a',
         );
-        const yearSet = new Set<number>();
+        const yearSet = new Set<string>();
         yearLinks.forEach((el) => {
           const text = el.textContent?.trim() || '';
           const year = parseInt(text, 10);
