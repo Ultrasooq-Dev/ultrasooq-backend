@@ -69,6 +69,33 @@ export class ProductBuyGroupService {
 
       const currentDateTime = new Date();
 
+      // Word-bounded prefix search via existing tsvector index. Avoids the
+      // unbounded LIKE '%car%' bug where "car" matched "skincare", "caring", etc.
+      let searchProductIds: number[] | null = null;
+      if (searchTerm) {
+        const tsQuery = String(searchTerm)
+          .split(/\s+/)
+          .map((w) => w.replace(/[^a-z0-9]/gi, ''))
+          .filter((w) => w.length > 1)
+          .map((w) => `${w}:*`)
+          .join(' & ');
+        if (tsQuery) {
+          const rows = await this.prisma.$queryRawUnsafe<Array<{ id: number }>>(
+            `SELECT id FROM "Product" WHERE search_vector @@ to_tsquery('simple', $1)`,
+            tsQuery,
+          );
+          searchProductIds = rows.map((r) => r.id);
+          if (searchProductIds.length === 0) {
+            return {
+              status: true,
+              message: 'Fetch Successfully',
+              data: [],
+              totalCount: 0,
+            };
+          }
+        }
+      }
+
       let whereCondition: any = {
         productType: {
           in: ['P'],
@@ -102,87 +129,7 @@ export class ProductBuyGroupService {
 
         adminId: myProduct,
 
-        OR: searchTerm
-          ? [
-              {
-                productName: {
-                  contains: searchTerm,
-
-                  mode: 'insensitive',
-                },
-              },
-
-              {
-                brand: {
-                  brandName: {
-                    contains: searchTerm,
-
-                    mode: 'insensitive',
-                  },
-                },
-              },
-
-              {
-                category: {
-                  name: {
-                    contains: searchTerm,
-
-                    mode: 'insensitive',
-                  },
-                },
-              },
-
-              {
-                skuNo: {
-                  contains: searchTerm,
-
-                  mode: 'insensitive',
-                },
-              },
-
-              {
-                description: {
-                  contains: searchTerm,
-
-                  mode: 'insensitive',
-                },
-              },
-
-              {
-                shortDescription: {
-                  contains: searchTerm,
-
-                  mode: 'insensitive',
-                },
-              },
-
-              {
-                productTags: {
-                  some: {
-                    productTagsTag: {
-                      tagName: {
-                        contains: searchTerm,
-
-                        mode: 'insensitive',
-                      },
-                    },
-                  },
-                },
-              },
-
-              {
-                product_productShortDescription: {
-                  some: {
-                    shortDescription: {
-                      contains: searchTerm,
-
-                      mode: 'insensitive',
-                    },
-                  },
-                },
-              },
-            ]
-          : undefined,
+        id: searchProductIds ? { in: searchProductIds } : undefined,
       };
 
       if (priceMin && priceMax) {

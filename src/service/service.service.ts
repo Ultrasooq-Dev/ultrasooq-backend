@@ -197,38 +197,41 @@ export class ServiceService {
       const offset = (page - 1) * limit;
       const sortType = sort ? sort : 'desc';
       let searchTerm = term?.length > 2 ? term : '';
-      
+
+      // Word-bounded prefix search via POSIX regex (`\m` = start-of-word).
+      // Avoids the unbounded LIKE '%car%' bug where "car" matched "skincare", "haircut", etc.
+      let searchServiceIds: number[] | null = null;
+      if (searchTerm) {
+        const words = String(searchTerm)
+          .split(/\s+/)
+          .map((w) => w.replace(/[^a-z0-9]/gi, ''))
+          .filter((w) => w.length > 1);
+        if (words.length > 0) {
+          // Match if ANY word appears at a word boundary in serviceName/description/tag.
+          const regex = `\\m(${words.map((w) => w.toLowerCase()).join('|')})`;
+          const rows = await this.prisma.$queryRawUnsafe<Array<{ id: number }>>(
+            `SELECT DISTINCT s.id FROM "Service" s
+             LEFT JOIN "ServiceTag" st ON st."serviceId" = s.id
+             LEFT JOIN "Tags" t ON t.id = st."tagId"
+             WHERE s."serviceName" ~* $1
+                OR s.description ~* $1
+                OR t."tagName" ~* $1`,
+            regex,
+          );
+          searchServiceIds = rows.map((r) => r.id);
+          if (searchServiceIds.length === 0) {
+            return {
+              success: true,
+              message: 'services list fetched successfully',
+              data: { services: [], total: 0, limit },
+            };
+          }
+        }
+      }
 
       let query: Prisma.ServiceWhereInput;
       query = {
-        OR: searchTerm
-          ? [
-              {
-                serviceName: {
-                  contains: searchTerm,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                description: {
-                  contains: searchTerm,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                serviceTags: {
-                  some: {
-                    tag: {
-                      tagName: {
-                        contains: searchTerm,
-                        mode: 'insensitive',
-                      },
-                    },
-                  },
-                },
-              },
-            ]
-          : undefined,
+        id: searchServiceIds ? { in: searchServiceIds } : undefined,
         status: { in: ['ACTIVE'] }
       };
       if (ownService) {
