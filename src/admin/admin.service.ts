@@ -4791,7 +4791,7 @@ export class AdminService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // AI STATUS
+  // AI STATUS - returns OpenRouter env presence + page settings
   // ═══════════════════════════════════════════════════════════════════════
 
   async getAiStatus(req: any) {
@@ -4804,7 +4804,30 @@ export class AdminService {
       for (const s of settings) {
         statusMap[s.slug] = s.setting;
       }
-      return { status: true, message: 'AI status fetched', data: statusMap };
+
+      const apiKey = process.env.OPENROUTER_API_KEY || '';
+      const textModel = (process.env.OPENROUTER_MODEL || 'qwen/qwen-2.5-72b-instruct,deepseek/deepseek-chat-v3').split(',')[0].trim();
+      const visionModel = process.env.OPENROUTER_VISION_MODEL || 'openai/gpt-4.1-mini';
+
+      const aiApprovedUsers = await this.prisma.user.count({
+        where: {
+          deletedAt: null,
+          status: { not: 'DELETE' },
+          statusNote: { contains: 'verification', mode: 'insensitive' },
+        },
+      });
+
+      return {
+        status: true,
+        message: 'AI status fetched',
+        data: {
+          apiKeyConfigured: apiKey.length > 0,
+          textModel,
+          visionModel,
+          aiApprovedUsers,
+          ...statusMap,
+        },
+      };
     } catch (error) {
       return { status: false, message: 'Error in getAiStatus', error: getErrorMessage(error) };
     }
