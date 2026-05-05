@@ -4913,9 +4913,9 @@ export class ProductService {
       });
 
       return {
-        status: false,
+        status: true,
 
-        message: 'error in addCountry',
+        message: 'country added successfully',
 
         data: addCountry,
       };
