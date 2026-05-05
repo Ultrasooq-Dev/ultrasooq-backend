@@ -202,6 +202,7 @@ export class ProductSearchService {
           product_productPrice: {
             where: {
               status: 'ACTIVE',
+              ...sellTypeFilter,
             },
             include: {
               productPrice_productSellerImage: true,
