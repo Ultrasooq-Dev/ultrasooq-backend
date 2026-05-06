@@ -1709,9 +1709,38 @@ export class UserService {
         payload.email = payload.email.toLowerCase();
       }
 
-      let userDetail = await this.prisma.user.findUnique({
+      const masterAccount = await this.prisma.masterAccount.findUnique({
         where: { email: payload.email },
       });
+      if (!masterAccount) {
+        return {
+          status: false,
+          message:
+            'If you are register users you will get the instruction of reset password shortly',
+          data: [],
+        };
+      }
+
+      let userDetail = masterAccount.lastActiveUserId
+        ? await this.prisma.user.findFirst({
+            where: {
+              id: masterAccount.lastActiveUserId,
+              masterAccountId: masterAccount.id,
+              deletedAt: null,
+              isActive: true,
+            },
+          })
+        : null;
+      if (!userDetail) {
+        userDetail = await this.prisma.user.findFirst({
+          where: {
+            masterAccountId: masterAccount.id,
+            tradeRole: 'BUYER',
+            deletedAt: null,
+            isActive: true,
+          },
+        });
+      }
       if (!userDetail) {
         return {
           status: false,
@@ -1743,8 +1772,8 @@ export class UserService {
           restokenData.accessToken;
 
         let data = {
-          email: userDetail.email,
-          name: userDetail.firstName,
+          email: masterAccount.email,
+          name: masterAccount.firstName || userDetail.firstName,
           otp: otp,
           link: link,
         };
@@ -1788,11 +1817,38 @@ export class UserService {
    */
   async verifyOtp(payload: any) {
     try {
-      const email = payload.email;
+      const email = String(payload.email || '').toLowerCase();
       const otp = payload.otp;
-      const userDetail = await this.prisma.user.findUnique({
+      const masterAccount = await this.prisma.masterAccount.findUnique({
         where: { email },
       });
+      if (!masterAccount) {
+        return {
+          status: false,
+          message: 'User not found',
+          data: [],
+        };
+      }
+      let userDetail = masterAccount.lastActiveUserId
+        ? await this.prisma.user.findFirst({
+            where: {
+              id: masterAccount.lastActiveUserId,
+              masterAccountId: masterAccount.id,
+              deletedAt: null,
+              isActive: true,
+            },
+          })
+        : null;
+      if (!userDetail) {
+        userDetail = await this.prisma.user.findFirst({
+          where: {
+            masterAccountId: masterAccount.id,
+            tradeRole: 'BUYER',
+            deletedAt: null,
+            isActive: true,
+          },
+        });
+      }
       if (!userDetail) {
         return {
           status: false,
@@ -1815,7 +1871,7 @@ export class UserService {
         };
       }
       let updatedUserDetail = await this.prisma.user.update({
-        where: { email },
+        where: { id: userDetail.id },
         data: {
           otp: null,
           otpValidTime: null,
@@ -1876,6 +1932,13 @@ export class UserService {
           where: { id: userId },
           data: { resetPassword: 0, password: password },
         });
+
+        if (userDetail.masterAccountId) {
+          await this.prisma.masterAccount.update({
+            where: { id: userDetail.masterAccountId },
+            data: { password: password },
+          });
+        }
 
         return {
           status: true,

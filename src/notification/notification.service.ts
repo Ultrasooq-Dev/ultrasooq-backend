@@ -23,9 +23,43 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 const sgMail = require('@sendgrid/mail');
-if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY !== 'placeholder') {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+const _devMailLogger = new Logger('DevMail');
+const _origSend = sgMail.send.bind(sgMail);
+let _sgKeySet = false;
+const _isSendgridConfigured = () =>
+  !!process.env.SENDGRID_API_KEY &&
+  process.env.SENDGRID_API_KEY !== 'placeholder' &&
+  !!process.env.SENDGRID_SENDER;
+const _logDevFallback = (msg: any, reason: string) => {
+  const otpMatch =
+    typeof msg?.html === 'string'
+      ? msg.html.match(/Your OTP\s*:\s*(\d+)/i)
+      : null;
+  _devMailLogger.warn(
+    `[DEV-MAIL] ${reason}. to=${msg?.to} subject="${msg?.subject}"${otpMatch ? ` OTP=${otpMatch[1]}` : ''}`,
+  );
+};
+sgMail.send = async (msg: any) => {
+  if (!_isSendgridConfigured()) {
+    _logDevFallback(msg, 'SendGrid not configured');
+    return [{ statusCode: 202 }, {}];
+  }
+  if (!_sgKeySet) {
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    _sgKeySet = true;
+  }
+  try {
+    return await _origSend(msg);
+  } catch (err: any) {
+    const code = err?.code || err?.response?.statusCode;
+    const sgMsg = err?.response?.body?.errors?.[0]?.message;
+    _logDevFallback(
+      msg,
+      `SendGrid rejected (${code}${sgMsg ? `: ${sgMsg}` : ''}) — falling back to console`,
+    );
+    return [{ statusCode: 202 }, {}];
+  }
+};
 
 
 @Injectable()
