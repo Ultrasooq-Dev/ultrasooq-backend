@@ -7,6 +7,11 @@
  * Coexists with the legacy custom JWT/OTP auth at /api/v1/user/* during
  * the migration. See MIGRATION_TODO.mdx at repo root.
  */
+// Load .env early — this module runs at import time, BEFORE Nest's
+// ConfigModule has had a chance to populate process.env. Without this,
+// process.env.DATABASE_URL is undefined and the underlying pg driver
+// silently falls back to defaults, causing "table does not exist" errors.
+import 'dotenv/config';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { bearer } from 'better-auth/plugins';
@@ -42,6 +47,13 @@ export const auth = betterAuth({
       cc: { type: 'string', required: false },
       legacyUserId: { type: 'number', required: false },
       legacyMasterAccountId: { type: 'number', required: false },
+      // Populated by PATCH /api/v1/user/me/trade-role at register Step 3.
+      companyName: { type: 'string', required: false },
+      companyAddress: { type: 'string', required: false },
+      companyPhone: { type: 'string', required: false },
+      companyWebsite: { type: 'string', required: false },
+      companyTaxId: { type: 'string', required: false },
+      accountName: { type: 'string', required: false },
     },
   },
   account: { modelName: 'betterAuthAccount' },

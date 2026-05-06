@@ -4266,6 +4266,17 @@ model BetterAuthUser {
   legacyUserId          Int?    @unique
   legacyMasterAccountId Int?    @unique
 
+  // Profile fields populated by PATCH /api/v1/user/me/trade-role at register Step 3.
+  // Mirrors the legacy User shape so we can drop the legacy User table later.
+  // COMPANY-only fields:
+  companyName     String?
+  companyAddress  String?
+  companyPhone    String?
+  companyWebsite  String?
+  companyTaxId    String?
+  // FREELANCER-only field:
+  accountName     String?
+
   sessions BetterAuthSession[]
   accounts BetterAuthAccount[]
 

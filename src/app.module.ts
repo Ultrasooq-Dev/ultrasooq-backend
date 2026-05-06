@@ -86,6 +86,7 @@ import { ContentFilterModule } from './content-filter/content-filter.module';
 import { RecommendationModule } from './recommendation/recommendation.module';
 import { SearchIntelligenceModule } from './search-intelligence/search-intelligence.module';
 import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingestion.module';
+import { AuthBetterModule } from './auth-better/auth-better.module';
 
 @Module({
   imports: [
@@ -184,6 +185,7 @@ import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingest
     RecommendationModule, // Recommendation engine — personalized, product-based, trending
     SearchIntelligenceModule, // Search intelligence — query parsing, intent classification, category/brand resolution
     AnalyticsIngestionModule, // Analytics ingestion — public event/error endpoints, session tracking
+    AuthBetterModule,     // Better Auth-aware endpoints (PATCH /user/me/trade-role, etc.) — see MIGRATION_TODO.mdx
   ],
   controllers: [AppController],
   providers: [
