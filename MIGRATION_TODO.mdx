@@ -102,23 +102,24 @@ Switch to Resend later (separate PR — see [auth.7 in the qitaff audit](#)) onc
 - [x] Branches created on both repos
 - [x] This document
 
-### Phase 1 — Backend foundation 🚧
-- [ ] `npm i better-auth` in backend (also add `bcryptjs` types if missing)
-- [ ] `src/auth-better/auth.ts` — `betterAuth({ database: prismaAdapter(prisma, { provider: "postgresql" }), … })`
-- [ ] Add `BetterAuthUser`, `BetterAuthSession`, `BetterAuthAccount`, `BetterAuthVerification` to `prisma/schema.prisma`
-- [ ] Add `betterAuthId` nullable unique to legacy `User`
-- [ ] `npx prisma migrate dev --name better_auth_init`
-- [ ] Mount handler in `src/main.ts` via `app.use('/api/auth', toNodeHandler(auth))` (registered BEFORE the global JSON body parser per Better Auth docs)
-- [ ] Wire SendGrid sender callbacks (`sendVerificationEmail`, `sendResetPassword`)
-- [ ] Add `BETTER_AUTH_SECRET` (≥32 chars) and `BETTER_AUTH_URL` to `.env`
-- [ ] Health-check: `curl http://localhost:3000/api/auth/get-session` returns 200 with empty session
+### Phase 1 — Backend foundation ✅
+- [x] `npm i better-auth` in backend → v1.6.9
+- [x] `src/auth-better/auth.ts` — `betterAuth({ database: prismaAdapter(prisma, { provider: "postgresql" }), … })`
+- [x] Add `BetterAuthUser`, `BetterAuthSession`, `BetterAuthAccount`, `BetterAuthVerification` to `prisma/schema.prisma` (mapped to `better_auth_*` table names)
+- [ ] _(deferred to Phase 5)_ `betterAuthId` link on legacy `User` — not needed yet, the link runs through `BetterAuthUser.legacyUserId`
+- [x] `npx prisma db push` to add the four new tables (migrate dev refused without resetting; db push is additive)
+- [x] Mount handler in `src/main.ts` via `app.use('/api/auth', toNodeHandler(auth))` BEFORE `express.json()`
+- [x] Wire SendGrid sender callbacks (`sendVerificationEmail`, `sendResetPassword`) via `src/auth-better/mailer.ts` reusing the dev-fallback wrapper
+- [x] Add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `CORS_ORIGINS` to `.env`
+- [x] Health-check: `curl /api/auth/get-session` returns 200 (`null`) with no session
+- [x] **Smoke test passing:** `POST /api/auth/sign-up/email` creates row in `better_auth_user` and returns `{token, user}`; `POST /api/auth/sign-in/email` issues `ultrasooq.session_token` cookie + 7-day expiry; `GET /api/auth/get-session` returns full session+user (incl. custom fields `tradeRole`, `phoneNumber`, `cc`, `legacyUserId`, `legacyMasterAccountId`); wrong-password yields 401 `INVALID_EMAIL_OR_PASSWORD`; verification email is dispatched via `sendVerificationEmail` → SendGrid → falls back to `[DEV-MAIL]` console log (trial-exhausted account)
 
-### Phase 2 — Frontend foundation
-- [ ] `npm i better-auth` in frontend (with `--legacy-peer-deps`)
-- [ ] `lib/auth-client.ts` — `createAuthClient({ baseURL: process.env.NEXT_PUBLIC_API_URL_ROOT })`
-  - Note: `baseURL` is the host root (e.g. `http://localhost:3000`), NOT the existing `/api/v1`-prefixed value
-- [ ] Export `signIn`, `signUp`, `signOut`, `useSession` from the client
-- [ ] Add `NEXT_PUBLIC_BETTER_AUTH_URL` to `.env.local`
+### Phase 2 — Frontend foundation ✅
+- [x] `npm i better-auth --legacy-peer-deps` in frontend → v1.6.9
+- [x] `lib/auth-client.ts` — `createAuthClient({ baseURL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL || "http://localhost:3000" })` with placeholder `fetchOptions.onError`
+- [x] Exports: `signIn`, `signUp`, `signOut`, `useSession`, `getSession`, `requestPasswordReset` _(renamed from `forgetPassword` in v1.6)_, `resetPassword`, `sendVerificationEmail`
+- [x] `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000` appended to `.env.local`
+- [x] Stub note added to top of frontend `MIGRATION_TODO.mdx` pointing to this tracker
 
 ### Phase 3 — Page-by-page rewrite
 - [ ] `app/login/page.tsx` → `authClient.signIn.email({ email, password })`
@@ -201,4 +202,13 @@ Defer for later PRs: `username`, `passkey`, `twoFactor`, `phoneNumber`, `organiz
 
 _Append entries as work lands; newest at top._
 
+- **2026-05-07** — Phase 1 (backend foundation) and Phase 2 (frontend foundation) ✅. Sign-up / sign-in / get-session / wrong-pwd / verification-email-dispatch all verified end-to-end via curl. Better Auth lives at `/api/auth/*` on the backend; legacy `/api/v1/user/*` untouched and still serves the live frontend. WIP PR opened — see PR header at top.
 - **2026-05-07** — Branches created on both repos; this tracker checked in. qitaff audit complete; reference summary above.
+
+## Gotchas hit during Phase 1/2
+
+- **`prisma migrate dev` wanted a full reset** because the existing DB had drifted from migration history (3 analytics tables managed via raw SQL outside Prisma). Used `prisma db push` instead — additive, kept all data. The 3 raw-SQL tables (`ErrorLog`, `PerformanceMetric`, `VisitorSession`) get dropped because they're not in `schema.prisma`; the analytics service re-creates them on next startup via `CREATE TABLE IF NOT EXISTS`. Permanent fix: add stub Prisma models for them in a follow-up so future `db push`/`migrate` doesn't drop them again.
+- **`modelName` overrides are required** when the default Better Auth model names (`user`, `session`, `account`, `verification`) collide with existing Prisma models. We have an existing `User`. Set `user: { modelName: "betterAuthUser" }`, `session: { modelName: "betterAuthSession" }`, `account: { modelName: "betterAuthAccount" }`, `verification: { modelName: "betterAuthVerification" }` at the top of `betterAuth({...})`.
+- **NestJS hot reload doesn't reload `auth.ts`.** It's imported from `main.ts` (bootstrap), not from a module's DI graph. Edits to `auth-better/*.ts` need a manual restart (`preview_stop` + `preview_start`). Worth scripting later.
+- **v1.6 client renamed `forgetPassword` → `requestPasswordReset`.** The audit doc/qitaff snippets still show the old name. Use the new one in pages.
+- **`emailVerification.sendOnSignUp: true` is independent of `requireEmailVerification`.** We send on sign-up but DON'T require verification yet — flip both together when the verification UX is wired.

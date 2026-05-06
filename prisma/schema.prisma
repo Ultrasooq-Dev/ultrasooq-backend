@@ -4241,3 +4241,83 @@ model KnowledgeBase {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
+
+// ══════════════════════════════════════════════════════════════
+// Better Auth — managed by the better-auth library via prismaAdapter.
+// These four tables hold all sessions, credentials, and verification
+// tokens for the new auth system. They live alongside the legacy User
+// / MasterAccount tables during the JWT→Better Auth migration.
+// See MIGRATION_TODO.mdx at repo root.
+// ══════════════════════════════════════════════════════════════
+
+model BetterAuthUser {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // additionalFields (declared in better-auth config; must exist here too)
+  tradeRole             String? // "BUYER" | "FREELANCER" | "COMPANY"
+  phoneNumber           String?
+  cc                    String?
+  legacyUserId          Int?    @unique
+  legacyMasterAccountId Int?    @unique
+
+  sessions BetterAuthSession[]
+  accounts BetterAuthAccount[]
+
+  @@index([email])
+  @@map("better_auth_user")
+}
+
+model BetterAuthSession {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+
+  user BetterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("better_auth_session")
+}
+
+model BetterAuthAccount {
+  id                    String    @id
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String? // bcrypt for credential provider
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user BetterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("better_auth_account")
+}
+
+model BetterAuthVerification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("better_auth_verification")
+}

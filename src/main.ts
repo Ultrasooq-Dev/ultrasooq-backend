@@ -57,6 +57,8 @@ import * as compression from 'compression';
 import helmet from 'helmet';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth-better/auth';
 
 // Pino logger configuration
 import { Logger } from 'nestjs-pino';
@@ -126,6 +128,11 @@ async function bootstrap() {
       level: 6, // Balanced compression level (1 = fastest, 9 = best compression)
     }),
   );
+
+  // Better Auth handler — must be mounted BEFORE express.json() so the
+  // library can parse raw request bodies. Lives at /api/auth/* and is
+  // outside the global /api/v1 prefix. See MIGRATION_TODO.mdx.
+  app.use('/api/auth', toNodeHandler(auth));
 
   // Configure body parser for larger payloads
   const maxRequestSize = process.env.MAX_REQUEST_SIZE || '10mb';
