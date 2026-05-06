@@ -1,0 +1,204 @@
+# Custom JWT/OTP → Better Auth Migration
+
+**Status:** 🚧 In progress (Phase 1 — foundation)
+**Branch:** `migrate/better-auth` on both `ultrasooq-backend` and `ultrasooq-frontend`
+**PR:** _pending_
+**Reference:** [`/Users/yasseralsaidi/dev/projects/react/qitaff`](file:///Users/yasseralsaidi/dev/projects/react/qitaff) — Next.js + Prisma + PostgreSQL Better Auth integration we are mirroring at the auth-library level.
+
+## Goal
+
+Replace the bespoke auth stack (custom JWT, refresh tokens, OTP, hand-rolled `/user/register`, `/user/login`, `/user/forgetPassword`, etc.) with [Better Auth](https://better-auth.com) so we get:
+
+- Standard sign-in/sign-up flows out of the box
+- Sessions + refresh as a first-class concern (no more bespoke `RefreshToken` table or rotation logic)
+- Email verification, password reset, OTP, magic-link, social providers via plugins
+- Built-in defenses (CSRF, cookie security, brute-force lockouts) the team doesn't have to maintain
+- A small, predictable client SDK on the frontend instead of `apis/requests/auth.requests.ts` + `AuthContext` + axios refresh interceptor
+
+## Non-goals (this PR)
+
+- Removing the legacy `User` / `MasterAccount` tables — they still hold profile/business data referenced by ~120 other models. They stay.
+- Migrating every existing user immediately — see _Phase 5_ for the data-migration plan.
+- Breaking session continuity for already-logged-in users — they will be asked to sign in once after deploy.
+
+---
+
+## Architecture decision: Better Auth lives in the NestJS backend
+
+Two viable homes for the `auth` instance:
+
+| Option | Pro | Con |
+|---|---|---|
+| Backend (NestJS, port 3000) | Colocates with Postgres + existing Prisma + SendGrid; backend stays the API source of truth; reuses CORS already wired to `:4001` | Mounting `/api/auth/*` in NestJS needs `toNodeHandler` + `app.use` glue |
+| Frontend (Next.js, port 4001) | Standard Better Auth pattern (`/app/api/auth/[...all]/route.ts`); zero glue | Auth state would live in the frontend while business data lives in backend; awkward split |
+
+→ **Backend wins.** Mount path `/api/auth/*` (note: no `/v1` prefix — the existing global prefix excludes it).
+
+### URL surface after migration
+
+| Layer | Old | New |
+|---|---|---|
+| Sign-in | `POST /api/v1/user/login` | `POST /api/auth/sign-in/email` |
+| Sign-up | `POST /api/v1/user/register` + `POST /api/v1/user/registerValidateOtp` | `POST /api/auth/sign-up/email` (verification email handled by Better Auth) |
+| Forgot password | `POST /api/v1/user/forgetPassword` + `verifyOtp` + `resetPassword` | `POST /api/auth/request-password-reset` + `POST /api/auth/reset-password` |
+| Refresh | `POST /api/v1/auth/refresh` | n/a — Better Auth manages session sliding window |
+| Logout | `POST /api/v1/auth/logout` | `POST /api/auth/sign-out` |
+| Session check | `GET /api/v1/user/me` (custom) | `GET /api/auth/get-session` |
+
+Frontend uses `authClient.signIn.email()`, `authClient.signUp.email()`, `authClient.requestPasswordReset()`, `authClient.resetPassword()`, `authClient.signOut()`, `authClient.useSession()` — no manual fetches.
+
+---
+
+## Schema strategy: coexistence then cleanup
+
+Better Auth's Prisma adapter expects four core tables plus plugin-specific ones. We add them alongside the existing models, namespaced so there's no collision:
+
+| Better Auth table | Prisma model name | DB table |
+|---|---|---|
+| user | `BetterAuthUser` | `better_auth_user` (via `@@map`) |
+| session | `BetterAuthSession` | `better_auth_session` |
+| account | `BetterAuthAccount` | `better_auth_account` |
+| verification | `BetterAuthVerification` | `better_auth_verification` |
+
+A nullable `betterAuthId String? @unique` is added to the legacy `User` table to link a legacy `User` row (which holds tradeRole, masterAccountId, customerId, stripeAccountId, …) to its new `BetterAuthUser`. Once everyone is migrated, we can either fold the legacy fields into `BetterAuthUser` via `additionalFields` or keep the join — to be decided in a follow-up PR.
+
+### Custom user fields on `BetterAuthUser`
+
+Added via Better Auth's `user.additionalFields` so they're typed end-to-end:
+
+```ts
+user: {
+  additionalFields: {
+    tradeRole: { type: ["BUYER", "FREELANCER", "COMPANY"], required: true, defaultValue: "BUYER" },
+    phoneNumber: { type: "string", required: false },
+    cc: { type: "string", required: false },
+    legacyUserId: { type: "number", required: false },          // FK back to User.id
+    legacyMasterAccountId: { type: "number", required: false }, // FK back to MasterAccount.id
+  },
+},
+```
+
+(Final list TBD — will mirror what the front-end forms collect at sign-up.)
+
+---
+
+## Email transport
+
+Stay on SendGrid via the existing wrapper at [`src/notification/notification.service.ts`](src/notification/notification.service.ts) — already handles "trial credits exhausted → log to console" gracefully. Three new senders to wire:
+
+- `emailVerification.sendVerificationEmail({ user, url })` → reuse mailService HTML template
+- `emailAndPassword.sendResetPassword({ user, url, token })` → reuse sendOtp template (swap "OTP" copy for a clickable link)
+- `emailOTP.sendVerificationOTP({ email, otp, type })` (if we keep an OTP code path for parity with current UX) → existing OTP HTML template
+
+Switch to Resend later (separate PR — see [auth.7 in the qitaff audit](#)) once we decide.
+
+---
+
+## Phases
+
+### Phase 0 — Reference + plan ✅
+- [x] Audit qitaff Better Auth setup
+- [x] Decide architecture (backend hosts `auth`)
+- [x] Branches created on both repos
+- [x] This document
+
+### Phase 1 — Backend foundation 🚧
+- [ ] `npm i better-auth` in backend (also add `bcryptjs` types if missing)
+- [ ] `src/auth-better/auth.ts` — `betterAuth({ database: prismaAdapter(prisma, { provider: "postgresql" }), … })`
+- [ ] Add `BetterAuthUser`, `BetterAuthSession`, `BetterAuthAccount`, `BetterAuthVerification` to `prisma/schema.prisma`
+- [ ] Add `betterAuthId` nullable unique to legacy `User`
+- [ ] `npx prisma migrate dev --name better_auth_init`
+- [ ] Mount handler in `src/main.ts` via `app.use('/api/auth', toNodeHandler(auth))` (registered BEFORE the global JSON body parser per Better Auth docs)
+- [ ] Wire SendGrid sender callbacks (`sendVerificationEmail`, `sendResetPassword`)
+- [ ] Add `BETTER_AUTH_SECRET` (≥32 chars) and `BETTER_AUTH_URL` to `.env`
+- [ ] Health-check: `curl http://localhost:3000/api/auth/get-session` returns 200 with empty session
+
+### Phase 2 — Frontend foundation
+- [ ] `npm i better-auth` in frontend (with `--legacy-peer-deps`)
+- [ ] `lib/auth-client.ts` — `createAuthClient({ baseURL: process.env.NEXT_PUBLIC_API_URL_ROOT })`
+  - Note: `baseURL` is the host root (e.g. `http://localhost:3000`), NOT the existing `/api/v1`-prefixed value
+- [ ] Export `signIn`, `signUp`, `signOut`, `useSession` from the client
+- [ ] Add `NEXT_PUBLIC_BETTER_AUTH_URL` to `.env.local`
+
+### Phase 3 — Page-by-page rewrite
+- [ ] `app/login/page.tsx` → `authClient.signIn.email({ email, password })`
+- [ ] `app/register/page.tsx` Step 1 → `authClient.signUp.email({ email, password, name, … })`
+- [ ] `app/register/page.tsx` Step 2 (OTP verify) → either drop (Better Auth's verification link) or keep with `emailOTP` plugin — TBD
+- [ ] `app/register/page.tsx` Step 3 (Account Type) → keep, calls a new backend endpoint to set `tradeRole` + role-specific fields (or pass via `additionalFields` on signUp)
+- [ ] `app/forget-password/page.tsx` → `authClient.requestPasswordReset({ email, redirectTo: "/reset-password" })`
+- [ ] `app/password-reset-verify/page.tsx` → drop (Better Auth uses link, not OTP, for password reset)
+- [ ] `app/reset-password/page.tsx` → `authClient.resetPassword({ newPassword, token })`
+- [ ] `app/otp-verify/page.tsx` → keep only if we add `emailOTP` plugin for sign-up parity, otherwise drop
+- [ ] `context/AuthContext.tsx` → replace internals with `authClient.useSession()`; preserve the public hook shape so consumers don't need to change in this PR
+
+### Phase 4 — Backend cleanup
+- [ ] Delete `src/auth/` (legacy JWT controller/service/guard)
+- [ ] Delete custom OTP fields on `User` (`otp`, `otpValidTime`, `resetPassword`)
+- [ ] Delete custom OTP fields on `MasterAccount`
+- [ ] Drop `RefreshToken` table (Better Auth's `BetterAuthSession` replaces it)
+- [ ] Replace `@UseGuards(JwtAuthGuard)` everywhere with a thin `BetterAuthGuard` that calls `auth.api.getSession({ headers })`
+
+### Phase 5 — Data migration (separate, prefixable PR)
+1. **Read** every legacy `User` linked to a `MasterAccount`, joined to fetch email + bcrypt password
+2. **Write** one `BetterAuthUser` per `MasterAccount` with `email`, `name = firstName lastName`, `emailVerified = true` (we trust existing accounts), `legacyUserId`, `legacyMasterAccountId`
+3. **Write** one `BetterAuthAccount` per user with `providerId = "credential"` and the same bcrypt hash — Better Auth's credential provider supports bcrypt out of the box
+4. **Backfill** `User.betterAuthId` so existing FK relations keep working through the legacy table during the transition
+5. Sessions are NOT migrated. Existing logged-in users get one forced re-login on next visit (their `ultrasooq_accessToken` cookie is invalid against Better Auth and the http interceptor will route them to `/login`).
+
+Rollback: drop the four `better_auth_*` tables, drop the `betterAuthId` column, revert the route mounts. Legacy auth keeps working untouched.
+
+### Phase 6 — Cleanup
+- [ ] Delete `apis/requests/auth.requests.ts` (frontend)
+- [ ] Delete `apis/queries/auth.queries.ts` (if it exists)
+- [ ] Delete `utils/authMessages.ts` — Better Auth supplies typed error codes; we map those to translations instead
+- [ ] Delete `proxy.ts` route guard middleware → replace with `await auth.api.getSession({ headers })` in a Next.js middleware
+- [ ] Drop `cookies-next` if no longer used
+- [ ] Drop `@types/jsonwebtoken`, `bcryptjs` if no longer used (Better Auth has its own)
+
+---
+
+## Plugins to enable (initial set)
+
+Mirror qitaff but trim to what Ultrasooq actually uses today:
+
+| Plugin | Why | Notes |
+|---|---|---|
+| `nextCookies()` | Cookie integration | client side, applied in handler config last |
+| `bearer()` | Mobile / 3rd-party bearer-token clients (admin app) | server side |
+| `emailOTP()` | Optional — keeps parity with current 4-digit OTP UX during sign-up | only if we decide not to switch to verification links |
+
+Defer for later PRs: `username`, `passkey`, `twoFactor`, `phoneNumber`, `organization`, `admin`. Each is a small follow-up.
+
+---
+
+## Translation cheat sheet
+
+| Old (custom) | New (Better Auth) |
+|---|---|
+| `apis/requests/auth.requests.ts → register(...)` | `authClient.signUp.email({ email, password, name, tradeRole })` |
+| `apis/requests/auth.requests.ts → login(...)` | `authClient.signIn.email({ email, password, rememberMe })` |
+| `apis/requests/auth.requests.ts → forgotPassword(...)` | `authClient.requestPasswordReset({ email, redirectTo })` |
+| `apis/requests/auth.requests.ts → resetPassword(...)` | `authClient.resetPassword({ newPassword, token })` |
+| `apis/http.ts` axios interceptor refreshing tokens | gone — Better Auth refreshes via `updateAge` sliding window automatically |
+| `useAuth().user` from `AuthContext` | `authClient.useSession().data?.user` |
+| `getCookie('ultrasooq_accessToken')` | gone — cookie is HTTP-only, server reads via `auth.api.getSession({ headers })` |
+
+---
+
+## Gotchas (from qitaff audit + ours)
+
+- **Mount order matters.** In NestJS, `app.use('/api/auth', toNodeHandler(auth))` MUST be registered before any `bodyParser` / `ValidationPipe` global setup, otherwise Better Auth can't read raw bodies. See `src/main.ts`.
+- **`baseURL` ≠ API base.** The frontend's existing `getApiUrl()` returns `http://localhost:3000/api/v1`. Better Auth client wants the host root: `http://localhost:3000`. Do NOT reuse the same env.
+- **`trustedOrigins`.** Must list `http://localhost:4001` (frontend dev), production frontend, any preview-deploy patterns. Otherwise CORS rejects sign-in.
+- **Bcrypt password import.** Existing passwords are bcrypt(10). Better Auth's credential provider accepts bcrypt natively — copy hash unchanged. If we ever change to argon2, we'd need a one-time rehash on next sign-in.
+- **Session cookies + axios.** Once auth is on cookies, axios needs `withCredentials: true` for any `/api/v1/*` calls that run in the browser AND the backend needs `cors({ origin, credentials: true })`. Ultrasooq already has CORS — verify `credentials: true` is set.
+- **Role guard.** qitaff blocks `INACTIVE`/`deletedAt` users in `databaseHooks.session.create.before`. We need the same — `User.status === 'INACTIVE'` and `MasterAccount.deletedAt != null` cases must be guarded there.
+- **Frontend register flow has 3 steps.** Better Auth's `signUp.email` is one step. We keep the 3-step UX by deferring `tradeRole` + role-specific fields (`companyName`, `freelancerName`, etc.) to either `additionalFields` on signUp, or a post-signup `PATCH /api/v1/user/me` call, depending on what reads cleanly.
+
+---
+
+## Status updates
+
+_Append entries as work lands; newest at top._
+
+- **2026-05-07** — Branches created on both repos; this tracker checked in. qitaff audit complete; reference summary above.
