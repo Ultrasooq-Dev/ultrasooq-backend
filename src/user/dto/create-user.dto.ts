@@ -38,6 +38,7 @@ import {
   MinLength,
   IsOptional,
   IsEnum,
+  Matches,
 } from 'class-validator';
 
 /**
@@ -71,6 +72,10 @@ export class CreateUserDto {
 
   @IsString()
   @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s])/, {
+    message:
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+  })
   password: string;             // Password (plaintext) — hashed by UserService before storing
 
   @IsString()
