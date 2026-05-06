@@ -121,16 +121,16 @@ Switch to Resend later (separate PR — see [auth.7 in the qitaff audit](#)) onc
 - [x] `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000` appended to `.env.local`
 - [x] Stub note added to top of frontend `MIGRATION_TODO.mdx` pointing to this tracker
 
-### Phase 3 — Page-by-page rewrite
-- [ ] `app/login/page.tsx` → `authClient.signIn.email({ email, password })`
-- [ ] `app/register/page.tsx` Step 1 → `authClient.signUp.email({ email, password, name, … })`
-- [ ] `app/register/page.tsx` Step 2 (OTP verify) → either drop (Better Auth's verification link) or keep with `emailOTP` plugin — TBD
-- [ ] `app/register/page.tsx` Step 3 (Account Type) → keep, calls a new backend endpoint to set `tradeRole` + role-specific fields (or pass via `additionalFields` on signUp)
-- [ ] `app/forget-password/page.tsx` → `authClient.requestPasswordReset({ email, redirectTo: "/reset-password" })`
-- [ ] `app/password-reset-verify/page.tsx` → drop (Better Auth uses link, not OTP, for password reset)
-- [ ] `app/reset-password/page.tsx` → `authClient.resetPassword({ newPassword, token })`
-- [ ] `app/otp-verify/page.tsx` → keep only if we add `emailOTP` plugin for sign-up parity, otherwise drop
-- [ ] `context/AuthContext.tsx` → replace internals with `authClient.useSession()`; preserve the public hook shape so consumers don't need to change in this PR
+### Phase 3 — Page-by-page rewrite (partial ✅)
+- [x] `app/login/page.tsx` → `signIn.email({ email, password, rememberMe })` with `onSuccess`/`onError` callbacks; Google button still wired to legacy next-auth flow (defer until social-provider plugin lands)
+- [x] `app/forget-password/page.tsx` → `requestPasswordReset({ email, redirectTo: "/reset-password" })` (renamed from `forgetPassword` in Better Auth v1.6); routes back to `/login` after dispatch instead of legacy OTP page
+- [x] `app/reset-password/page.tsx` → `resetPassword({ newPassword, token })` reading `?token=` from the email link; bad/missing token shows clear error state
+- [x] `app/password-reset-verify/page.tsx` → replaced with a `router.replace('/forget-password')` redirect since the link-based flow has no OTP step (page kept for stale bookmarks; deletes in Phase 6)
+- [ ] `app/register/page.tsx` Step 1 → `signUp.email({ email, password, name, tradeRole, phoneNumber, cc })` — pending (3-step flow + role-specific fields makes this the largest UI change)
+- [ ] `app/register/page.tsx` Step 2 OTP verify → drop or keep with `emailOTP` plugin
+- [ ] `app/register/page.tsx` Step 3 Account Type → keep, set `tradeRole`/`companyName`/etc. via `additionalFields` on signUp or a follow-up `PATCH`
+- [ ] `app/otp-verify/page.tsx` → drop or keep with `emailOTP` plugin
+- [ ] `context/AuthContext.tsx` → swap internals to `authClient.useSession()` while keeping the public hook shape (deferred — broad blast radius across the app)
 
 ### Phase 4 — Backend cleanup
 - [ ] Delete `src/auth/` (legacy JWT controller/service/guard)
@@ -202,6 +202,7 @@ Defer for later PRs: `username`, `passkey`, `twoFactor`, `phoneNumber`, `organiz
 
 _Append entries as work lands; newest at top._
 
+- **2026-05-07** — Phase 3 partial ✅. `/login`, `/forget-password`, `/reset-password` now use the Better Auth client; `/password-reset-verify` redirects to `/forget-password`. Verified end-to-end in browser: a fresh Better Auth user can sign in, redirect to `/home`, and the "Login Successful" toast fires. Register / OTP / AuthContext deferred. **⚠️ Caveat for branch consumers:** legacy users in the `MasterAccount` table can't log in on this branch yet because their bcrypt hashes haven't been migrated to `better_auth_account` — Phase 5 ships that. Existing dev/staging users should re-register or wait for the migration script.
 - **2026-05-07** — Phase 1 (backend foundation) and Phase 2 (frontend foundation) ✅. Sign-up / sign-in / get-session / wrong-pwd / verification-email-dispatch all verified end-to-end via curl. Better Auth lives at `/api/auth/*` on the backend; legacy `/api/v1/user/*` untouched and still serves the live frontend. WIP PR opened — see PR header at top.
 - **2026-05-07** — Branches created on both repos; this tracker checked in. qitaff audit complete; reference summary above.
 
@@ -212,3 +213,4 @@ _Append entries as work lands; newest at top._
 - **NestJS hot reload doesn't reload `auth.ts`.** It's imported from `main.ts` (bootstrap), not from a module's DI graph. Edits to `auth-better/*.ts` need a manual restart (`preview_stop` + `preview_start`). Worth scripting later.
 - **v1.6 client renamed `forgetPassword` → `requestPasswordReset`.** The audit doc/qitaff snippets still show the old name. Use the new one in pages.
 - **`emailVerification.sendOnSignUp: true` is independent of `requireEmailVerification`.** We send on sign-up but DON'T require verification yet — flip both together when the verification UX is wired.
+- **CORS preflight on `/api/auth/*` returns 404** if the route is mounted before `app.enableCors()`. Nest's `enableCors()` runs in the Nest layer and doesn't intercept Express `app.use(...)` mounts that come earlier in the chain. Workaround: a tiny inline middleware on `/api/auth` that responds 204 to OPTIONS with the right CORS headers, registered immediately before `toNodeHandler(auth)`. Lives in `src/main.ts`.

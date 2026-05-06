@@ -129,6 +129,33 @@ async function bootstrap() {
     }),
   );
 
+  // CORS preflight for /api/auth/* — must come BEFORE the auth handler
+  // because Nest's app.enableCors() runs later in the chain. The auth
+  // handler doesn't respond to OPTIONS, so without this preflight 404s.
+  app.use('/api/auth', (req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    const allowed =
+      process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()) ?? [];
+    if (origin && (allowed.length === 0 || allowed.includes(origin))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, Accept, X-Request-Id, Cookie',
+    );
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      return res.end();
+    }
+    next();
+  });
+
   // Better Auth handler — must be mounted BEFORE express.json() so the
   // library can parse raw request bodies. Lives at /api/auth/* and is
   // outside the global /api/v1 prefix. See MIGRATION_TODO.mdx.
