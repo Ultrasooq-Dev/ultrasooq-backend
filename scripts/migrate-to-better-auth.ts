@@ -1,11 +1,16 @@
 /**
- * One-shot migration: legacy MasterAccount + linked default User -> Better Auth.
+ * One-shot migration: legacy MasterAccount (+ optional linked User) -> Better Auth.
  *
  * - Reads MasterAccount rows (deletedAt IS NULL, email NOT NULL).
  * - Skips if email already in BetterAuthUser, OR if a BetterAuthUser already
  *   has legacyMasterAccountId === MA.id (idempotent on re-run).
  * - For each survivor, resolves a "primary" linked User the same way the
  *   legacy login flow does (lastActiveUserId -> default-active BUYER).
+ *   When NO linked User exists (orphaned MasterAccount), still migrate it:
+ *   tradeRole defaults to 'BUYER' and legacyUserId stays null. These rows
+ *   are tallied separately as `migrated_orphan`.
+ * - Coerces non-enum legacy tradeRole values (MEMBER, ADMINMEMBER, anything
+ *   not in the Better Auth additionalFields enum) to 'BUYER' with a warn.
  * - Inserts BetterAuthUser + BetterAuthAccount in one $transaction.
  * - Copies the bcrypt password hash unchanged into BetterAuthAccount.password
  *   so Better Auth's credential provider can authenticate without a reset.
@@ -20,12 +25,26 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 
 const CONCURRENCY = 5;
+const ALLOWED_TRADE_ROLES = new Set(['BUYER', 'FREELANCER', 'COMPANY']);
+
+/**
+ * Coerce a free-form legacy tradeRole into the Better Auth enum.
+ * MEMBER / ADMINMEMBER / anything unknown collapse to 'BUYER' with a warn.
+ */
+function coerceTradeRole(legacy: string | null | undefined, emailLc: string): string {
+  const v = (legacy ?? '').toUpperCase();
+  if (ALLOWED_TRADE_ROLES.has(v)) return v;
+  console.warn(
+    `[migrate] coerce ${emailLc}: tradeRole '${legacy}' -> 'BUYER' (not in enum)`,
+  );
+  return 'BUYER';
+}
 
 type Counts = {
   total: number;
   migrated: number;
+  migrated_orphan: number;
   skipped_existing: number;
-  skipped_no_primary: number;
   errors: number;
 };
 
@@ -37,8 +56,8 @@ async function main() {
   const counts: Counts = {
     total: 0,
     migrated: 0,
+    migrated_orphan: 0,
     skipped_existing: 0,
-    skipped_no_primary: 0,
     errors: 0,
   };
   const errors: { email: string; reason: string }[] = [];
@@ -77,6 +96,8 @@ async function main() {
           }
 
           // Resolve primary user: lastActiveUserId (if active) else default BUYER.
+          // If NO linked User exists, we still migrate the MasterAccount as an
+          // "orphan" — tradeRole='BUYER' default, legacyUserId=null.
           let primary = null as null | { id: number; tradeRole: string };
           if (ma.lastActiveUserId) {
             primary = (await prisma.user.findFirst({
@@ -101,11 +122,11 @@ async function main() {
             })) as any;
           }
 
-          if (!primary) {
-            counts.skipped_no_primary++;
-            console.warn(`[migrate] skip ${emailLc}: no active linked User`);
-            return;
-          }
+          const isOrphan = !primary;
+          const tradeRole = isOrphan
+            ? 'BUYER'
+            : coerceTradeRole(primary!.tradeRole, emailLc);
+          const legacyUserId = isOrphan ? null : primary!.id;
 
           const first = (ma.firstName ?? '').trim();
           const last = (ma.lastName ?? '').trim();
@@ -122,10 +143,10 @@ async function main() {
                   email: emailLc,
                   name: fullName,
                   emailVerified: true,
-                  tradeRole: String(primary.tradeRole),
+                  tradeRole,
                   phoneNumber: ma.phoneNumber ?? null,
                   cc: ma.cc ?? null,
-                  legacyUserId: primary.id,
+                  legacyUserId,
                   legacyMasterAccountId: ma.id,
                   createdAt: ma.createdAt ?? now,
                   updatedAt: now,
@@ -143,7 +164,12 @@ async function main() {
                 },
               }),
             ]);
-            counts.migrated++;
+            if (isOrphan) {
+              counts.migrated_orphan++;
+              console.log(`[migrate] migrated ${emailLc} (orphan)`);
+            } else {
+              counts.migrated++;
+            }
             if (!firstMigratedHash && ma.password) firstMigratedHash = ma.password;
           } catch (err: any) {
             counts.errors++;
@@ -157,8 +183,8 @@ async function main() {
     console.log('\n[migrate] === Summary ===');
     console.log(
       `total: ${counts.total}, migrated: ${counts.migrated}, ` +
-        `skipped_existing: ${counts.skipped_existing}, ` +
-        `skipped_no_primary: ${counts.skipped_no_primary}, errors: ${counts.errors}`,
+        `migrated_orphan: ${counts.migrated_orphan}, ` +
+        `skipped_existing: ${counts.skipped_existing}, errors: ${counts.errors}`,
     );
     if (errors.length) {
       console.log('[migrate] Errors:');
