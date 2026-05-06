@@ -740,6 +740,21 @@ export class AdminController {
   }
 
   /**
+   * @method getAccountTree
+   * @description Returns master accounts with their sub-accounts and team members
+   *   for the Organization Tree page.
+   */
+  @UseGuards(SuperAdminAuthGuard)
+  @Get('/account-tree')
+  getAccountTree(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('search') search: string,
+  ) {
+    return this.adminService.getAccountTree(page, limit, search);
+  }
+
+  /**
    * @method updateMasterAccountStatus
    * @description Updates the status of a master account and cascades the change to
    *   all of its associated user accounts.

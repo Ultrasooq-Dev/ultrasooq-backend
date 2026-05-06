@@ -457,7 +457,7 @@ export async function notifyAdminsNewUser(
         title: 'New User Registered',
         message: `A new ${tradeRole} user "${userName}" (${email}) has registered`,
         data: { userId, userName, email, tradeRole },
-        link: `/user/user-lists`,
+        link: `/user/users/${userId}`,
         icon: '👤',
       });
     }
@@ -484,7 +484,7 @@ export async function notifyAdminsIdentityProofUpload(
         title: 'Identity Proof Uploaded',
         message: `User "${userName}" has uploaded their identity proof for verification`,
         data: { userId, userName },
-        link: `/user/user-lists`,
+        link: `/user/users/${userId}`,
         icon: '🆔',
       });
     }

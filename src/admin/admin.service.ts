@@ -1863,6 +1863,155 @@ export class AdminService {
   }
 
   /**
+   * @method getAccountTree
+   * @async
+   * @description Returns paginated master accounts with their sub-accounts and team
+   *   members for the Organization Tree page.
+   */
+  async getAccountTree(page: any, limit: any, search?: string) {
+    try {
+      const Page = parseInt(page) || 1;
+      const pageSize = parseInt(limit) || 10;
+      const skip = (Page - 1) * pageSize;
+      const trimmed = (search || '').trim();
+
+      const masterWhere: any = { deletedAt: null };
+      if (trimmed) {
+        masterWhere.OR = [
+          { email: { contains: trimmed, mode: 'insensitive' } },
+          { firstName: { contains: trimmed, mode: 'insensitive' } },
+          { lastName: { contains: trimmed, mode: 'insensitive' } },
+          {
+            users: {
+              some: {
+                deletedAt: null,
+                OR: [
+                  { email: { contains: trimmed, mode: 'insensitive' } },
+                  { firstName: { contains: trimmed, mode: 'insensitive' } },
+                  { lastName: { contains: trimmed, mode: 'insensitive' } },
+                  { companyName: { contains: trimmed, mode: 'insensitive' } },
+                  { accountName: { contains: trimmed, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        ];
+      }
+
+      const [masters, total] = await Promise.all([
+        this.prisma.masterAccount.findMany({
+          where: masterWhere,
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phoneNumber: true,
+            createdAt: true,
+            users: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                accountName: true,
+                companyName: true,
+                tradeRole: true,
+                status: true,
+                isSubAccount: true,
+                createdAt: true,
+              },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        this.prisma.masterAccount.count({ where: masterWhere }),
+      ]);
+
+      const orgUserIds: number[] = [];
+      for (const m of masters) {
+        for (const u of m.users) {
+          if (u.tradeRole === 'COMPANY' || u.tradeRole === 'FREELANCER') {
+            orgUserIds.push(u.id);
+          }
+        }
+      }
+
+      const teamMembers = orgUserIds.length
+        ? await this.prisma.teamMember.findMany({
+            where: { addedBy: { in: orgUserIds }, deletedAt: null },
+            select: {
+              id: true,
+              addedBy: true,
+              status: true,
+              userDetail: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  employeeId: true,
+                  status: true,
+                },
+              },
+              userRolDetail: {
+                select: { id: true, userRoleName: true },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+        : [];
+
+      const membersByOwner = new Map<number, any[]>();
+      for (const tm of teamMembers) {
+        if (!tm.addedBy || !tm.userDetail) continue;
+        const flat = {
+          id: tm.userDetail.id,
+          firstName: tm.userDetail.firstName,
+          lastName: tm.userDetail.lastName,
+          email: tm.userDetail.email,
+          employeeId: tm.userDetail.employeeId,
+          status: tm.userDetail.status,
+          userRoleDetail: tm.userRolDetail,
+        };
+        const list = membersByOwner.get(tm.addedBy) || [];
+        list.push(flat);
+        membersByOwner.set(tm.addedBy, list);
+      }
+
+      const enriched = masters.map((m) => ({
+        ...m,
+        users: m.users.map((u) => ({
+          ...u,
+          teamMembers: membersByOwner.get(u.id) || [],
+        })),
+      }));
+
+      return {
+        status: true,
+        message: 'Account tree fetched successfully',
+        data: enriched,
+        pagination: {
+          page: Page,
+          limit: pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error fetching account tree',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
+  /**
    * @method updateMasterAccountStatus
    * @async
    * @description Updates the status of all user accounts associated with a given
