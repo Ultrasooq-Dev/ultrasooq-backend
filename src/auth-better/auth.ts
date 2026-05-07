@@ -36,21 +36,66 @@ import {
 } from './mailer';
 
 if (process.env.NODE_ENV === 'production') {
-  if (!process.env.BETTER_AUTH_SECRET) {
-    throw new Error('BETTER_AUTH_SECRET is required in production');
+  const required = [
+    'BETTER_AUTH_SECRET',
+    'BETTER_AUTH_URL',
+    'DATABASE_URL',
+    'FRONTEND_SERVER',
+    'SENDGRID_API_KEY',
+    'SENDGRID_SENDER',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+  ];
+  for (const key of required) {
+    if (!process.env[key]) {
+      throw new Error(`${key} is required in production`);
+    }
   }
-  if (!process.env.BETTER_AUTH_URL) {
-    throw new Error('BETTER_AUTH_URL is required in production');
+  // CORS_ORIGINS must contain at least one non-empty origin.
+  const corsOriginsList = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (corsOriginsList.length === 0) {
+    throw new Error('CORS_ORIGINS is required in production');
   }
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is required in production');
+  // BETTER_AUTH_URL must be HTTPS in production — cookies are Secure.
+  if (!process.env.BETTER_AUTH_URL!.startsWith('https://')) {
+    throw new Error('BETTER_AUTH_URL must start with https:// in production');
+  }
+  // Cross-subdomain cookie domain must start with a leading dot.
+  if (process.env.COOKIE_DOMAIN && !process.env.COOKIE_DOMAIN.startsWith('.')) {
+    throw new Error('COOKIE_DOMAIN must start with a leading dot (e.g. .ultrasooq.com)');
+  }
+  // These are warnings — operationally useful but not fatal.
+  if (!process.env.COOKIE_DOMAIN) {
+    console.warn(
+      '[auth] COOKIE_DOMAIN is unset in production — cross-subdomain session cookies will NOT work between api.* and app.* hosts.',
+    );
+  }
+  const adminIdsRaw = (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (adminIdsRaw.length === 0) {
+    console.warn(
+      '[auth] BETTER_AUTH_ADMIN_USER_IDS is empty — no platform admins will be granted Better Auth admin permissions.',
+    );
   }
 }
 
 // Standalone Prisma client for Better Auth — runs at module load (before
 // Nest DI), so we can't reuse the @Injectable PrismaService instance here.
+// Cap the connection pool here so this client + Nest's PrismaService don't
+// jointly exhaust Postgres connections under load.
+function withConnectionLimit(url: string, limit = 5): string {
+  if (!url) return url;
+  if (url.includes('connection_limit=')) return url;
+  return url.includes('?') ? `${url}&connection_limit=${limit}` : `${url}?connection_limit=${limit}`;
+}
+
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
+  adapter: new PrismaPg({ connectionString: withConnectionLimit(process.env.DATABASE_URL!) }),
 });
 
 const trustedOrigins = process.env.CORS_ORIGINS?.split(',')
@@ -128,9 +173,10 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false, // flip to true once verification UX is wired
+    requireEmailVerification: true, // true: blocks sign-in until email verified — closes account-merge attack via Google trustedProvider.
     password: {
-      hash: async (password: string) => bcrypt.hash(password, 10),
+      // Cost 12 for new hashes. verify() still works against legacy 10-cost hashes since bcrypt encodes cost in the hash itself.
+      hash: async (password: string) => bcrypt.hash(password, 12),
       verify: async ({ hash, password }: { hash: string; password: string }) =>
         bcrypt.compare(password, hash),
     },
@@ -182,8 +228,12 @@ export const auth = betterAuth({
         },
       },
     }),
+    // WebAuthn rpID must be a registrable parent domain shared by both the
+    // frontend (e.g. app.ultrasooq.com) and the API (api.ultrasooq.com).
+    // Deriving it from the frontend hostname alone breaks cross-subdomain
+    // passkey usage — set WEBAUTHN_RP_ID=ultrasooq.com explicitly in prod.
     passkey({
-      rpID: isDevEnv ? 'localhost' : new URL(appUrl).hostname,
+      rpID: process.env.WEBAUTHN_RP_ID || (isDevEnv ? 'localhost' : new URL(appUrl).hostname),
       rpName: 'Ultrasooq',
     }),
     bearer(),

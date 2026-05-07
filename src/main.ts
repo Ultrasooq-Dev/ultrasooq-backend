@@ -161,23 +161,32 @@ async function bootstrap() {
     next();
   });
 
-  // Rate limit + body-size cap for /api/auth/* — protects against brute-force
-  // login attempts and oversized auth payloads. Must come BEFORE the auth
-  // handler so it gates every auth route.
-  const authRateLimiter = rateLimit({
-    windowMs: 60 * 1000,            // 1 minute
-    max: 30,                         // 30 requests/min/IP for /api/auth/*
+  // Strict limiter for state-changing auth endpoints (login, sign-up, password reset).
+  const authStrictLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many auth attempts, please try again later.' },
   });
 
-  app.use('/api/auth', authRateLimiter);
-  app.use('/api/auth', expressJson({ limit: '100kb' }));
+  // Lax limiter for read-mostly /api/auth/get-session — frontend middleware
+  // polls this on every protected navigation.
+  const authReadLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
-  // Better Auth handler — must be mounted BEFORE express.json() so the
-  // library can parse raw request bodies. Lives at /api/auth/* and is
-  // outside the global /api/v1 prefix. See MIGRATION_TODO.mdx.
+  // Apply strict limiter to write-heavy paths first; lax limiter to the rest.
+  app.use(['/api/auth/sign-in', '/api/auth/sign-up', '/api/auth/forget-password', '/api/auth/reset-password', '/api/auth/two-factor', '/api/auth/verify-email'], authStrictLimiter);
+  app.use('/api/auth', authReadLimiter);
+
+  // Better Auth handler — must be mounted BEFORE any JSON body parser so the
+  // library can read the raw request stream. Any express.json() before this
+  // consumes the body and silently breaks state-changing auth routes. Lives
+  // at /api/auth/* and is outside the global /api/v1 prefix.
   app.use('/api/auth', toNodeHandler(auth));
 
   // Configure body parser for larger payloads
