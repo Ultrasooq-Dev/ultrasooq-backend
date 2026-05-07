@@ -30,16 +30,12 @@ RUN npx prisma generate && npx nest build
 RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
     (echo "BUILD FAILED: dist/src/main.js not found" && find dist -name "*.js" 2>/dev/null | head -10 && exit 1)
 
-# Copy prisma CLI binary before pruning (it's a devDep but needed for migrate deploy)
-RUN mkdir -p /tmp/prisma-cli && cp -r node_modules/prisma /tmp/prisma-cli/
-
-# Prune dev dependencies — keep only production deps
-RUN npm prune --omit=dev
-
-# Restore prisma CLI for runtime migrations
-RUN cp -r /tmp/prisma-cli/prisma node_modules/ && \
-    mkdir -p node_modules/.bin && \
-    ln -sf ../prisma/build/index.js node_modules/.bin/prisma
+# We intentionally DO NOT prune dev dependencies here. The runtime needs the
+# prisma CLI (a devDep) to run `prisma migrate deploy` at boot. Keeping the
+# full node_modules is simpler and more robust than copying the binary out
+# and trying to reconstruct the package layout post-prune (the previous
+# attempt broke under npm's flat layout vs. pnpm's symlinked layout).
+# Image is ~50MB larger; trade-off is acceptable.
 
 # ── Runner stage ──────────────────────────────────────────────
 FROM node:22-alpine AS runner
@@ -63,5 +59,7 @@ COPY --from=builder /app/.npmrc ./.npmrc
 
 EXPOSE 3000
 
-# Run migrations then start the server
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/src/main.js"]
+# Run migrations then start the server. Use `npx prisma` instead of a
+# hardcoded ./node_modules/.bin path — Prisma's bin layout differs by
+# package manager and `npx` resolves it correctly either way.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
