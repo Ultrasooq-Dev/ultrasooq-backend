@@ -490,7 +490,7 @@ export class ProductService {
 
                 // 2. Get all active buyers (users with tradeRole BUYER)
                 // This ensures notifications reach potential buyers even if they don't have product in wishlist yet
-                const allBuyers = await this.prisma.user.findMany({
+                const allBuyers = await this.prisma.legacyUser.findMany({
                   where: {
                     status: 'ACTIVE',
                     userType: 'USER',
@@ -2247,7 +2247,7 @@ export class ProductService {
         };
       }
 
-      let vendorDetails = await this.prisma.user.findUnique({
+      let vendorDetails = await this.prisma.legacyUser.findUnique({
         where: { id: adminID },
 
         select: {
@@ -12061,7 +12061,7 @@ export class ProductService {
       // Get user information for each product separately
       const productsWithUserInfo = await Promise.all(
         dropshipProducts.map(async (product) => {
-          const user = await this.prisma.user.findUnique({
+          const user = await this.prisma.legacyUser.findUnique({
             where: { id: product.userId },
             select: {
               id: true,

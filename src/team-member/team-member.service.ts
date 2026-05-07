@@ -93,8 +93,8 @@ export class TeamMemberService {
    *   -> validate email uniqueness
    *   -> fetch UserRole
    *   -> generate password & employeeId
-   *   -> this.prisma.user.create
-   *   -> this.prisma.user.update (uniqueId, userName)
+   *   -> this.prisma.legacyUser.create
+   *   -> this.prisma.legacyUser.update (uniqueId, userName)
    *   -> notificationService.addMemberMail (plaintext password)
    *   -> this.prisma.teamMember.create
    *   -> return newMember
@@ -127,7 +127,7 @@ export class TeamMemberService {
       const userRoleID = parseInt(payload.userRoleId);
 
       // -- Check for duplicate email in User table --
-      const userExist = await this.prisma.user.findUnique({
+      const userExist = await this.prisma.legacyUser.findUnique({
         where: { email: payload.email }
       });
 
@@ -168,7 +168,7 @@ export class TeamMemberService {
       let userRoleId = userRoleID
 
       // -- Create the User record with tradeRole 'MEMBER' --
-      let newUser = await this.prisma.user.create({
+      let newUser = await this.prisma.legacyUser.create({
         data: {
           firstName,
           lastName,
@@ -205,7 +205,7 @@ export class TeamMemberService {
       });
 
       // -- Persist uniqueId and userName back to the User record --
-      let updatedUser = await this.prisma.user.update({
+      let updatedUser = await this.prisma.legacyUser.update({
         where: { id: newUser.id },
         data: {
           uniqueId: requestId,
@@ -424,8 +424,8 @@ export class TeamMemberService {
    * @dataflow
    * payload.memberId -> this.prisma.teamMember.findUnique (existence check)
    *   -> this.prisma.teamMember.update (role/status)
-   *   -> this.prisma.user.update (personal fields, if any changed)
-   *   -> this.prisma.userRole.findUnique + this.prisma.user.update (role sync, if changed)
+   *   -> this.prisma.legacyUser.update (personal fields, if any changed)
+   *   -> this.prisma.userRole.findUnique + this.prisma.legacyUser.update (role sync, if changed)
    *   -> return updatedTeamMember
    *
    * @depends PrismaClient
@@ -490,7 +490,7 @@ export class TeamMemberService {
       // -- Sync personal fields to the User table if any were provided --
       // if firstName, lastName etc is changed then update it in user
       if (payload.firstName || payload.lastName || payload.cc || payload.phoneNumber) {
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: existingTeamMember.userId },
           data: {
             firstName: payload.firstName,
@@ -507,7 +507,7 @@ export class TeamMemberService {
         let userRoleDetail = await this.prisma.userRole.findUnique({
           where: { id: parseInt(payload.userRoleId) }
         });
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: existingTeamMember.userId },
           data: {
             userRoleId: payload.userRoleId,

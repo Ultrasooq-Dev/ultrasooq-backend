@@ -579,7 +579,7 @@ export class ScraperController {
 
                 try {
                     // Get user details to determine user type
-                    const userDetail = await prisma.user.findUnique({
+                    const userDetail = await prisma.legacyUser.findUnique({
                         where: { id: userId },
                         select: { userType: true },
                     });

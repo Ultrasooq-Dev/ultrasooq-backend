@@ -1088,7 +1088,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
   console.log('\n--- Seeding Test Users ---');
   const passwordHash = await bcrypt.hash('Test123!', 10);
 
-  const sellerMaster = await prisma.masterAccount.upsert({
+  const sellerMaster = await prisma.legacyMasterAccount.upsert({
     where: { email: 'seller@test.com' },
     update: { password: passwordHash },
     create: {
@@ -1101,7 +1101,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  const seller = await prisma.user.upsert({
+  const seller = await prisma.legacyUser.upsert({
     where: { email: 'seller@test.com' },
     update: {
       firstName: 'Test',
@@ -1126,13 +1126,13 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  await prisma.masterAccount.update({
+  await prisma.legacyMasterAccount.update({
     where: { id: sellerMaster.id },
     data: { lastActiveUserId: seller.id },
   });
   console.log(`  Seller: masterAccount=${sellerMaster.id}, user=${seller.id}`);
 
-  const buyerMaster = await prisma.masterAccount.upsert({
+  const buyerMaster = await prisma.legacyMasterAccount.upsert({
     where: { email: 'buyer@test.com' },
     update: { password: passwordHash },
     create: {
@@ -1145,7 +1145,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  const buyer = await prisma.user.upsert({
+  const buyer = await prisma.legacyUser.upsert({
     where: { email: 'buyer@test.com' },
     update: {
       firstName: 'Test',
@@ -1170,7 +1170,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  await prisma.masterAccount.update({
+  await prisma.legacyMasterAccount.update({
     where: { id: buyerMaster.id },
     data: { lastActiveUserId: buyer.id },
   });
@@ -1179,7 +1179,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
   // ── Ultrasooq Company Account ──
   const ultrasooqPasswordHash = await bcrypt.hash('Ultra@1234', 10);
 
-  const ultrasooqMaster = await prisma.masterAccount.upsert({
+  const ultrasooqMaster = await prisma.legacyMasterAccount.upsert({
     where: { email: 'ultrasooq@gmail.com' },
     update: { password: ultrasooqPasswordHash },
     create: {
@@ -1192,7 +1192,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  const ultrasooqCompany = await prisma.user.upsert({
+  const ultrasooqCompany = await prisma.legacyUser.upsert({
     where: { email: 'ultrasooq@gmail.com' },
     update: {
       firstName: 'Ultrasooq',
@@ -1217,7 +1217,7 @@ async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
     },
   });
 
-  await prisma.masterAccount.update({
+  await prisma.legacyMasterAccount.update({
     where: { id: ultrasooqMaster.id },
     data: { lastActiveUserId: ultrasooqCompany.id },
   });

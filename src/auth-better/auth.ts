@@ -37,7 +37,6 @@ export const auth = betterAuth({
   trustedOrigins,
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   user: {
-    modelName: 'betterAuthUser',
     additionalFields: {
       tradeRole: {
         type: 'string',
@@ -57,8 +56,6 @@ export const auth = betterAuth({
       accountName: { type: 'string', required: false },
     },
   },
-  account: { modelName: 'betterAuthAccount' },
-  verification: { modelName: 'betterAuthVerification' },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // flip to true once verification UX is wired
@@ -84,7 +81,6 @@ export const auth = betterAuth({
     },
   },
   session: {
-    modelName: 'betterAuthSession',
     expiresIn: 60 * 60 * 24 * 7, // 7 days, matches legacy JWT_EXPIRY
     updateAge: 60 * 60 * 24, // refresh sliding window every 24h
   },
@@ -93,11 +89,11 @@ export const auth = betterAuth({
     cookiePrefix: 'ultrasooq',
   },
   // ──────────────────────────────────────────────────────────────────────────
-  // databaseHooks — keeps a paired legacy User + MasterAccount in sync with
-  // every NEW BetterAuthUser. The bridge is critical because the existing
-  // ~60 business controllers all use the legacy `JwtAuthGuard` which expects
-  // an integer `req.user.id` corresponding to `User.id`. Without this hook,
-  // a fresh Better Auth signup would have no legacy User row, and the
+  // databaseHooks — keeps a paired LegacyUser + LegacyMasterAccount in sync
+  // with every NEW Better Auth User. The bridge is critical because the
+  // existing ~60 business controllers all use `AuthGuard` which expects an
+  // integer `req.user.id` corresponding to `LegacyUser.id`. Without this
+  // hook, a fresh Better Auth signup would have no legacy User row, and the
   // bridge guard would 401 on every protected endpoint.
   //
   // For ALREADY-MIGRATED orphan rows (created by the Phase 5 script before
@@ -125,16 +121,16 @@ export const auth = betterAuth({
               ? rawTradeRole
               : 'BUYER';
 
-            // Either reuse an existing MasterAccount (legacy email match)
-            // or create one. MasterAccount.email is UNIQUE.
-            let ma = await prisma.masterAccount.findUnique({
+            // Either reuse an existing LegacyMasterAccount (legacy email
+            // match) or create one. LegacyMasterAccount.email is UNIQUE.
+            let ma = await prisma.legacyMasterAccount.findUnique({
               where: { email: emailLc },
             });
             if (!ma) {
-              ma = await prisma.masterAccount.create({
+              ma = await prisma.legacyMasterAccount.create({
                 data: {
                   email: emailLc,
-                  // MasterAccount has NOT-NULL String columns for these.
+                  // LegacyMasterAccount has NOT-NULL String columns for these.
                   // Phase 4 dropped its `password` is still kept (per schema check).
                   password: '',
                   firstName: firstName || emailLc.split('@')[0],
@@ -145,13 +141,13 @@ export const auth = betterAuth({
               });
             }
 
-            // Default-active BUYER User row. User.email is UNIQUE — if there
-            // happens to be an existing one we re-use it; otherwise create.
-            let legacy = await prisma.user.findUnique({
+            // Default-active BUYER LegacyUser row. LegacyUser.email is UNIQUE
+            // — if there happens to be an existing one we re-use it.
+            let legacy = await prisma.legacyUser.findUnique({
               where: { email: emailLc },
             });
             if (!legacy) {
-              legacy = await prisma.user.create({
+              legacy = await prisma.legacyUser.create({
                 data: {
                   masterAccountId: ma.id,
                   email: emailLc,
@@ -168,25 +164,25 @@ export const auth = betterAuth({
               });
             }
 
-            // Patch the back-link on the BetterAuthUser row.
-            await prisma.betterAuthUser.update({
+            // Patch the back-link on the Better Auth User row.
+            await prisma.user.update({
               where: { id: baUser.id },
               data: { legacyUserId: legacy.id, legacyMasterAccountId: ma.id },
             });
 
-            // Update MasterAccount.lastActiveUserId so flows that depend on
-            // it (e.g. legacy login resolution) see the correct primary.
-            // lastActiveUserId is @unique — only set if not already pointing
-            // to another User from the same master.
+            // Update LegacyMasterAccount.lastActiveUserId so flows that
+            // depend on it (e.g. legacy login resolution) see the correct
+            // primary. lastActiveUserId is @unique — only set if not already
+            // pointing to another LegacyUser from the same master.
             if (ma.lastActiveUserId !== legacy.id) {
               try {
-                await prisma.masterAccount.update({
+                await prisma.legacyMasterAccount.update({
                   where: { id: ma.id },
                   data: { lastActiveUserId: legacy.id },
                 });
               } catch {
-                // Unique constraint conflict — another User from this master
-                // is already the lastActive. Leave it alone.
+                // Unique constraint conflict — another LegacyUser from this
+                // master is already the lastActive. Leave it alone.
               }
             }
           } catch (err) {

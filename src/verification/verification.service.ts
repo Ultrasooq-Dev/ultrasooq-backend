@@ -158,7 +158,7 @@ Respond ONLY with valid JSON, no markdown or explanation.
 
       // Update user fields too
       if (extractedData.taxId || extractedData.website) {
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: userId },
           data: {
             ...(extractedData.taxId ? { companyTaxId: extractedData.taxId } : {}),

@@ -949,7 +949,7 @@ export class AdminMemberService {
 
       const adminRoleId = parseInt(payload.adminRoleId);
 
-      const userExist = await this.prisma.user.findUnique({ where: { email: payload.email } });
+      const userExist = await this.prisma.legacyUser.findUnique({ where: { email: payload.email } });
       if (userExist) {
         return { 
           status: false, 
@@ -965,7 +965,7 @@ export class AdminMemberService {
       const employeeId = randomstring.generate({ length: 8, charset: 'alphanumeric' });
       const hashedPassword = await hash(password, salt);
       
-      let newUser = await this.prisma.user.create({
+      let newUser = await this.prisma.legacyUser.create({
         data: {
           firstName: payload?.firstName || null,
           lastName: payload?.lastName || null,
@@ -995,7 +995,7 @@ export class AdminMemberService {
       }
 
       const username = (payload?.firstName || 'Sub-Admin') + randomstring.generate({ length: 8, charset: 'alphanumeric' });
-      await this.prisma.user.update({
+      await this.prisma.legacyUser.update({
         where: { id: newUser.id },
         data: { 
           uniqueId: requestId, 
@@ -1235,7 +1235,7 @@ export class AdminMemberService {
       });
       
       if (payload.firstName || payload.lastName || payload.cc || payload.phoneNumber) {
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: existingAdminMember.userId },
           data: {
             firstName: payload.firstName,

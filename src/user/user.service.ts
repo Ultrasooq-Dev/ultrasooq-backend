@@ -152,7 +152,7 @@ export class UserService {
       if (userAccountId) {
 
         // Get the sub-account user details
-        const subAccountUser = await this.prisma.user.findUnique({
+        const subAccountUser = await this.prisma.legacyUser.findUnique({
           where: { id: userAccountId },
           include: {
             masterAccount: true,
@@ -232,7 +232,7 @@ export class UserService {
 
       // User is using main account - existing logic
 
-      let userDetail = await this.prisma.user.findUnique({
+      let userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         include: {
           masterAccount: true, // Include MasterAccount for personal info
@@ -332,7 +332,7 @@ export class UserService {
     try {
       // Handle both user object structures (from User model or custom object)
       const userId = req?.user?.id || req?.user?.userId;
-      let userDetail = await this.prisma.user.findFirst({
+      let userDetail = await this.prisma.legacyUser.findFirst({
         where: { id: userId },
         select: {
           id: true,
@@ -456,7 +456,7 @@ export class UserService {
       const targetUserId = userAccountId || userId;
 
       // Get the current user to verify they exist
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: { id: targetUserId },
         include: { masterAccount: true },
       });
@@ -474,7 +474,7 @@ export class UserService {
 
       // Check if username already exists
       if (payload?.userName) {
-        let existUserName = await this.prisma.user.findFirst({
+        let existUserName = await this.prisma.legacyUser.findFirst({
           where: {
             userName: payload?.userName,
             id: { not: targetUserId }, // Exclude current user
@@ -490,7 +490,7 @@ export class UserService {
       }
 
       // Update Master Account (personal information)
-      const updatedMasterAccount = await this.prisma.masterAccount.update({
+      const updatedMasterAccount = await this.prisma.legacyMasterAccount.update({
         where: { id: currentUser.masterAccount.id },
         data: {
           firstName: payload.firstName || currentUser.masterAccount.firstName,
@@ -514,7 +514,7 @@ export class UserService {
         (!currentUser.identityProofBack && payload.identityProofBack);
 
       // Update User account (other details)
-      let updatedUser = await this.prisma.user.update({
+      let updatedUser = await this.prisma.legacyUser.update({
         where: { id: targetUserId },
         data: {
           userName: payload.userName || currentUser.userName,
@@ -626,7 +626,7 @@ export class UserService {
   async changePassword(payload: any, req: any) {
     try {
       const userId = req?.user?.id;
-      let userDetail = await this.prisma.user.findUnique({
+      let userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
       });
       if (!userDetail) {
@@ -648,7 +648,7 @@ export class UserService {
         const salt = await genSalt(10);
         const password = await hash(payload.newPassword, salt);
 
-        let updatedUserDetail = await this.prisma.user.update({
+        let updatedUserDetail = await this.prisma.legacyUser.update({
           where: { id: userId },
           data: { password: password },
         });
@@ -691,7 +691,7 @@ export class UserService {
       let page = 1;
       let pageSize = 10;
       const skip = (page - 1) * pageSize; // Calculate the offset
-      let allUser = await this.prisma.user.findMany({
+      let allUser = await this.prisma.legacyUser.findMany({
         include: {
           userPhone: true,
         },
@@ -731,7 +731,7 @@ export class UserService {
   async findUnique(payload: any) {
     try {
       const userId = payload.userId;
-      let userDetail = await this.prisma.user.findUnique({
+      let userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         include: {
           userPhone: true,
@@ -922,7 +922,7 @@ export class UserService {
       const targetUserId = userAccountId || userId;
 
       // Get the current user to verify they exist
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: { id: targetUserId },
         include: { masterAccount: true },
       });
@@ -1649,7 +1649,7 @@ export class UserService {
     try {
       // Handle both user object structures (from User model or custom object)
       const userId = req.user.id || req.user.userId;
-      let userDetail = await this.prisma.user.findUnique({
+      let userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
       });
       if (!userDetail) {
@@ -1671,7 +1671,7 @@ export class UserService {
         }
         payload.email = payload.email.toLowerCase();
       }
-      const userEmail = await this.prisma.user.findUnique({
+      const userEmail = await this.prisma.legacyUser.findUnique({
         where: { email: payload.email },
       });
       if (userEmail && userDetail.email != payload.email) {
@@ -1700,7 +1700,7 @@ export class UserService {
       // and any prior pending row for THIS user — only one outstanding
       // OTP per user at a time.
       const now = new Date();
-      await this.prisma.betterAuthVerification.deleteMany({
+      await this.prisma.verification.deleteMany({
         where: {
           OR: [
             { identifier, expiresAt: { lt: now } },
@@ -1712,7 +1712,7 @@ export class UserService {
           ],
         },
       });
-      await this.prisma.betterAuthVerification.create({
+      await this.prisma.verification.create({
         data: {
           id: randomUUID(),
           identifier,
@@ -1756,7 +1756,7 @@ export class UserService {
       const { email, otp } = payload;
       // Handle both user object structures (from User model or custom object)
       const userId = req?.user?.id || req?.user?.userId;
-      const userDetail = await this.prisma.user.findUnique({
+      const userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
       });
       if (!userDetail) {
@@ -1767,7 +1767,7 @@ export class UserService {
         };
       }
       const identifier = `${CHANGE_EMAIL_VERIFICATION_PREFIX}${userId}`;
-      const pendingRow = await this.prisma.betterAuthVerification.findFirst({
+      const pendingRow = await this.prisma.verification.findFirst({
         where: { identifier },
         orderBy: { createdAt: 'desc' },
       });
@@ -1782,7 +1782,7 @@ export class UserService {
       try {
         pending = JSON.parse(pendingRow.value);
       } catch {
-        await this.prisma.betterAuthVerification.delete({
+        await this.prisma.verification.delete({
           where: { id: pendingRow.id },
         });
         return {
@@ -1799,7 +1799,7 @@ export class UserService {
         };
       }
       if (Date.now() > pendingRow.expiresAt.getTime()) {
-        await this.prisma.betterAuthVerification.delete({
+        await this.prisma.verification.delete({
           where: { id: pendingRow.id },
         });
         return {
@@ -1812,11 +1812,11 @@ export class UserService {
       // truth — accept either it or the email passed back by the client
       // (kept for backwards compat with the existing frontend request shape).
       const newEmail = email || pending.pendingEmail;
-      const updatedEmail = await this.prisma.user.update({
+      const updatedEmail = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: { email: newEmail },
       });
-      await this.prisma.betterAuthVerification.delete({
+      await this.prisma.verification.delete({
         where: { id: pendingRow.id },
       });
 
@@ -1848,7 +1848,7 @@ export class UserService {
   async onlineOfflineStatus(payload: any, req: any) {
     try {
       const userId = req?.user?.id;
-      let userDetail = await this.prisma.user.update({
+      let userDetail = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: {
           onlineOffline: payload.onlineOffline,
@@ -2205,7 +2205,7 @@ export class UserService {
    */
   async userDelete(payload: any) {
     try {
-      const userDetail = await this.prisma.user.findUnique({
+      const userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: payload?.userId },
       });
 
@@ -2222,7 +2222,7 @@ export class UserService {
       });
       let email = random + 'yopmail.com';
 
-      let updatedUser = await this.prisma.user.update({
+      let updatedUser = await this.prisma.legacyUser.update({
         where: { id: payload?.userId },
         data: { email: email },
       });
@@ -2420,7 +2420,7 @@ export class UserService {
           data: [],
         };
       }
-      let userRoleInUserCount = await this.prisma.user.count({
+      let userRoleInUserCount = await this.prisma.legacyUser.count({
         where: { userRoleId: ID },
       });
       if (userRoleInUserCount > 0) {
@@ -2971,7 +2971,7 @@ export class UserService {
       }
 
       // Fetch the user to check for master account relationships
-      const activeUser = await this.prisma.user.findUnique({
+      const activeUser = await this.prisma.legacyUser.findUnique({
         where: { id: primaryUserId },
         select: {
           id: true,
@@ -3102,7 +3102,7 @@ export class UserService {
       const userId = req.user.id || req.user.userId;
 
       // Get the current user to find their Master Account
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         include: { masterAccount: true },
       });
@@ -3116,7 +3116,7 @@ export class UserService {
       }
 
       // Get all user accounts for this Master Account
-      const allAccounts = await this.prisma.user.findMany({
+      const allAccounts = await this.prisma.legacyUser.findMany({
         where: {
           masterAccountId: currentUser.masterAccountId,
           deletedAt: null,
@@ -3376,7 +3376,7 @@ export class UserService {
       const userId = req.user.id || req.user.userId;
 
       // Get the current user to find their Master Account
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         include: { masterAccount: true },
       });
@@ -3390,7 +3390,7 @@ export class UserService {
       }
 
       // Check if account name already exists for this user and trade role
-      const existingAccount = await this.prisma.user.findFirst({
+      const existingAccount = await this.prisma.legacyUser.findFirst({
         where: {
           masterAccountId: currentUser.masterAccountId,
           tradeRole: payload.tradeRole,
@@ -3425,7 +3425,7 @@ export class UserService {
       }
 
       // Create new sub-account inheriting from Master Account
-      const newUserAccount = await this.prisma.user.create({
+      const newUserAccount = await this.prisma.legacyUser.create({
         data: {
           masterAccountId: currentUser.masterAccountId,
           accountName: payload.accountName,
@@ -3492,7 +3492,7 @@ export class UserService {
       const { userAccountId } = payload;
 
       // First, get the current user to find their masterAccountId
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         include: { masterAccount: true },
       });
@@ -3507,7 +3507,7 @@ export class UserService {
       }
 
       // Deactivate all current accounts for this MasterAccount
-      await this.prisma.user.updateMany({
+      await this.prisma.legacyUser.updateMany({
         where: {
           masterAccountId: currentUser.masterAccountId,
           isCurrent: true,
@@ -3520,7 +3520,7 @@ export class UserService {
       if (userAccountId === 0) {
         // Switch to main account (no sub-account)
         // Find the main account for this MasterAccount
-        const user = await this.prisma.user.findFirst({
+        const user = await this.prisma.legacyUser.findFirst({
           where: {
             masterAccountId: currentUser.masterAccountId,
             tradeRole: 'BUYER', // Default main account is BUYER
@@ -3547,13 +3547,13 @@ export class UserService {
         }
 
         // Activate the main account as current
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: user.id },
           data: { isCurrent: true },
         });
 
         // Update the lastActiveUserId in MasterAccount
-        await this.prisma.masterAccount.update({
+        await this.prisma.legacyMasterAccount.update({
           where: { id: currentUser.masterAccountId },
           data: { lastActiveUserId: user.id },
         });
@@ -3601,7 +3601,7 @@ export class UserService {
 
         // Find the sub-account that belongs to the same MasterAccount
 
-        const userAccount = await this.prisma.user.findFirst({
+        const userAccount = await this.prisma.legacyUser.findFirst({
           where: {
             id: userAccountId,
             masterAccountId: currentUser.masterAccountId,
@@ -3629,19 +3629,19 @@ export class UserService {
         }
 
         // Activate this account as current
-        await this.prisma.user.update({
+        await this.prisma.legacyUser.update({
           where: { id: userAccountId },
           data: { isCurrent: true },
         });
 
         // Update the lastActiveUserId in MasterAccount
-        await this.prisma.masterAccount.update({
+        await this.prisma.legacyMasterAccount.update({
           where: { id: currentUser.masterAccountId },
           data: { lastActiveUserId: userAccountId },
         });
 
         // Get master user details
-        const masterUser = await this.prisma.user.findUnique({
+        const masterUser = await this.prisma.legacyUser.findUnique({
           where: { id: userId },
         });
 
@@ -3698,7 +3698,7 @@ export class UserService {
       const userId = req.user.id || req.user.userId;
 
       // Find all sub-accounts without subAccountUserId
-      const unmigatedAccounts = await this.prisma.user.findMany({
+      const unmigatedAccounts = await this.prisma.legacyUser.findMany({
         where: {
           parentUserId: userId,
           isSubAccount: true,
@@ -3723,7 +3723,7 @@ export class UserService {
         try {
 
           // Create a new User record for this sub-account
-          const newSubUser = await this.prisma.user.create({
+          const newSubUser = await this.prisma.legacyUser.create({
             data: {
               email: `${account.accountName.toLowerCase().replace(/\s+/g, '')}@subaccount.local`,
               password: '$2b$10$defaulthash', // Default hash
@@ -3764,7 +3764,7 @@ export class UserService {
           });
 
           // Update the User to link to the new sub-account user
-          const updatedAccount = await this.prisma.user.update({
+          const updatedAccount = await this.prisma.legacyUser.update({
             where: { id: account.id },
             data: { parentUserId: newSubUser.id },
           });
@@ -3827,7 +3827,7 @@ export class UserService {
       // If we have a specific account context, use that
       if (userAccountId && userAccountId !== userId) {
         // User is in a sub-account context
-        const subAccount = await this.prisma.user.findUnique({
+        const subAccount = await this.prisma.legacyUser.findUnique({
           where: {
             id: userAccountId,
             deletedAt: null,
@@ -3840,7 +3840,7 @@ export class UserService {
 
         if (subAccount && subAccount.masterAccountId) {
           // Verify this sub-account belongs to the same master account
-          const masterAccount = await this.prisma.masterAccount.findUnique({
+          const masterAccount = await this.prisma.legacyMasterAccount.findUnique({
             where: { id: subAccount.masterAccountId },
           });
 
@@ -3882,7 +3882,7 @@ export class UserService {
       }
 
       // First, get the current user with their master account info
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await this.prisma.legacyUser.findUnique({
         where: {
           id: userId,
           deletedAt: null,
@@ -3909,7 +3909,7 @@ export class UserService {
       }
 
       // Find the current active account for this master account
-      const currentAccount = await this.prisma.user.findFirst({
+      const currentAccount = await this.prisma.legacyUser.findFirst({
         where: {
           masterAccountId: currentUser.masterAccountId,
           isCurrent: true,
@@ -3957,7 +3957,7 @@ export class UserService {
         };
       } else {
         // Find the main account (the one created during registration)
-        const mainAccount = await this.prisma.user.findFirst({
+        const mainAccount = await this.prisma.legacyUser.findFirst({
           where: {
             masterAccountId: currentUser.masterAccountId,
             tradeRole: 'BUYER', // Default main account is BUYER

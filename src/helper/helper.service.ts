@@ -42,7 +42,7 @@ export class HelperService {
   async getAdminId(userId: number): Promise<number | null> {
     if (!userId) return null; // Handle case where userId is undefined
 
-    const adminDetail = await this.prisma.user.findUnique({
+    const adminDetail = await this.prisma.legacyUser.findUnique({
       where: { id: userId },
       select: { id: true, tradeRole: true, addedBy: true },
     });
@@ -66,7 +66,7 @@ export class HelperService {
   async getSuperAdminORSubAdminId(userId: number): Promise<number | null> {
     if (!userId) return null; // Handle case where userId is undefined
 
-    const adminDetail = await this.prisma.user.findUnique({
+    const adminDetail = await this.prisma.legacyUser.findUnique({
       where: { id: userId },
       select: { id: true, tradeRole: true, addedBy: true },
     });

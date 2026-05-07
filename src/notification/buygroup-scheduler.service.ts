@@ -79,7 +79,7 @@ export class BuygroupSchedulerService {
 
         // 2. Get all active buyers to ensure notifications reach potential customers
         // This is important for new buygroup sales where no one has added to wishlist yet
-        const allBuyers = await this.prisma.user.findMany({
+        const allBuyers = await this.prisma.legacyUser.findMany({
           where: {
             status: 'ACTIVE',
             userType: 'USER',

@@ -65,7 +65,7 @@ async function main() {
 
   try {
     // MasterAccount.email is non-null in the schema; filter just on deletedAt.
-    const masterAccounts = await prisma.masterAccount.findMany({
+    const masterAccounts = await prisma.legacyMasterAccount.findMany({
       where: { deletedAt: null },
       orderBy: { id: 'asc' },
     });
@@ -74,8 +74,8 @@ async function main() {
 
     // Pre-load the existing BetterAuth state for fast idempotency checks.
     const [existingByEmail, existingByLegacyId] = await Promise.all([
-      prisma.betterAuthUser.findMany({ select: { email: true } }),
-      prisma.betterAuthUser.findMany({
+      prisma.user.findMany({ select: { email: true } }),
+      prisma.user.findMany({
         where: { legacyMasterAccountId: { not: null } },
         select: { legacyMasterAccountId: true },
       }),
@@ -100,7 +100,7 @@ async function main() {
           // "orphan" — tradeRole='BUYER' default, legacyUserId=null.
           let primary = null as null | { id: number; tradeRole: string };
           if (ma.lastActiveUserId) {
-            primary = (await prisma.user.findFirst({
+            primary = (await prisma.legacyUser.findFirst({
               where: {
                 id: ma.lastActiveUserId,
                 masterAccountId: ma.id,
@@ -111,7 +111,7 @@ async function main() {
             })) as any;
           }
           if (!primary) {
-            primary = (await prisma.user.findFirst({
+            primary = (await prisma.legacyUser.findFirst({
               where: {
                 masterAccountId: ma.id,
                 tradeRole: 'BUYER',
@@ -137,7 +137,7 @@ async function main() {
 
           try {
             await prisma.$transaction([
-              prisma.betterAuthUser.create({
+              prisma.user.create({
                 data: {
                   id: userId,
                   email: emailLc,
@@ -152,7 +152,7 @@ async function main() {
                   updatedAt: now,
                 },
               }),
-              prisma.betterAuthAccount.create({
+              prisma.account.create({
                 data: {
                   id: accountId,
                   userId,

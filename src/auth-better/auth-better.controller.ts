@@ -55,7 +55,7 @@ export class AuthBetterController {
       data.accountName = body.accountName;
     }
 
-    const updated = await this.prisma.betterAuthUser.update({
+    const updated = await this.prisma.user.update({
       where: { id: u.id },
       data,
     });

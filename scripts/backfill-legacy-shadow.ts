@@ -62,7 +62,7 @@ async function main() {
   const errors: { email: string; reason: string }[] = [];
 
   try {
-    const orphans = await prisma.betterAuthUser.findMany({
+    const orphans = await prisma.user.findMany({
       where: { legacyUserId: null },
       orderBy: { createdAt: 'asc' },
     });
@@ -88,12 +88,12 @@ async function main() {
 
           try {
             // 1. Find-or-create MasterAccount by email.
-            let ma = await prisma.masterAccount.findUnique({
+            let ma = await prisma.legacyMasterAccount.findUnique({
               where: { email: emailLc },
             });
             const reusedMaster = !!ma;
             if (!ma) {
-              ma = await prisma.masterAccount.create({
+              ma = await prisma.legacyMasterAccount.create({
                 data: {
                   email: emailLc,
                   password: '',
@@ -106,12 +106,12 @@ async function main() {
             }
 
             // 2. Find-or-create User row.
-            let user = await prisma.user.findUnique({
+            let user = await prisma.legacyUser.findUnique({
               where: { email: emailLc },
             });
             const reusedUser = !!user;
             if (!user) {
-              user = await prisma.user.create({
+              user = await prisma.legacyUser.create({
                 data: {
                   masterAccountId: ma.id,
                   email: emailLc,
@@ -129,7 +129,7 @@ async function main() {
             }
 
             // 3. Patch the back-link.
-            await prisma.betterAuthUser.update({
+            await prisma.user.update({
               where: { id: ba.id },
               data: {
                 legacyUserId: user.id,
@@ -142,7 +142,7 @@ async function main() {
             //    primary).
             if (ma.lastActiveUserId !== user.id) {
               try {
-                await prisma.masterAccount.update({
+                await prisma.legacyMasterAccount.update({
                   where: { id: ma.id },
                   data: { lastActiveUserId: user.id },
                 });

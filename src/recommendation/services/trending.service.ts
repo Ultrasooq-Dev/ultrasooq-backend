@@ -92,7 +92,7 @@ export class TrendingService {
    * we cross-product each distinct tradeRole with all supported locales.
    */
   async getActiveSegments(): Promise<{ locale: string; tradeRole: string }[]> {
-    const roles = await this.prisma.user.findMany({
+    const roles = await this.prisma.legacyUser.findMany({
       where: { tradeRole: { not: null }, deletedAt: null },
       select: { tradeRole: true },
       distinct: ['tradeRole'],
@@ -116,7 +116,7 @@ export class TrendingService {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
       // Get users in this segment (tradeRole only — locale is resolved at API time)
-      const segmentUsers = await this.prisma.user.findMany({
+      const segmentUsers = await this.prisma.legacyUser.findMany({
         where: { tradeRole: segment.tradeRole as any, deletedAt: null },
         select: { id: true },
       });

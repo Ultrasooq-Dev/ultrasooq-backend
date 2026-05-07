@@ -22,17 +22,17 @@ model Permission {
   userRolePermission UserRolePermission[]
 }
 
-// User — Core identity model for all platform participants (buyers, sellers, freelancers, admins, team members).
+// LegacyUser — Core identity model for all platform participants (buyers, sellers, freelancers, admins, team members).
 // Fields: email/password (credentials), tradeRole (BUYER/FREELANCER/COMPANY/MEMBER/ADMINMEMBER), loginType (MANUAL/SOCIAL),
 //   otp/otpValidTime (email/phone verification), customerId/stripeAccountId (Stripe payment integration),
 //   isSubAccount/parentUserId/masterAccountId (sub-account hierarchy for multi-account management),
 //   company* fields (business profile for COMPANY role), userRoleId (seller team RBAC role), adminRoleId (admin RBAC role).
 // Relations: Products (creator/admin), ProductPrice (seller listings), Orders (seller side via OrderProducts),
 //   RFQ (buyer/seller quote flows), Rooms/Messages (chat), Services, Cart, TeamMember, AdminMember, SubAccounts (self-join),
-//   MasterAccount (multi-account switching), UserAddress/UserPhone/UserProfile/UserBranch (profile data).
-// Central entity; nearly every other model references User directly or indirectly.
+//   LegacyMasterAccount (multi-account switching), UserAddress/UserPhone/UserProfile/UserBranch (profile data).
+// Central entity; nearly every other model references LegacyUser directly or indirectly.
 // Soft delete: status=DELETE + deletedAt. New users start with status=WAITING pending verification.
-model User {
+model LegacyUser {
   id                                            Int                           @id @default(autoincrement())
   email                                         String?                       @unique
   firstName                                     String?
@@ -82,7 +82,7 @@ model User {
   ExistingProduct_ExistingProduct_adminIdToUser ExistingProduct[]             @relation("ExistingProduct_adminIdToUser")
   ExistingProduct_ExistingProduct_userIdToUser  ExistingProduct[]             @relation("ExistingProduct_userIdToUser")
   helCenterUserDetail                           HelpCenter[]                  @relation("helpCenterUserDetail")
-  lastActiveMasterAccount                       MasterAccount?                @relation("LastActiveUser")
+  lastActiveMasterAccount                       LegacyMasterAccount?          @relation("LastActiveUser")
   messages                                      Message[]                     @relation("UserMessages")
   user_orderProductsSeller                      OrderProducts[]               @relation("OrderProductsSeller")
   adminProduct                                  Product[]                     @relation("ProductAdmin")
@@ -111,10 +111,10 @@ model User {
   teamMemberDetail                              TeamMember[]
   adminRoleDetail                               AdminRole?                    @relation(fields: [adminRoleId], references: [id])
   notifications                                 Notification[]                @relation("UserNotifications")
-  masterAccount                                 MasterAccount?                @relation("MasterAccountUsers", fields: [masterAccountId], references: [id])
+  masterAccount                                 LegacyMasterAccount?          @relation("MasterAccountUsers", fields: [masterAccountId], references: [id])
   systemLogs                                    SystemLog[]
-  mainUser                                      User?                         @relation("SubAccounts", fields: [parentUserId], references: [id])
-  subAccounts                                   User[]                        @relation("SubAccounts")
+  mainUser                                      LegacyUser?                   @relation("SubAccounts", fields: [parentUserId], references: [id])
+  subAccounts                                   LegacyUser[]                  @relation("SubAccounts")
   userRoleDetail                                UserRole?                     @relation(fields: [userRoleId], references: [id])
   userTypeCategoryDetail                        Category?                     @relation(fields: [userTypeCategoryId], references: [id])
   UserAddress                                   UserAddress[]
@@ -142,36 +142,39 @@ model User {
   @@index([adminRoleId])
   @@index([status])
   @@index([tradeRole])
+  @@map("User")
 }
 
-// MasterAccount — Represents a top-level account that owns multiple User sub-accounts.
+// LegacyMasterAccount — Represents a top-level account that owns multiple LegacyUser sub-accounts.
 // Fields: email/password/firstName/lastName/phoneNumber (master credentials),
-//   lastActiveUserId (the User sub-account most recently active under this master).
-// Relations: users (one-to-many User via MasterAccountUsers), lastActiveUser (one-to-one User).
+//   lastActiveUserId (the LegacyUser sub-account most recently active under this master).
+// Relations: users (one-to-many LegacyUser via MasterAccountUsers), lastActiveUser (one-to-one LegacyUser).
 // Enables multi-account switching: one person can manage several trade roles (buyer/seller)
 // under a single master login, toggling between them via lastActiveUserId.
-model MasterAccount {
-  id               Int       @id @default(autoincrement())
-  email            String    @unique
+model LegacyMasterAccount {
+  id               Int          @id @default(autoincrement())
+  email            String       @unique
   password         String
   firstName        String
   lastName         String
   phoneNumber      String
   cc               String
   dateOfBirth      DateTime?
-  gender           Gender?   @default(MALE)
+  gender           Gender?      @default(MALE)
   profilePicture   String?
-  lastActiveUserId Int?      @unique
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  lastActiveUserId Int?         @unique
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
-  lastActiveUser   User?     @relation("LastActiveUser", fields: [lastActiveUserId], references: [id])
-  users            User[]    @relation("MasterAccountUsers")
+  lastActiveUser   LegacyUser?  @relation("LastActiveUser", fields: [lastActiveUserId], references: [id])
+  users            LegacyUser[] @relation("MasterAccountUsers")
+
+  @@map("MasterAccount")
 }
 
 // UserRole — Defines named roles for seller team members (e.g., Manager, Sales Rep).
 // Fields: userRoleName (role label), addedBy (the seller who created this role).
-// Relations: UserRolePermission (M:N join to Permission), TeamMember (members assigned this role), User (direct link).
+// Relations: UserRolePermission (M:N join to Permission), TeamMember (members assigned this role), LegacyUser (direct link).
 // Part of the seller-side RBAC system: sellers create roles, attach permissions, then assign roles to team members.
 model UserRole {
   id                 Int                  @id @default(autoincrement())
@@ -182,7 +185,7 @@ model UserRole {
   updatedAt          DateTime?            @updatedAt
   deletedAt          DateTime?
   teamMemberDetail   TeamMember[]
-  user               User[]
+  user               LegacyUser[]
   userRolePermission UserRolePermission[]
 }
 
@@ -208,19 +211,19 @@ model UserRolePermission {
 // UserAddress — Stores saved addresses for a user (shipping/billing).
 // Fields: address/city/province/country/postCode (address fields), firstName/lastName/phoneNumber/cc (contact info),
 //   cityId/countryId/stateId (FK to geographic lookup tables), town (sub-city level).
-// Relations: userDetail -> User, cityDetail -> Cities, countryDetail -> Countries, stateDetail -> States.
+// Relations: userDetail -> LegacyUser, cityDetail -> Cities, countryDetail -> Countries, stateDetail -> States.
 // Users can have multiple saved addresses for checkout convenience.
 model UserAddress {
-  id            Int        @id @default(autoincrement())
-  status        Status     @default(ACTIVE)
+  id            Int         @id @default(autoincrement())
+  status        Status      @default(ACTIVE)
   address       String?
   city          String?
   province      String?
   country       String?
   postCode      String?
   deletedAt     DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
   userId        Int?
   cc            String?
   firstName     String?
@@ -230,10 +233,10 @@ model UserAddress {
   countryId     Int?
   stateId       Int?
   town          String?
-  cityDetail    Cities?    @relation(fields: [cityId], references: [id])
-  countryDetail Countries? @relation(fields: [countryId], references: [id])
-  stateDetail   States?    @relation(fields: [stateId], references: [id])
-  userDetail    User?      @relation(fields: [userId], references: [id])
+  cityDetail    Cities?     @relation(fields: [cityId], references: [id])
+  countryDetail Countries?  @relation(fields: [countryId], references: [id])
+  stateDetail   States?     @relation(fields: [stateId], references: [id])
+  userDetail    LegacyUser? @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([cityId])
@@ -242,37 +245,37 @@ model UserAddress {
 }
 
 // UserPhone — Additional phone numbers associated with a user.
-// Fields: phoneNumber (the number), cc (country code), userId (FK to owning User).
-// Relations: user -> User.
-// Allows users to store multiple contact phone numbers beyond the primary one on User.
+// Fields: phoneNumber (the number), cc (country code), userId (FK to owning LegacyUser).
+// Relations: user -> LegacyUser.
+// Allows users to store multiple contact phone numbers beyond the primary one on LegacyUser.
 model UserPhone {
-  id          Int       @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   phoneNumber String
   deletedAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  status      Status    @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  status      Status     @default(ACTIVE)
   userId      Int
   cc          String?
-  user        User      @relation(fields: [userId], references: [id])
+  user        LegacyUser @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
 
 // UserSocialLink — Stores social media profile URLs for a user.
-// Fields: linkType (e.g., "facebook", "linkedin"), link (the URL), userId (FK to User).
-// Relations: user -> User.
+// Fields: linkType (e.g., "facebook", "linkedin"), link (the URL), userId (FK to LegacyUser).
+// Relations: user -> LegacyUser.
 // Displayed on seller/company public profiles.
 model UserSocialLink {
-  id        Int       @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   linkType  String?
   link      String?
-  status    Int?      @default(1)
+  status    Int?       @default(1)
   deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   userId    Int
-  user      User      @relation(fields: [userId], references: [id])
+  user      LegacyUser @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -281,7 +284,7 @@ model UserSocialLink {
 // Fields: profileType (e.g., "company", "freelancer"), companyName/aboutUs/logo (business identity),
 //   address/city/province/country (business location), yearOfEstablishment, totalNoOfEmployee,
 //   annualPurchasingVolume (buyer-specific metric), phoneNumber/cc (profile-level contact).
-// Relations: user -> User, userProfileBusinessType (M:N to Tags via UserProfileBusinessType).
+// Relations: user -> LegacyUser, userProfileBusinessType (M:N to Tags via UserProfileBusinessType).
 // A user may have multiple profiles (one per trade role or business entity).
 model UserProfile {
   id                      Int                       @id @default(autoincrement())
@@ -304,15 +307,15 @@ model UserProfile {
   crDocument              String?                   @db.VarChar(500)
   cc                      String?
   phoneNumber             String?
-  user                    User                      @relation(fields: [userId], references: [id])
+  user                    LegacyUser                @relation(fields: [userId], references: [id])
   userProfileBusinessType UserProfileBusinessType[]
 
   @@index([userId])
 }
 
 // UserProfileBusinessType — Join table linking a UserProfile to business-type Tags.
-// Fields: userId (FK to User), userProfileId (FK to UserProfile), businessTypeId (FK to Tags).
-// Relations: userProfileBusinessTypeTag -> Tags, userDetail -> User, userProfileBusinessType -> UserProfile.
+// Fields: userId (FK to LegacyUser), userProfileId (FK to UserProfile), businessTypeId (FK to Tags).
+// Relations: userProfileBusinessTypeTag -> Tags, userDetail -> LegacyUser, userProfileBusinessType -> UserProfile.
 // Categorizes what type of business the user profile represents (e.g., manufacturer, distributor).
 model UserProfileBusinessType {
   id                         Int         @id @default(autoincrement())
@@ -324,7 +327,7 @@ model UserProfileBusinessType {
   userProfileId              Int
   businessTypeId             Int
   userProfileBusinessTypeTag Tags        @relation(fields: [businessTypeId], references: [id])
-  userDetail                 User        @relation(fields: [userId], references: [id])
+  userDetail                 LegacyUser  @relation(fields: [userId], references: [id])
   userProfileBusinessType    UserProfile @relation(fields: [userProfileId], references: [id])
 
   @@index([userId])
@@ -336,7 +339,7 @@ model UserProfileBusinessType {
 // Fields: profileType (branch type), branchFrontPicture/proofOfAddress (verification documents),
 //   address/city/province/country (location), contactNumber/contactName (branch contact),
 //   startTime/endTime/workingDays (operating hours), mainOffice (flag if this is the HQ).
-// Relations: user -> User, userBranchBusinessType (business types), userBranchCategory (categories),
+// Relations: user -> LegacyUser, userBranchBusinessType (business types), userBranchCategory (categories),
 //   userBranchTags (tags for search/filter).
 // Sellers with multiple locations list each branch separately.
 model UserBranch {
@@ -364,7 +367,7 @@ model UserBranch {
   updatedAt                     DateTime                 @updatedAt
   userId                        Int
   cc                            String?
-  user                          User                     @relation(fields: [userId], references: [id])
+  user                          LegacyUser               @relation(fields: [userId], references: [id])
   countryDetail                 Countries?               @relation(fields: [countryId], references: [id])
   stateDetail                   States?                  @relation(fields: [stateId], references: [id])
   cityDetail                    Cities?                  @relation(fields: [cityId], references: [id])
@@ -459,20 +462,20 @@ model UserBusinessCategory {
 }
 
 // TeamMember — Represents a seller's team member assignment with a specific role.
-// Fields: userId (FK to the member User), userRoleId (FK to UserRole), addedBy (the seller who added them).
-// Relations: userDetail -> User, userRolDetail -> UserRole.
+// Fields: userId (FK to the member LegacyUser), userRoleId (FK to UserRole), addedBy (the seller who added them).
+// Relations: userDetail -> LegacyUser, userRolDetail -> UserRole.
 // When a seller invites a team member (MEMBER tradeRole), a TeamMember row links them to the seller's UserRole.
 model TeamMember {
-  id            Int       @id @default(autoincrement())
+  id            Int         @id @default(autoincrement())
   userId        Int?
   userRoleId    Int?
   addedBy       Int?
-  status        Status    @default(ACTIVE)
+  status        Status      @default(ACTIVE)
   deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  userDetail    User?     @relation(fields: [userId], references: [id])
-  userRolDetail UserRole? @relation(fields: [userRoleId], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  userDetail    LegacyUser? @relation(fields: [userId], references: [id])
+  userRolDetail UserRole?   @relation(fields: [userRoleId], references: [id])
 
   @@index([userId])
   @@index([userRoleId])
@@ -546,7 +549,7 @@ model Category {
   categoryProducts                 Product[]
   category_productPrice            ProductPrice[]          @relation("menuDetailInProductPrice")
   categoryServices                 Service[]
-  category_userTypeCategory        User[]
+  category_userTypeCategory        LegacyUser[]
   category_userBranchCategory      UserBranchCategory[]
   category_userBusinessCategory    UserBusinessCategory[]
 
@@ -883,16 +886,16 @@ model Product {
   factoriesCartDetail             FactoriesCart[]
   orderProductServices            OrderProductService[]
   orderProducts                   OrderProducts[]
-  adminBy                         User?                     @relation("ProductAdmin", fields: [adminId], references: [id])
+  adminBy                         LegacyUser?               @relation("ProductAdmin", fields: [adminId], references: [id])
   brand                           Brand?                    @relation(fields: [brandId], references: [id])
   category                        Category?                 @relation(fields: [categoryId], references: [id])
   placeOfOrigin                   CountryList?              @relation(fields: [placeOfOriginId], references: [id])
-  userBy                          User?                     @relation("ProductUser", fields: [userId], references: [id])
+  userBy                          LegacyUser?               @relation("ProductUser", fields: [userId], references: [id])
   // Dropshipping relations
   originalProduct                 Product?                  @relation("DropshipOriginal", fields: [originalProductId], references: [id])
   dropshipProducts                Product[]                 @relation("DropshipOriginal")
-  dropshipVendor                  User?                     @relation("DropshipVendor", fields: [dropshipVendorId], references: [id])
-  originalVendor                  User?                     @relation("OriginalVendor", fields: [originalVendorId], references: [id])
+  dropshipVendor                  LegacyUser?               @relation("DropshipVendor", fields: [dropshipVendorId], references: [id])
+  originalVendor                  LegacyUser?               @relation("OriginalVendor", fields: [originalVendorId], references: [id])
   productImages                   ProductImages[]
   product_productPrice            ProductPrice[]
   productReview                   ProductReview[]
@@ -935,7 +938,7 @@ model Product {
 }
 
 // ProductPrice — Seller-specific pricing and availability for a product (multiple sellers can price the same product).
-// Fields: productId (FK to Product), adminId (FK to seller User), productPrice/offerPrice (seller's pricing),
+// Fields: productId (FK to Product), adminId (FK to seller LegacyUser), productPrice/offerPrice (seller's pricing),
 //   stock/minQuantity/maxQuantity (inventory), sellType (NORMALSELL/BUYGROUP/WHOLESALE_PRODUCT/etc.),
 //   consumerType (CONSUMER/VENDORS/EVERYONE), consumerDiscount/vendorDiscount (discount percentages),
 //   dateOpen/dateClose/startTime/endTime (availability window), timeOpen/timeClose (time-of-day),
@@ -943,7 +946,7 @@ model Product {
 //   hideAllSelected/enableChat (display/chat toggles), productCondition (new/used),
 //   productCountryId/productStateId/productCityId/productTown/productLatLng (seller's product location),
 //   menuId (FK to Category for menu context), isCustomProduct.
-// Relations: Product, User (seller), Cart, OrderProducts, ProductPriceReview, ProductSellerImage,
+// Relations: Product, LegacyUser (seller), Cart, OrderProducts, ProductPriceReview, ProductSellerImage,
 //   Cities/Countries/States (product location), Category (menu).
 // This is the key join table enabling the multi-seller marketplace: many sellers can offer different prices for one product.
 model ProductPrice {
@@ -992,7 +995,7 @@ model ProductPrice {
   menuId                          Int?
   productPrice_cart               Cart[]
   productPrice_orderProducts      OrderProducts[]
-  adminDetail                     User?                @relation("ProductPriceUser", fields: [adminId], references: [id])
+  adminDetail                     LegacyUser?          @relation("ProductPriceUser", fields: [adminId], references: [id])
   menuDetail                      Category?            @relation("menuDetailInProductPrice", fields: [menuId], references: [id])
   productCityDetail               Cities?              @relation(fields: [productCityId], references: [id])
   productCountryDetail            Countries?           @relation(fields: [productCountryId], references: [id])
@@ -1218,12 +1221,12 @@ model SellerReward {
 
 // SharedLink — Tracks an affiliate/referral link generated by a user for a product with a seller reward.
 // Fields: sellerRewardId, productId (FK to Product), adminId (seller), generatedLink (the unique URL),
-//   linkGeneratedBy (FK to User who created the link), myTotalSell/ordersPlaced (performance counters),
+//   linkGeneratedBy (FK to LegacyUser who created the link), myTotalSell/ordersPlaced (performance counters),
 //   totalReward (accumulated reward amount).
-// Relations: linkGeneratedByDetail -> User, productDetail -> Product.
+// Relations: linkGeneratedByDetail -> LegacyUser, productDetail -> Product.
 // When a buyer purchases through a shared link, the link generator earns the seller reward.
 model SharedLink {
-  id                    Int       @id @default(autoincrement())
+  id                    Int         @id @default(autoincrement())
   sellerRewardId        Int?
   productId             String?
   adminId               Int?
@@ -1231,35 +1234,35 @@ model SharedLink {
   linkGeneratedBy       Int?
   myTotalSell           Int?
   ordersPlaced          Int?
-  totalReward           Decimal?  @db.Decimal(8, 2)
-  status                Status    @default(ACTIVE)
+  totalReward           Decimal?    @db.Decimal(8, 2)
+  status                Status      @default(ACTIVE)
   deletedAt             DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  linkGeneratedByDetail User?     @relation("linkGeneratorDetail", fields: [linkGeneratedBy], references: [id])
-  productDetail         Product?  @relation(fields: [productId], references: [id])
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  linkGeneratedByDetail LegacyUser? @relation("linkGeneratorDetail", fields: [linkGeneratedBy], references: [id])
+  productDetail         Product?    @relation(fields: [productId], references: [id])
 
   @@index([productId])
   @@index([linkGeneratedBy])
 }
 
 // ProductReview — Buyer reviews and ratings for a product.
-// Fields: userId (FK to reviewing User), productId (FK to Product), title/description (review text), rating (numeric score).
-// Relations: productReview_product -> Product, reviewByUserDetail -> User.
+// Fields: userId (FK to reviewing LegacyUser), productId (FK to Product), title/description (review text), rating (numeric score).
+// Relations: productReview_product -> Product, reviewByUserDetail -> LegacyUser.
 // Aggregated ratings are used for product ranking and display on product detail pages.
 model ProductReview {
-  id                    Int       @id @default(autoincrement())
+  id                    Int         @id @default(autoincrement())
   userId                Int?
   productId             String?
-  status                Status    @default(ACTIVE)
+  status                Status      @default(ACTIVE)
   title                 String?
   description           String?
   rating                Int?
   deletedAt             DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  productReview_product Product?  @relation(fields: [productId], references: [id])
-  reviewByUserDetail    User?     @relation("ProductReviewUser", fields: [userId], references: [id])
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  productReview_product Product?    @relation(fields: [productId], references: [id])
+  reviewByUserDetail    LegacyUser? @relation("ProductReviewUser", fields: [userId], references: [id])
 
   @@index([productId])
   @@index([userId])
@@ -1268,7 +1271,7 @@ model ProductReview {
 // ProductPriceReview — Buyer reviews and ratings for a specific seller's product listing (ProductPrice).
 // Fields: userId (FK to reviewer), productPriceId (FK to ProductPrice), productId, adminId (seller),
 //   title/description (review text), rating (numeric score).
-// Relations: productPriceReview_productPrice -> ProductPrice, productPriceReview_user -> User.
+// Relations: productPriceReview_productPrice -> ProductPrice, productPriceReview_user -> LegacyUser.
 // Enables per-seller rating: buyers can rate the same product differently depending on which seller they purchased from.
 model ProductPriceReview {
   id                              Int           @id @default(autoincrement())
@@ -1284,7 +1287,7 @@ model ProductPriceReview {
   updatedAt                       DateTime      @updatedAt
   adminId                         Int?
   productPriceReview_productPrice ProductPrice? @relation(fields: [productPriceId], references: [id])
-  productPriceReview_user         User?         @relation("ProductPriceReviewUser", fields: [userId], references: [id])
+  productPriceReview_user         LegacyUser?   @relation("ProductPriceReviewUser", fields: [userId], references: [id])
 
   @@index([productPriceId])
   @@index([userId])
@@ -1302,8 +1305,8 @@ model ProductView {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  user    User?   @relation("UserProductViews", fields: [userId], references: [id])
-  product Product @relation("ProductViews", fields: [productId], references: [id])
+  user    LegacyUser? @relation("UserProductViews", fields: [userId], references: [id])
+  product Product     @relation("ProductViews", fields: [productId], references: [id])
 
   @@unique([userId, productId])
   @@unique([deviceId, productId])
@@ -1325,8 +1328,8 @@ model ProductSearch {
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
 
-  user    User?    @relation("UserProductSearches", fields: [userId], references: [id])
-  product Product? @relation("ProductSearches", fields: [productId], references: [id])
+  user    LegacyUser? @relation("UserProductSearches", fields: [userId], references: [id])
+  product Product?    @relation("ProductSearches", fields: [productId], references: [id])
 
   @@index([userId])
   @@index([deviceId])
@@ -1345,8 +1348,8 @@ model ProductClick {
   createdAt   DateTime  @default(now())
   deletedAt   DateTime?
 
-  user    User?   @relation("UserProductClicks", fields: [userId], references: [id])
-  product Product @relation("ProductClicks", fields: [productId], references: [id])
+  user    LegacyUser? @relation("UserProductClicks", fields: [userId], references: [id])
+  product Product     @relation("ProductClicks", fields: [productId], references: [id])
 
   @@index([userId])
   @@index([deviceId])
@@ -1356,10 +1359,10 @@ model ProductClick {
 }
 
 // ProductQuestion — Q&A thread on a product or service detail page.
-// Fields: productId, question (question text), questionByuserId (FK to asker User),
-//   answer (inline answer text), answerByuserId (FK to answerer User),
+// Fields: productId, question (question text), questionByuserId (FK to asker LegacyUser),
+//   answer (inline answer text), answerByuserId (FK to answerer LegacyUser),
 //   questionType (PRODUCT or SERVICE), serviceId, userAccountId.
-// Relations: answerByuserIdDetail/questionByuserIdDetail -> User, productQuestionAnswerDetail -> ProductQuestionAnswer[].
+// Relations: answerByuserIdDetail/questionByuserIdDetail -> LegacyUser, productQuestionAnswerDetail -> ProductQuestionAnswer[].
 // Supports a public Q&A section where buyers ask and sellers/other buyers answer questions.
 model ProductQuestion {
   id                          Int                     @id @default(autoincrement())
@@ -1375,8 +1378,8 @@ model ProductQuestion {
   questionType                QuestionType?
   serviceId                   Int?
   userAccountId               Int?
-  answerByuserIdDetail        User?                   @relation("ProductAnswerUser", fields: [answerByuserId], references: [id])
-  questionByuserIdDetail      User?                   @relation("questionByUser", fields: [questionByuserId], references: [id])
+  answerByuserIdDetail        LegacyUser?             @relation("ProductAnswerUser", fields: [answerByuserId], references: [id])
+  questionByuserIdDetail      LegacyUser?             @relation("questionByUser", fields: [questionByuserId], references: [id])
   productQuestionAnswerDetail ProductQuestionAnswer[]
 
   @@index([productId])
@@ -1385,8 +1388,8 @@ model ProductQuestion {
 
 // ProductQuestionAnswer — Individual answers to a ProductQuestion (supports multiple answers per question).
 // Fields: productId, productQuestionId (FK to ProductQuestion), answer (text),
-//   answerByuserId (FK to answering User), questionType (PRODUCT/SERVICE), serviceId.
-// Relations: answerByUserDetail -> User, productQuestion -> ProductQuestion.
+//   answerByuserId (FK to answering LegacyUser), questionType (PRODUCT/SERVICE), serviceId.
+// Relations: answerByUserDetail -> LegacyUser, productQuestion -> ProductQuestion.
 // Enables threaded answers: multiple users can answer the same product/service question.
 model ProductQuestionAnswer {
   id                 Int              @id @default(autoincrement())
@@ -1400,7 +1403,7 @@ model ProductQuestionAnswer {
   updatedAt          DateTime         @updatedAt
   questionType       QuestionType?
   serviceId          Int?
-  answerByUserDetail User?            @relation("answerByUser", fields: [answerByuserId], references: [id])
+  answerByUserDetail LegacyUser?      @relation("answerByUser", fields: [answerByuserId], references: [id])
   productQuestion    ProductQuestion? @relation(fields: [productQuestionId], references: [id])
 
   @@index([productQuestionId])
@@ -1634,11 +1637,11 @@ model CountryList {
 }
 
 // Cart — Shopping cart for standard product and service purchases.
-// Fields: userId (FK to User, null for guest carts), deviceId (guest cart identifier),
+// Fields: userId (FK to LegacyUser, null for guest carts), deviceId (guest cart identifier),
 //   productId (FK to Product), productPriceId (FK to ProductPrice for specific seller listing),
 //   quantity, cartType (DEFAULT for products, SERVICE for services), serviceId (FK to Service),
 //   sharedLinkId (referral link tracking), object (JSON for variant/extra data).
-// Relations: Product, ProductPrice, Service, User, CartProductService[], CartServiceFeature[].
+// Relations: Product, ProductPrice, Service, LegacyUser, CartProductService[], CartServiceFeature[].
 // Supports both logged-in users (userId) and guests (deviceId) with product and service cart items.
 model Cart {
   id                  Int                  @id @default(autoincrement())
@@ -1658,7 +1661,7 @@ model Cart {
   productDetails      Product?             @relation(fields: [productId], references: [id])
   productPriceDetails ProductPrice?        @relation(fields: [productPriceId], references: [id])
   service             Service?             @relation(fields: [serviceId], references: [id])
-  userDetails         User?                @relation(fields: [userId], references: [id])
+  userDetails         LegacyUser?          @relation(fields: [userId], references: [id])
   cartProductServices CartProductService[]
   cartServiceFeatures CartServiceFeature[]
 
@@ -1852,13 +1855,13 @@ model OrderSeller {
 
 // OrderProducts — Individual line items within an order (one per product/seller combination).
 // Fields: userId (buyer), orderId (FK to Order), productId (FK to Product), productPriceId (FK to ProductPrice),
-//   sellerId (FK to seller User), salePrice/purchasePrice (buyer/seller amounts), orderQuantity,
+//   sellerId (FK to seller LegacyUser), salePrice/purchasePrice (buyer/seller amounts), orderQuantity,
 //   orderProductStatus (PLACED/CONFIRMED/SHIPPED/OFD/DELIVERED/RECEIVED/CANCELLED), cancelReason,
 //   orderNo/sellerOrderNo (display numbers), orderSellerId (FK to OrderSeller),
 //   breakdown (JSON fee/price breakdown), cashbackToCustomer/customerPay/platformFee/sellerReceives (financial split),
 //   object (JSON variant/extra data), orderProductReceipt, orderShippingId (FK to OrderShipping),
 //   orderProductType (PRODUCT/SERVICE), serviceId (FK to Service), serviceFeatures (JSON).
-// Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service, OrderProductService[].
+// Relations: Order, Product, ProductPrice, LegacyUser (seller), OrderShipping, Service, OrderProductService[].
 // The core order line item; tracks per-product status and financials independently.
 model OrderProducts {
   id                        Int                   @id @default(autoincrement())
@@ -1896,7 +1899,7 @@ model OrderProducts {
   orderShippingDetail       OrderShipping?        @relation(fields: [orderShippingId], references: [id])
   orderProduct_product      Product?              @relation(fields: [productId], references: [id])
   orderProduct_productPrice ProductPrice?         @relation(fields: [productPriceId], references: [id])
-  sellerDetail              User?                 @relation("OrderProductsSeller", fields: [sellerId], references: [id])
+  sellerDetail              LegacyUser?           @relation("OrderProductsSeller", fields: [sellerId], references: [id])
   service                   Service?              @relation(fields: [serviceId], references: [id])
   // Delivery management relations
   deliveryEvents            DeliveryEvent[]
@@ -2175,9 +2178,9 @@ model RfqQuotesProducts {
 }
 
 // RfqQuotesUsers — Join table linking an RFQ quote to the buyer-seller pair negotiating it.
-// Fields: rfqQuotesId (FK to RfqQuotes), buyerID/sellerID (FK to User), offerPrice (seller's quoted price),
+// Fields: rfqQuotesId (FK to RfqQuotes), buyerID/sellerID (FK to LegacyUser), offerPrice (seller's quoted price),
 //   userAccountBuyerId/userAccountSellerId (sub-account IDs if applicable).
-// Relations: buyerIDDetail/sellerIDDetail -> User, rfqQuotesUser_rfqQuotes -> RfqQuotes,
+// Relations: buyerIDDetail/sellerIDDetail -> LegacyUser, rfqQuotesUser_rfqQuotes -> RfqQuotes,
 //   messagaes -> Message[] (chat messages in this negotiation), rfqProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Each seller invited to an RFQ gets a row here; price negotiation happens via linked Messages.
 model RfqQuotesUsers {
@@ -2196,9 +2199,9 @@ model RfqQuotesUsers {
   messagaes               Message[]
   rfqProductPriceRequests RfqQuoteProductPriceRequest[]
   suggestedProducts       RfqSuggestedProduct[]
-  buyerIDDetail           User?                         @relation("RfqQuotesUserBuyer", fields: [buyerID], references: [id])
+  buyerIDDetail           LegacyUser?                   @relation("RfqQuotesUserBuyer", fields: [buyerID], references: [id])
   rfqQuotesUser_rfqQuotes RfqQuotes?                    @relation(fields: [rfqQuotesId], references: [id])
-  sellerIDDetail          User?                         @relation("RfqQuotesUserSeller", fields: [sellerID], references: [id])
+  sellerIDDetail          LegacyUser?                   @relation("RfqQuotesUserSeller", fields: [sellerID], references: [id])
 
   @@index([rfqQuotesId])
   @@index([buyerID])
@@ -2224,8 +2227,8 @@ model Wishlist {
 }
 
 // Room — A chat room for buyer-seller or RFQ-related communication.
-// Fields: creatorId (FK to User who initiated the room), rfqId (optional RFQ context), orderProductId (optional order context).
-// Relations: creator -> User, messages -> Message[] (room messages), participants -> RoomParticipants[].
+// Fields: creatorId (FK to LegacyUser who initiated the room), rfqId (optional RFQ context), orderProductId (optional order context).
+// Relations: creator -> LegacyUser, messages -> Message[] (room messages), participants -> RoomParticipants[].
 // Rooms can be general chat, RFQ negotiation, or order-related discussion contexts.
 model Room {
   id             Int                @id @default(autoincrement())
@@ -2235,17 +2238,17 @@ model Room {
   rfqId          Int?
   orderProductId Int?
   messages       Message[]          @relation("RoomMessages")
-  creator        User               @relation("CreatedRooms", fields: [creatorId], references: [id])
+  creator        LegacyUser         @relation("CreatedRooms", fields: [creatorId], references: [id])
   participants   RoomParticipants[] @relation("RoomParticipants")
 
   @@index([creatorId])
 }
 
 // Message — An individual chat message within a Room.
-// Fields: content (message text), status (UNREAD/READ/DELETED), userId (FK to sender User),
+// Fields: content (message text), status (UNREAD/READ/DELETED), userId (FK to sender LegacyUser),
 //   roomId (FK to Room), rfqId (optional RFQ context), rfqQuotesUserId (FK to RfqQuotesUsers for RFQ negotiation),
 //   orderProductId (optional order context).
-// Relations: user -> User, room -> Room, rfqQuotesUser -> RfqQuotesUsers,
+// Relations: user -> LegacyUser, room -> Room, rfqQuotesUser -> RfqQuotesUsers,
 //   attachments -> ChatAttachments[], rfqProductPriceRequest -> RfqQuoteProductPriceRequest (1:1 for price proposals).
 // Messages support text, file attachments, and embedded RFQ price requests.
 model Message {
@@ -2262,7 +2265,7 @@ model Message {
   attachments            ChatAttachments[]
   rfqQuotesUser          RfqQuotesUsers?              @relation(fields: [rfqQuotesUserId], references: [id])
   room                   Room                         @relation("RoomMessages", fields: [roomId], references: [id])
-  user                   User                         @relation("UserMessages", fields: [userId], references: [id])
+  user                   LegacyUser                   @relation("UserMessages", fields: [userId], references: [id])
   rfqProductPriceRequest RfqQuoteProductPriceRequest? @relation("MessageRfqProductPriceRequest")
   rfqSuggestedProducts   RfqSuggestedProduct[]        @relation("MessageRfqSuggestedProduct")
 
@@ -2300,7 +2303,7 @@ model ChatAttachments {
 //   messageId (FK to Message, unique 1:1 — each price request is a specific message),
 //   sellerId/buyerId (party users), requestedById (who proposed), approvedById/rejectedById (who accepted/declined),
 //   requestedPrice (the proposed price), status (PENDING/APPROVED/REJECTED).
-// Relations: approvedBy/rejectedBy/requestedBy/requestedBuyer/requestedSeller -> User,
+// Relations: approvedBy/rejectedBy/requestedBy/requestedBuyer/requestedSeller -> LegacyUser,
 //   message -> Message, rfqQuotes -> RfqQuotes, rfqQuoteProduct -> RfqQuotesProducts, rfqQuotesUser -> RfqQuotesUsers.
 // Central to the RFQ negotiation workflow: buyer/seller exchange price proposals as structured chat messages.
 model RfqQuoteProductPriceRequest {
@@ -2318,15 +2321,15 @@ model RfqQuoteProductPriceRequest {
   status            RfqProductPriceRequestStatus @default(PENDING)
   createdAt         DateTime                     @default(now())
   updatedAt         DateTime                     @updatedAt
-  approvedBy        User?                        @relation("approvedByUser", fields: [approvedById], references: [id])
-  requestedBuyer    User?                        @relation("requestedBuyer", fields: [buyerId], references: [id])
+  approvedBy        LegacyUser?                  @relation("approvedByUser", fields: [approvedById], references: [id])
+  requestedBuyer    LegacyUser?                  @relation("requestedBuyer", fields: [buyerId], references: [id])
   message           Message                      @relation("MessageRfqProductPriceRequest", fields: [messageId], references: [id])
-  rejectedBy        User?                        @relation("rejectedByUser", fields: [rejectedById], references: [id])
-  requestedBy       User                         @relation("requestedByUser", fields: [requestedById], references: [id])
+  rejectedBy        LegacyUser?                  @relation("rejectedByUser", fields: [rejectedById], references: [id])
+  requestedBy       LegacyUser                   @relation("requestedByUser", fields: [requestedById], references: [id])
   rfqQuotes         RfqQuotes                    @relation(fields: [rfqQuoteId], references: [id])
   rfqQuoteProduct   RfqQuotesProducts            @relation(fields: [rfqQuoteProductId], references: [id])
   rfqQuotesUser     RfqQuotesUsers               @relation(fields: [rfqQuotesUserId], references: [id])
-  requestedSeller   User?                        @relation("requestedSeller", fields: [sellerId], references: [id])
+  requestedSeller   LegacyUser?                  @relation("requestedSeller", fields: [sellerId], references: [id])
 
   @@index([rfqQuoteId])
   @@index([rfqQuoteProductId])
@@ -2350,7 +2353,7 @@ model RfqSuggestedProduct {
   message            Message           @relation("MessageRfqSuggestedProduct", fields: [messageId], references: [id], onDelete: Cascade)
   rfqQuoteProduct    RfqQuotesProducts @relation(fields: [rfqQuoteProductId], references: [id])
   suggestedProduct   Product           @relation("SuggestedProduct", fields: [suggestedProductId], references: [id])
-  vendor             User              @relation("VendorSuggestions", fields: [vendorId], references: [id])
+  vendor             LegacyUser        @relation("VendorSuggestions", fields: [vendorId], references: [id])
   rfqQuotesUser      RfqQuotesUsers    @relation(fields: [rfqQuotesUserId], references: [id])
 
   @@index([rfqQuoteProductId])
@@ -2360,19 +2363,19 @@ model RfqSuggestedProduct {
 }
 
 // RoomParticipants — Join table listing users who are members of a chat Room.
-// Fields: userId (FK to User), roomId (FK to Room).
-// Relations: room -> Room, user -> User.
+// Fields: userId (FK to LegacyUser), roomId (FK to Room).
+// Relations: room -> Room, user -> LegacyUser.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
 model RoomParticipants {
-  id         Int      @id @default(autoincrement())
+  id         Int        @id @default(autoincrement())
   userId     Int
   roomId     Int
-  isPinned   Boolean  @default(false)
-  isArchived Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  room       Room     @relation("RoomParticipants", fields: [roomId], references: [id])
-  user       User     @relation("UserRooms", fields: [userId], references: [id])
+  isPinned   Boolean    @default(false)
+  isArchived Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  room       Room       @relation("RoomParticipants", fields: [roomId], references: [id])
+  user       LegacyUser @relation("UserRooms", fields: [userId], references: [id])
 
   @@unique([userId, roomId])
   @@index([userId])
@@ -2516,7 +2519,7 @@ model AdminPermission {
 
 // AdminRole — Named roles for platform admin team members (e.g., Super Admin, Content Moderator).
 // Fields: adminRoleName (role label), addedBy (creator).
-// Relations: adminMemberDetail -> AdminMember[], adminRolePermission -> AdminRolePermission[], user -> User[].
+// Relations: adminMemberDetail -> AdminMember[], adminRolePermission -> AdminRolePermission[], user -> LegacyUser[].
 // Part of platform-level RBAC: admin roles are assigned to admin members with specific permissions.
 model AdminRole {
   id                  Int                   @id @default(autoincrement())
@@ -2528,7 +2531,7 @@ model AdminRole {
   deletedAt           DateTime?
   adminMemberDetail   AdminMember[]
   adminRolePermission AdminRolePermission[]
-  user                User[]
+  user                LegacyUser[]
 }
 
 // AdminRolePermission — Join table linking AdminRole to AdminPermission (many-to-many).
@@ -2550,41 +2553,41 @@ model AdminRolePermission {
   @@index([adminPermissionId])
 }
 
-// AdminMember — Assigns a User as a platform admin team member with an AdminRole.
-// Fields: userId (FK to User), adminRoleId (FK to AdminRole), addedBy (the admin who added them).
-// Relations: adminRolDetail -> AdminRole, userDetail -> User.
+// AdminMember — Assigns a LegacyUser as a platform admin team member with an AdminRole.
+// Fields: userId (FK to LegacyUser), adminRoleId (FK to AdminRole), addedBy (the admin who added them).
+// Relations: adminRolDetail -> AdminRole, userDetail -> LegacyUser.
 // Platform-level team management: super admins add sub-admins and assign them admin roles.
 model AdminMember {
-  id             Int        @id @default(autoincrement())
+  id             Int         @id @default(autoincrement())
   userId         Int?
   adminRoleId    Int?
   addedBy        Int?
-  status         Status     @default(ACTIVE)
+  status         Status      @default(ACTIVE)
   deletedAt      DateTime?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  adminRolDetail AdminRole? @relation(fields: [adminRoleId], references: [id])
-  userDetail     User?      @relation("subAdmin", fields: [userId], references: [id])
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  adminRolDetail AdminRole?  @relation(fields: [adminRoleId], references: [id])
+  userDetail     LegacyUser? @relation("subAdmin", fields: [userId], references: [id])
 
   @@index([userId])
   @@index([adminRoleId])
 }
 
 // HelpCenter — Customer support tickets/queries submitted by users.
-// Fields: userId (FK to submitting User), userEmail, query (question/issue text), response (admin reply).
-// Relations: userDetail -> User.
+// Fields: userId (FK to submitting LegacyUser), userEmail, query (question/issue text), response (admin reply).
+// Relations: userDetail -> LegacyUser.
 // Simple support ticket system for buyer/seller inquiries to platform admins.
 model HelpCenter {
-  id         Int       @id @default(autoincrement())
+  id         Int         @id @default(autoincrement())
   userId     Int?
   userEmail  String?
   query      String?
   response   String?
-  status     Status    @default(ACTIVE)
+  status     Status      @default(ACTIVE)
   deletedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  userDetail User?     @relation("helpCenterUserDetail", fields: [userId], references: [id])
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  userDetail LegacyUser? @relation("helpCenterUserDetail", fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -2615,14 +2618,14 @@ model TransactionPaymob {
 }
 
 // Service — A bookable or moving service offered by a seller (separate from products).
-// Fields: serviceName, serviceType (BOOKING/MOVING), description, sellerId (FK to User),
+// Fields: serviceName, serviceType (BOOKING/MOVING), description, sellerId (FK to LegacyUser),
 //   categoryId (FK to Category), categoryLocation (breadcrumb),
 //   workingDays/offDays/openTime/closeTime/breakTimeFrom/breakTimeTo (schedule),
 //   renewEveryWeek/oneTime (recurrence flags), customerPerPeiod/eachCustomerTime (capacity),
 //   shippingType (DIRECTION/RANG for moving services), fromCityId/toCityId/rangeCityId (FK to Cities for routes),
 //   serviceConfirmType (AUTO/MANUAL booking confirmation), serviceFor (OWNER/EVERYONE),
 //   countryId/stateId (FK to Countries/States for service area).
-// Relations: Cart, OrderProducts, OrderShipping, Category, User (seller), Cities (from/to/range),
+// Relations: Cart, OrderProducts, OrderShipping, Category, LegacyUser (seller), Cities (from/to/range),
 //   Countries, States, ServiceFeature[], ServiceImage[], ServiceTag[],
 //   CartProductService[], OrderProductService[].
 // Services support both appointment booking (BOOKING) and logistics/moving (MOVING) use cases.
@@ -2665,7 +2668,7 @@ model Service {
   country              Countries?            @relation(fields: [countryId], references: [id])
   fromCity             Cities?               @relation("Service_fromCity", fields: [fromCityId], references: [id])
   rangeCity            Cities?               @relation("Service_rangeCity", fields: [rangeCityId], references: [id])
-  seller               User                  @relation(fields: [sellerId], references: [id])
+  seller               LegacyUser            @relation(fields: [sellerId], references: [id])
   state                States?               @relation(fields: [stateId], references: [id])
   toCity               Cities?               @relation("Service_toCity", fields: [toCityId], references: [id])
   serviceFeatures      ServiceFeature[]
@@ -2743,17 +2746,17 @@ model PageSetting {
 }
 
 // AccountSession — Tracks active login sessions for users via access tokens.
-// Fields: userId (FK to User), accessToken (unique JWT/token string), isActive (session validity flag), expiresAt (expiry timestamp).
-// Relations: user -> User.
+// Fields: userId (FK to LegacyUser), accessToken (unique JWT/token string), isActive (session validity flag), expiresAt (expiry timestamp).
+// Relations: user -> LegacyUser.
 // Enables session management: multiple devices, token-based auth, and session invalidation.
 model AccountSession {
-  id          Int      @id @default(autoincrement())
+  id          Int        @id @default(autoincrement())
   userId      Int
-  accessToken String   @unique
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  accessToken String     @unique
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
   expiresAt   DateTime
-  user        User     @relation("UserSessions", fields: [userId], references: [id])
+  user        LegacyUser @relation("UserSessions", fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -2769,8 +2772,8 @@ model Wallet {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
-  user          User                @relation(fields: [userId], references: [id])
-  userAccount   User?               @relation("WalletUserAccount", fields: [userAccountId], references: [id])
+  user          LegacyUser          @relation(fields: [userId], references: [id])
+  userAccount   LegacyUser?         @relation("WalletUserAccount", fields: [userAccountId], references: [id])
   transactions  WalletTransaction[]
   transfersFrom WalletTransfer[]    @relation("FromWallet")
   transfersTo   WalletTransfer[]    @relation("ToWallet")
@@ -2818,17 +2821,17 @@ model WalletTransfer {
 }
 
 model WalletSettings {
-  id                      Int       @id @default(autoincrement())
-  userId                  Int       @unique
-  autoWithdraw            Boolean   @default(false)
-  withdrawLimit           Decimal   @default(0.00) @db.Decimal(15, 2)
-  dailyLimit              Decimal   @default(0.00) @db.Decimal(15, 2)
-  monthlyLimit            Decimal   @default(0.00) @db.Decimal(15, 2)
+  id                      Int        @id @default(autoincrement())
+  userId                  Int        @unique
+  autoWithdraw            Boolean    @default(false)
+  withdrawLimit           Decimal    @default(0.00) @db.Decimal(15, 2)
+  dailyLimit              Decimal    @default(0.00) @db.Decimal(15, 2)
+  monthlyLimit            Decimal    @default(0.00) @db.Decimal(15, 2)
   notificationPreferences Json?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
   deletedAt               DateTime?
-  user                    User      @relation(fields: [userId], references: [id])
+  user                    LegacyUser @relation(fields: [userId], references: [id])
 }
 
 // ExistingProduct — A product from the admin-curated catalog that sellers can adopt/list (pre-approved product template).
@@ -2836,7 +2839,7 @@ model WalletSettings {
 //   categoryId (FK to Category), brandId (FK to Brand), placeOfOriginId (FK to CountryList),
 //   description/specification/shortDescription (content), productType/typeOfProduct/typeProduct (classification),
 //   barcode, productViewCount, adminId (admin who created), userId (seller who adopted), categoryLocation.
-// Relations: User (admin and adopting user), Brand, Category, CountryList,
+// Relations: LegacyUser (admin and adopting user), Brand, Category, CountryList,
 //   ExistingProductImages[], ExistingProductTags[].
 // Admin creates ExistingProducts as a catalog; sellers can then list them in their own store via ProductPrice.
 model ExistingProduct {
@@ -2863,11 +2866,11 @@ model ExistingProduct {
   productViewCount                   Int?                    @default(0)
   skuNo                              String                  @unique @default(dbgenerated("('SKU_'::text || (EXTRACT(epoch FROM now()))::text)"))
   userId                             Int?
-  User_ExistingProduct_adminIdToUser User?                   @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
+  User_ExistingProduct_adminIdToUser LegacyUser?             @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
   brand                              Brand?                  @relation(fields: [brandId], references: [id])
   category                           Category?               @relation(fields: [categoryId], references: [id])
   placeOfOrigin                      CountryList?            @relation(fields: [placeOfOriginId], references: [id])
-  User_ExistingProduct_userIdToUser  User?                   @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
+  User_ExistingProduct_userIdToUser  LegacyUser?             @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
   existingProductImages              ExistingProductImages[]
   existingProductTags                ExistingProductTags[]
 
@@ -2897,19 +2900,19 @@ model ExistingProductTags {
 }
 
 model Notification {
-  id        Int       @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   userId    Int
   type      String // ORDER, MESSAGE, RFQ, REVIEW, SYSTEM, PAYMENT, SHIPMENT, ACCOUNT
   title     String
-  message   String    @db.Text
+  message   String     @db.Text
   data      Json? // Additional context data
-  read      Boolean   @default(false)
+  read      Boolean    @default(false)
   readAt    DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  link      String?   @db.VarChar(500)
-  icon      String?   @db.VarChar(100)
-  user      User      @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  link      String?    @db.VarChar(500)
+  icon      String?    @db.VarChar(100)
+  user      LegacyUser @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([type])
@@ -3040,9 +3043,9 @@ enum RfqProductPriceRequestStatus {
   REJECTED
 }
 
-// Gender — User gender classification.
+// Gender — LegacyUser gender classification.
 // Values: MALE, FEMALE.
-// Used by User.gender and MasterAccount.gender for profile information.
+// Used by LegacyUser.gender and LegacyMasterAccount.gender for profile information.
 enum Gender {
   MALE
   FEMALE
@@ -3051,7 +3054,7 @@ enum Gender {
 // TypeTrader — The trade role of a user on the platform, determining their capabilities and UI.
 // Values: BUYER (purchases products/services), FREELANCER (individual seller), COMPANY (business seller),
 //   MEMBER (team member of a seller/company), ADMINMEMBER (platform admin team member).
-// Used by User.tradeRole; defaults to BUYER on registration. Determines dashboard, permissions, and features.
+// Used by LegacyUser.tradeRole; defaults to BUYER on registration. Determines dashboard, permissions, and features.
 enum TypeTrader {
   BUYER
   FREELANCER
@@ -3062,7 +3065,7 @@ enum TypeTrader {
 
 // UserType — Classifies user privilege level for platform access.
 // Values: ADMIN (super admin), USER (regular user), SUBADMIN (admin team member with limited permissions).
-// Used by User.userType to distinguish admin-panel access rights from regular marketplace users.
+// Used by LegacyUser.userType to distinguish admin-panel access rights from regular marketplace users.
 enum UserType {
   ADMIN
   USER
@@ -3071,7 +3074,7 @@ enum UserType {
 
 // LoginType — Authentication method used by the user to register/login.
 // Values: MANUAL (email/password), SOCIAL (generic social login), FACEBOOK, GOOGLE.
-// Used by User.loginType to determine authentication flow and password requirements.
+// Used by LegacyUser.loginType to determine authentication flow and password requirements.
 enum LoginType {
   MANUAL
   SOCIAL
@@ -3304,7 +3307,7 @@ model SystemLog {
   level      String // ERROR, WARN, INFO, DEBUG
   message    String   @db.Text
   context    String? // Module/Controller name
-  userId     Int? // User who triggered the action
+  userId     Int? // LegacyUser who triggered the action
   requestId  String? // Request correlation ID
   method     String? // HTTP method
   path       String? // API endpoint
@@ -3315,7 +3318,7 @@ model SystemLog {
   userAgent  String?
   createdAt  DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id])
+  user LegacyUser? @relation(fields: [userId], references: [id])
 
   @@index([level])
   @@index([createdAt])
@@ -3923,7 +3926,7 @@ model ContentFilterLog {
   matchedTerms Json
   createdAt    DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user LegacyUser @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([severity])
@@ -3953,7 +3956,7 @@ model RecommendationMetric {
 }
 
 // NOTE: RecommendationFeedback uses UUID (String) as its own PK but references
-// Product.id (Int) and User.id (Int) as FKs. When joining with RecommendationMetric
+// Product.id (Int) and LegacyUser.id (Int) as FKs. When joining with RecommendationMetric
 // (also UUID PK), aggregate by productId (Int) — don't join on the UUID PKs directly.
 model RecommendationFeedback {
   id         String   @id @default(uuid())
@@ -3969,8 +3972,8 @@ model RecommendationFeedback {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user    User?   @relation("UserRecommendationFeedback", fields: [userId], references: [id])
-  product Product @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
+  user    LegacyUser? @relation("UserRecommendationFeedback", fields: [userId], references: [id])
+  product Product     @relation("ProductRecommendationFeedback", fields: [productId], references: [id])
 
   @@index([createdAt])
   @@index([recId])
@@ -4101,7 +4104,7 @@ model Complaint {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   orderProduct   OrderProducts @relation(fields: [orderProductId], references: [id])
-  buyer          User          @relation("ComplaintBuyer", fields: [buyerId], references: [id])
+  buyer          LegacyUser    @relation("ComplaintBuyer", fields: [buyerId], references: [id])
 
   @@index([orderProductId])
   @@index([buyerId])
@@ -4121,7 +4124,7 @@ model RefundRequest {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   orderProduct   OrderProducts @relation(fields: [orderProductId], references: [id])
-  buyer          User          @relation("RefundBuyer", fields: [buyerId], references: [id])
+  buyer          LegacyUser    @relation("RefundBuyer", fields: [buyerId], references: [id])
 
   @@index([orderProductId])
   @@index([buyerId])
@@ -4183,8 +4186,8 @@ model SupportConversation {
   deletedAt  DateTime?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
-  user       User?            @relation("SupportUser", fields: [userId], references: [id])
-  assignee   User?            @relation("SupportAssignee", fields: [assigneeId], references: [id])
+  user       LegacyUser?      @relation("SupportUser", fields: [userId], references: [id])
+  assignee   LegacyUser?      @relation("SupportAssignee", fields: [assigneeId], references: [id])
   messages   SupportMessage[]
 
   @@index([userId])
@@ -4222,12 +4225,12 @@ model KnowledgeBase {
 // ══════════════════════════════════════════════════════════════
 // Better Auth — managed by the better-auth library via prismaAdapter.
 // These four tables hold all sessions, credentials, and verification
-// tokens for the new auth system. They live alongside the legacy User
-// / MasterAccount tables during the JWT→Better Auth migration.
+// tokens for the new auth system. They live alongside the legacy LegacyUser
+// / LegacyMasterAccount tables during the JWT→Better Auth migration.
 // See MIGRATION_TODO.mdx at repo root.
 // ══════════════════════════════════════════════════════════════
 
-model BetterAuthUser {
+model User {
   id            String   @id
   name          String
   email         String   @unique
@@ -4244,24 +4247,24 @@ model BetterAuthUser {
   legacyMasterAccountId Int?    @unique
 
   // Profile fields populated by PATCH /api/v1/user/me/trade-role at register Step 3.
-  // Mirrors the legacy User shape so we can drop the legacy User table later.
+  // Mirrors the legacy LegacyUser shape so we can drop the legacy User table later.
   // COMPANY-only fields:
-  companyName     String?
-  companyAddress  String?
-  companyPhone    String?
-  companyWebsite  String?
-  companyTaxId    String?
+  companyName    String?
+  companyAddress String?
+  companyPhone   String?
+  companyWebsite String?
+  companyTaxId   String?
   // FREELANCER-only field:
-  accountName     String?
+  accountName    String?
 
-  sessions BetterAuthSession[]
-  accounts BetterAuthAccount[]
+  sessions Session[]
+  accounts Account[]
 
   @@index([email])
-  @@map("better_auth_user")
+  @@map("user")
 }
 
-model BetterAuthSession {
+model Session {
   id        String   @id
   userId    String
   expiresAt DateTime
@@ -4271,13 +4274,13 @@ model BetterAuthSession {
   ipAddress String?
   userAgent String?
 
-  user BetterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("better_auth_session")
+  @@map("session")
 }
 
-model BetterAuthAccount {
+model Account {
   id                    String    @id
   userId                String
   accountId             String
@@ -4292,13 +4295,13 @@ model BetterAuthAccount {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  user BetterAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("better_auth_account")
+  @@map("account")
 }
 
-model BetterAuthVerification {
+model Verification {
   id         String   @id
   identifier String
   value      String
@@ -4307,5 +4310,5 @@ model BetterAuthVerification {
   updatedAt  DateTime @updatedAt
 
   @@index([identifier])
-  @@map("better_auth_verification")
+  @@map("verification")
 }

@@ -385,7 +385,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * Get all admin user IDs
  */
 async function getAllAdminUserIds(prisma: PrismaService): Promise<number[]> {
-  const admins = await prisma.user.findMany({
+  const admins = await prisma.legacyUser.findMany({
     where: {
       userType: 'ADMIN',
       status: 'ACTIVE',
@@ -409,7 +409,7 @@ export async function notifyAdminsNewProduct(
 ) {
   try {
     const adminIds = await getAllAdminUserIds(prisma);
-    const user = await prisma.user.findUnique({
+    const user = await prisma.legacyUser.findUnique({
       where: { id: userId },
       select: {
         firstName: true,
@@ -504,7 +504,7 @@ export async function notifyAdminsDropshipableProduct(
 ) {
   try {
     const adminIds = await getAllAdminUserIds(prisma);
-    const user = await prisma.user.findUnique({
+    const user = await prisma.legacyUser.findUnique({
       where: { id: userId },
       select: {
         firstName: true,

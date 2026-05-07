@@ -102,7 +102,7 @@ export class AdminService {
   async login(payload: any) {
     try {
       const email = payload.email;
-      let userEmail = await this.prisma.user.findUnique({
+      let userEmail = await this.prisma.legacyUser.findUnique({
         where: { email },
       });
       let user = userEmail;
@@ -179,7 +179,7 @@ export class AdminService {
   async findOne(payload: any, req: any) {
     try {
       const userId = req?.user?.id;
-      let userDetail = await this.prisma.user.findUnique({
+      let userDetail = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
       });
       if (!userDetail) {
@@ -236,7 +236,7 @@ export class AdminService {
   async getPermission(payload: any, req: any) {
     try {
       const userId = req?.user?.id;
-      let userDetail = await this.prisma.user.findFirst({
+      let userDetail = await this.prisma.legacyUser.findFirst({
         where: { id: userId },
         select: {
           id: true,
@@ -1692,7 +1692,7 @@ export class AdminService {
       const sortType = 'desc';
 
       // Get master accounts with their sub-accounts
-      let masterAccounts = await this.prisma.masterAccount.findMany({
+      let masterAccounts = await this.prisma.legacyMasterAccount.findMany({
         where: {
           deletedAt: null,
           users: {
@@ -1742,7 +1742,7 @@ export class AdminService {
         };
       }
 
-      let masterAccountsCount = await this.prisma.masterAccount.count({
+      let masterAccountsCount = await this.prisma.legacyMasterAccount.count({
         where: {
           deletedAt: null,
           users: {
@@ -1799,7 +1799,7 @@ export class AdminService {
     try {
 
       // First, let's check what users exist with this masterAccountId
-      const allUsersWithMasterAccount = await this.prisma.user.findMany({
+      const allUsersWithMasterAccount = await this.prisma.legacyUser.findMany({
         where: {
           masterAccountId: masterAccountId,
         },
@@ -1816,7 +1816,7 @@ export class AdminService {
 
 
       // Now get the sub-accounts (users that are not the main user)
-      const subAccounts = await this.prisma.user.findMany({
+      const subAccounts = await this.prisma.legacyUser.findMany({
         where: {
           masterAccountId: masterAccountId,
           deletedAt: null,
@@ -1896,7 +1896,7 @@ export class AdminService {
       }
 
       const [masters, total] = await Promise.all([
-        this.prisma.masterAccount.findMany({
+        this.prisma.legacyMasterAccount.findMany({
           where: masterWhere,
           select: {
             id: true,
@@ -1926,7 +1926,7 @@ export class AdminService {
           skip,
           take: pageSize,
         }),
-        this.prisma.masterAccount.count({ where: masterWhere }),
+        this.prisma.legacyMasterAccount.count({ where: masterWhere }),
       ]);
 
       const orgUserIds: number[] = [];
@@ -2039,7 +2039,7 @@ export class AdminService {
       const masterAccountId = req.body.masterAccountId;
       const status = req.body.status;
 
-      let masterAccountExist = await this.prisma.masterAccount.findUnique({
+      let masterAccountExist = await this.prisma.legacyMasterAccount.findUnique({
         where: {
           id: masterAccountId,
         },
@@ -2054,7 +2054,7 @@ export class AdminService {
       }
 
       // Update all associated user accounts status
-      await this.prisma.user.updateMany({
+      await this.prisma.legacyUser.updateMany({
         where: { masterAccountId: masterAccountId },
         data: {
           status: status,
@@ -2088,7 +2088,7 @@ export class AdminService {
         };
       }
 
-      let userExist = await this.prisma.user.findUnique({
+      let userExist = await this.prisma.legacyUser.findUnique({
         where: {
           id: userId,
         },
@@ -2110,7 +2110,7 @@ export class AdminService {
       if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
       if (cc !== undefined) updateData.cc = cc;
 
-      let updateUser = await this.prisma.user.update({
+      let updateUser = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: updateData,
       });
@@ -2164,7 +2164,7 @@ export class AdminService {
       const statusNote = req?.body?.statusNote;
       const tradeRole = req?.body?.tradeRole;
 
-      let userExist = await this.prisma.user.findUnique({
+      let userExist = await this.prisma.legacyUser.findUnique({
         where: {
           id: userId,
         },
@@ -2196,7 +2196,7 @@ export class AdminService {
       if (statusNote !== undefined) updateData.statusNote = statusNote;
       if (tradeRole) updateData.tradeRole = tradeRole;
 
-      let updateUser = await this.prisma.user.update({
+      let updateUser = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: updateData,
       });
@@ -2362,7 +2362,7 @@ export class AdminService {
   // Get available status transitions for a user
   async getAvailableStatusTransitions(userId: number) {
     try {
-      const user = await this.prisma.user.findUnique({
+      const user = await this.prisma.legacyUser.findUnique({
         where: { id: userId },
         select: { status: true },
       });
@@ -2466,7 +2466,7 @@ export class AdminService {
 
       for (const userId of userIds) {
         try {
-          const user = await this.prisma.user.findUnique({
+          const user = await this.prisma.legacyUser.findUnique({
             where: { id: userId },
             select: { status: true },
           });
@@ -2487,7 +2487,7 @@ export class AdminService {
           }
 
           // Update user status
-          const updatedUser = await this.prisma.user.update({
+          const updatedUser = await this.prisma.legacyUser.update({
             where: { id: userId },
             data: {
               status,
@@ -4179,7 +4179,7 @@ export class AdminService {
       ] = await Promise.all([
         this.prisma.product.count({ where: { deletedAt: null } }),
         this.prisma.order.count({ where: { deletedAt: null } }),
-        this.prisma.user.count({ where: { deletedAt: null, userType: { not: 'ADMIN' } } }),
+        this.prisma.legacyUser.count({ where: { deletedAt: null, userType: { not: 'ADMIN' } } }),
         this.prisma.transactionPaymob.count(),
         this.prisma.service.count({ where: { status: { in: ['ACTIVE', 'INACTIVE'] } } }),
         this.prisma.category.count({ where: { status: 'ACTIVE' } }),
@@ -4291,7 +4291,7 @@ export class AdminService {
       });
 
       // Get users by trade role
-      const usersByRole = await this.prisma.user.groupBy({
+      const usersByRole = await this.prisma.legacyUser.groupBy({
         by: ['tradeRole'],
         where: { deletedAt: null, userType: { not: 'ADMIN' } },
         _count: { id: true },
@@ -4647,7 +4647,7 @@ export class AdminService {
           usersCutoffTime = usersViewedTime;
         } else {
           // Fallback to admin user's updatedAt if no tracking exists
-          const adminUser = await this.prisma.user.findUnique({
+          const adminUser = await this.prisma.legacyUser.findUnique({
             where: { id: adminUserId },
             select: { updatedAt: true },
           });
@@ -4668,7 +4668,7 @@ export class AdminService {
           productsCutoffTime = productsViewedTime;
         } else {
           // Fallback: check admin user's onlineOfflineDateStatus field (we'll use this to store products viewed time)
-          const adminUser = await this.prisma.user.findUnique({
+          const adminUser = await this.prisma.legacyUser.findUnique({
             where: { id: adminUserId },
             select: { onlineOfflineDateStatus: true },
           });
@@ -4682,7 +4682,7 @@ export class AdminService {
       // Count new users:
       // 1. Master accounts created after admin last viewed users list (or last 2 hours if never viewed)
       // 2. OR master accounts with users having WAITING status (need approval)
-      const newUsersCount = await this.prisma.masterAccount.count({
+      const newUsersCount = await this.prisma.legacyMasterAccount.count({
         where: {
           deletedAt: null,
           OR: [
@@ -4719,7 +4719,7 @@ export class AdminService {
       // Count new sub-accounts:
       // 1. Sub-accounts with WAITING status (need approval, excluding buyer accounts)
       // 2. OR sub-accounts created after admin last viewed users list (excluding buyer accounts)
-      const newSubAccountsCount = await this.prisma.user.count({
+      const newSubAccountsCount = await this.prisma.legacyUser.count({
         where: {
           deletedAt: null,
           tradeRole: {
@@ -4807,7 +4807,7 @@ export class AdminService {
       AdminService.adminViewTracking.set(key, now);
       
       // Also store in admin user's onlineOfflineDateStatus field for persistence
-      await this.prisma.user.update({
+      await this.prisma.legacyUser.update({
         where: { id: adminUserId },
         data: {
           onlineOfflineDateStatus: now,
@@ -4892,14 +4892,14 @@ export class AdminService {
       }
 
       const [data, total] = await Promise.all([
-        this.prisma.user.findMany({
+        this.prisma.legacyUser.findMany({
           where: whereCondition,
           include: { userProfile: true, userBranch: true },
           orderBy: { id: 'desc' },
           skip,
           take: pageSize,
         }),
-        this.prisma.user.count({ where: whereCondition }),
+        this.prisma.legacyUser.count({ where: whereCondition }),
       ]);
 
       return { status: true, message: 'Fetched successfully', data, totalCount: total };
@@ -4916,7 +4916,7 @@ export class AdminService {
     try {
       const id = parseInt(userId);
       if (!id) return { status: false, message: 'Invalid userId', data: null };
-      const user = await this.prisma.user.findUnique({
+      const user = await this.prisma.legacyUser.findUnique({
         where: { id },
         include: {
           UserAddress: true,
@@ -4955,7 +4955,7 @@ export class AdminService {
       const textModel = (process.env.OPENROUTER_MODEL || 'qwen/qwen-2.5-72b-instruct,deepseek/deepseek-chat-v3').split(',')[0].trim();
       const visionModel = process.env.OPENROUTER_VISION_MODEL || 'openai/gpt-4.1-mini';
 
-      const aiApprovedUsers = await this.prisma.user.count({
+      const aiApprovedUsers = await this.prisma.legacyUser.count({
         where: {
           deletedAt: null,
           status: { not: 'DELETE' },
@@ -4987,10 +4987,10 @@ export class AdminService {
     try {
       const userId = parseInt(payload.userId);
       if (!userId) return { status: false, message: 'Invalid userId' };
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const user = await this.prisma.legacyUser.findUnique({ where: { id: userId } });
       if (!user) return { status: false, message: 'User not found' };
       // Update user identity verification status
-      const updated = await this.prisma.user.update({
+      const updated = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: { statusNote: 'Identity verification triggered by admin' },
       });
@@ -5004,9 +5004,9 @@ export class AdminService {
     try {
       const userId = parseInt(payload.userId);
       if (!userId) return { status: false, message: 'Invalid userId' };
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const user = await this.prisma.legacyUser.findUnique({ where: { id: userId } });
       if (!user) return { status: false, message: 'User not found' };
-      const updated = await this.prisma.user.update({
+      const updated = await this.prisma.legacyUser.update({
         where: { id: userId },
         data: { statusNote: 'CR document verification triggered by admin' },
       });

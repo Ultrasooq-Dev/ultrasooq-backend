@@ -104,7 +104,7 @@ export class AuthGuard implements CanActivate {
           );
         }
 
-        const user = await this.prisma.user.findUnique({
+        const user = await this.prisma.legacyUser.findUnique({
           where: { id: parsedId },
         });
         if (!user) {
@@ -152,7 +152,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Legacy user link missing');
     }
 
-    const legacyUser = await this.prisma.user.findUnique({
+    const legacyUser = await this.prisma.legacyUser.findUnique({
       where: { id: baUser.legacyUserId },
     });
     if (!legacyUser) {
@@ -188,7 +188,7 @@ export class AuthGuard implements CanActivate {
     if (!tokenUser?.id) return tokenUser;
 
     try {
-      const user = await this.prisma.user.findUnique({
+      const user = await this.prisma.legacyUser.findUnique({
         where: { id: tokenUser.id },
       });
       if (!user) return tokenUser;
@@ -209,7 +209,7 @@ export class AuthGuard implements CanActivate {
             parentUserId: user.parentUserId,
           };
         }
-        const activeSubAccount = await this.prisma.user.findFirst({
+        const activeSubAccount = await this.prisma.legacyUser.findFirst({
           where: {
             parentUserId: user.parentUserId,
             isCurrent: true,
@@ -233,7 +233,7 @@ export class AuthGuard implements CanActivate {
 
       // Master-account path: if THIS row has children, hand back the active
       // child if there is one, otherwise THIS row.
-      const activeSubAccount = await this.prisma.user.findFirst({
+      const activeSubAccount = await this.prisma.legacyUser.findFirst({
         where: {
           parentUserId: user.id,
           isCurrent: true,

@@ -60,7 +60,7 @@ async function main() {
 
   for (const acct of ACCOUNTS) {
     // 1. Upsert MasterAccount (frontend login queries this table)
-    const master = await prisma.masterAccount.upsert({
+    const master = await prisma.legacyMasterAccount.upsert({
       where: { email: acct.email },
       update: {
         password,
@@ -80,7 +80,7 @@ async function main() {
     });
 
     // 2. Upsert User (linked to MasterAccount)
-    const user = await prisma.user.upsert({
+    const user = await prisma.legacyUser.upsert({
       where: { email: acct.email },
       update: {
         password,
@@ -116,7 +116,7 @@ async function main() {
     });
 
     // 3. Link MasterAccount.lastActiveUserId → User
-    await prisma.masterAccount.update({
+    await prisma.legacyMasterAccount.update({
       where: { id: master.id },
       data: { lastActiveUserId: user.id },
     });

@@ -1015,7 +1015,7 @@ export class ChatService {
      */
     async markMessagesAsRead(payload: UpdateMessageStatus) {
         try {
-            const user = await this.prisma.user.findUnique({
+            const user = await this.prisma.legacyUser.findUnique({
                 where: { id: payload.userId },
             });
 
