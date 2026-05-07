@@ -68,4 +68,4 @@ EXPOSE 3000
 # which DROPS ALL TABLES and reapplies migrations from scratch. Used
 # exactly once to recover from migration drift after the consolidated
 # migration was deleted. MUST be unset (or false) on subsequent deploys.
-CMD ["sh", "-c", "if [ \"$RESET_DB\" = \"true\" ]; then echo '[boot] RESET_DB=true — wiping DB and reapplying migrations'; npx prisma migrate reset --force --skip-seed; else echo '[boot] migrate deploy'; npx prisma migrate deploy; fi && exec node dist/src/main.js"]
+CMD ["sh", "-c", "if [ \"$RESET_DB\" = \"true\" ]; then echo '[boot] RESET_DB=true — wiping DB, reapplying migrations, running seed-admin'; npx prisma migrate reset --force; else echo '[boot] migrate deploy'; npx prisma migrate deploy; fi && exec node dist/src/main.js"]
