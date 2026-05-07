@@ -25,6 +25,7 @@
     "seed:prod-trending": "ts-node --project prisma/tsconfig.seed.json prisma/seed-prod-trending.ts"
   },
   "dependencies": {
+    "@better-auth/passkey": "^1.6.9",
     "@browserbasehq/sdk": "^2.6.0",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/cache-manager": "^3.1.0",
@@ -46,6 +47,7 @@
     "aws-sdk": "^2.1693.0",
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
+    "better-auth": "^1.6.9",
     "bullmq": "^5.73.0",
     "bwip-js": "^4.8.0",
     "cache-manager": "^7.2.8",
@@ -54,6 +56,7 @@
     "class-validator": "^0.14.3",
     "compression": "^1.8.1",
     "dotenv": "^17.3.1",
+    "express-rate-limit": "^8.5.1",
     "file-type": "^21.3.0",
     "geoip-lite": "^2.0.1",
     "helmet": "^8.1.0",
@@ -128,6 +131,6 @@
     "testEnvironment": "node"
   },
   "prisma": {
-    "seed": "ts-node --project prisma/tsconfig.seed.json prisma/seed-categories.ts"
+    "seed": "ts-node --project prisma/tsconfig.seed.json prisma/seed-admin.ts"
   }
 }

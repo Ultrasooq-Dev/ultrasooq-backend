@@ -57,7 +57,7 @@ export class ProductBuyGroupService {
 
       const sortType = sort ? sort : 'desc';
 
-      const userID = parseInt(userId);
+      const userID = String(userId || "");
 
       let myProduct;
 
@@ -322,7 +322,7 @@ export class ProductBuyGroupService {
 
       const sortType = req.query.sort ? req.query.sort : 'desc';
 
-      const userID = parseInt(userId);
+      const userID = String(userId || "");
 
       let myProduct;
 

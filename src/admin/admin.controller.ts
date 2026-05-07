@@ -734,7 +734,7 @@ export class AdminController {
   @UseGuards(SuperAdminAuthGuard)
   @Get('/getSubAccounts/:masterAccountId')
   getSubAccounts(
-    @Param('masterAccountId', ParseIntPipe) masterAccountId: number,
+    @Param('masterAccountId') masterAccountId: string,
   ) {
     return this.adminService.getSubAccounts(masterAccountId);
   }
@@ -842,7 +842,7 @@ export class AdminController {
    */
   @UseGuards(SuperAdminAuthGuard)
   @Get('/user/:userId/status-transitions')
-  getAvailableStatusTransitions(@Param('userId', ParseIntPipe) userId: number) {
+  getAvailableStatusTransitions(@Param('userId') userId: string) {
     return this.adminService.getAvailableStatusTransitions(userId);
   }
 

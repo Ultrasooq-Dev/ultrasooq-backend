@@ -91,10 +91,10 @@ export class SuperAdminAuthGuard implements CanActivate {
     ) {
       const testUserId = req.headers['x-test-user-id'];
       if (testUserId) {
-        const parsedId = parseInt(testUserId as string, 10);
-        if (isNaN(parsedId) || parsedId <= 0) {
+        const parsedId = String(testUserId);
+        if (!parsedId) {
           throw new UnauthorizedException(
-            'Invalid test user ID: must be a positive integer',
+            'Invalid test user ID',
           );
         }
 

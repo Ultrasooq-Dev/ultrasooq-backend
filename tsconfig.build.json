@@ -7,5 +7,14 @@
 //   - Used by `nest build` (see package.json scripts).
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Disable .d.ts emission for the app build. Better Auth's inferred return
+    // type references internal zod sub-paths (better-auth/node_modules/zod/v4/core)
+    // that aren't directly importable, causing TS2742 portability errors when
+    // declaration generation is on. The backend is deployed as a runtime app —
+    // no consumer imports its .d.ts files.
+    "declaration": false,
+    "incremental": false
+  },
   "exclude": ["node_modules", "test", "dist", "scraper-mcp", "**/*spec.ts"]
 }

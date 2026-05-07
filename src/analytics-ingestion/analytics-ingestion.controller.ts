@@ -42,7 +42,7 @@ interface ErrorReportDto {
   source?: string;
   level?: string;
   sessionId?: string;
-  userId?: number | null;
+  userId?: string | null;
   pageUrl?: string;
   endpoint?: string;
   statusCode?: number;

@@ -24,7 +24,7 @@ async function main() {
 
   // Find a seller (admin user) to assign products to
   const seller = await prisma.user.findFirst({
-    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] }, status: 'ACTIVE', deletedAt: null },
+    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] }, status: 'ACTIVE' },
     select: { id: true, email: true, firstName: true },
   });
 

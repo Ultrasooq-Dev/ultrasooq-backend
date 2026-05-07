@@ -2,6 +2,7 @@
 aptPkgs = ["chromium", "libnss3", "libfreetype6", "libharfbuzz0b", "ca-certificates", "fonts-freefont-ttf"]
 
 [variables]
+NODE_ENV = "production"
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
 PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
 

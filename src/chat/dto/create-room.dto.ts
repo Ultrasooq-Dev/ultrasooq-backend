@@ -35,12 +35,12 @@ export class CreateRoomDto {
     /** @description Array of user IDs to add as room participants (must include the creator). */
     @IsArray()
     @ArrayNotEmpty()
-    readonly participants: number[];
+    readonly participants: string[];
 
     /** @description User ID of the room creator. */
     @IsNotEmpty()
-    @IsInt()
-    readonly creatorId: number;
+    @IsString()
+    readonly creatorId: string;
 
     /** @description Text content of the initial message sent when the room is created. */
     @IsOptional()
@@ -64,13 +64,13 @@ export class CreateRoomDto {
 
     /** @description Optional buyer user ID involved in the negotiation. */
     @IsOptional()
-    @IsNumber()
-    readonly buyerId?: number;
+    @IsString()
+    readonly buyerId?: string;
 
     /** @description Optional seller user ID involved in the negotiation. */
     @IsOptional()
-    @IsNumber()
-    readonly sellerId?: number;
+    @IsString()
+    readonly sellerId?: string;
 
     /** @description Optional ID of the RFQ quotes user (seller's quote submission). */
     @IsOptional()

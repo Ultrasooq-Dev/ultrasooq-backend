@@ -47,7 +47,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { CreateUserDto } from './dto/create-user.dto';
+import { randomUUID } from 'crypto';
 import { compare, hash, genSalt } from 'bcrypt';
 import { compareSync } from 'bcrypt';
 import { AuthService } from 'src/auth/auth.service';
@@ -63,6 +63,18 @@ import {
 } from 'src/notification/notification.helper';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 
+
+/**
+ * Identifier prefix used in `better_auth_verification` rows that hold a
+ * pending email-change OTP. Namespaced so it doesn't collide with rows
+ * Better Auth itself writes (email-verify links, password-reset, etc.).
+ *
+ * Phase 4 dropped the `User.otp` / `User.otpValidTime` columns that used
+ * to back `changeEmail` / `verifyEmail`. The follow-up was to move the
+ * OTP onto Better Auth's `verification` table so it survives restarts /
+ * works across cluster nodes — see `changeEmail`/`verifyEmail` below.
+ */
+const CHANGE_EMAIL_VERIFICATION_PREFIX = 'change-email:';
 
 @Injectable()
 export class UserService {
@@ -113,801 +125,6 @@ export class UserService {
   }
 
   // ===========================================================================
-  // SECTION: User Registration & OTP Verification
-  // ===========================================================================
-
-  /**
-   * Registers a new user (manual or social sign-up).
-   *
-   * **Manual flow:**
-   *  1. Validates email format and uniqueness against MasterAccount.
-   *  2. Creates a MasterAccount with personal info and hashed password.
-   *  3. Creates a default User record (BUYER / COMPANY / FREELANCER).
-   *  4. Generates a 7-digit zero-padded unique ID and a random username.
-   *  5. Dispatches a 4-digit OTP email for verification.
-   *
-   * **Social flow (Google / Facebook):**
-   *  Same as manual but skips OTP sending -- returns the created user
-   *  directly.
-   *
-   * @param createUserDto - DTO containing firstName, lastName, email,
-   *                        password, loginType, tradeRole, and optional
-   *                        profile fields.
-   * @returns `{ status, message, otp? }` on manual; `{ status, message, data }` on social.
-   */
-  async create(createUserDto: CreateUserDto) {
-    try {
-
-      if (createUserDto.loginType === 'MANUAL') {
-        if (createUserDto.email) {
-          let re =
-            /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
-          if (!re.test(String(createUserDto.email))) {
-            return {
-              status: 'false',
-              message: 'enter a valid email',
-              data: [],
-            };
-          }
-          createUserDto.email = createUserDto.email.toLowerCase();
-        }
-
-        // Check if Master Account already exists
-        const masterAccountExists = await this.prisma.masterAccount.findUnique({
-          where: { email: createUserDto.email },
-        });
-
-        if (masterAccountExists) {
-          return {
-            status: 'false',
-            message: 'email already exists',
-            data: [],
-          };
-        }
-
-        let tradeRole = createUserDto.tradeRole || 'BUYER';
-        let userTypeCategoryId = 22; // Buyer
-        if (tradeRole === 'COMPANY') {
-          userTypeCategoryId = 66; // Vendor
-        }
-        if (tradeRole === 'FREELANCER') {
-          userTypeCategoryId = 66; // Vendor
-        }
-
-        let firstName = createUserDto.firstName;
-        let lastName = createUserDto.lastName;
-        let email = createUserDto.email;
-        let cc = createUserDto.cc;
-        let phoneNumber = createUserDto.phoneNumber;
-        const { randomInt } = require('crypto');
-        let otp = randomInt(1000, 10000);
-        let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000); // 5 minutes
-        const salt = await genSalt(10);
-        const password = await hash(createUserDto.password, salt);
-
-        // Create Master Account first
-        const masterAccount = await this.prisma.masterAccount.create({
-          data: {
-            email,
-            password,
-            firstName,
-            lastName,
-            phoneNumber,
-            cc,
-            dateOfBirth: createUserDto.dateOfBirth
-              ? new Date(createUserDto.dateOfBirth)
-              : null,
-            gender: (createUserDto.gender as any) || 'MALE',
-            profilePicture: createUserDto.profilePicture,
-            otp,
-            otpValidTime,
-          },
-        });
-
-        // Create default User account (Buyer) linked to Master Account
-        const user = await this.prisma.user.create({
-          data: {
-            masterAccountId: masterAccount.id,
-            accountName: `${firstName} ${lastName} - ${tradeRole}`,
-            tradeRole: tradeRole as any,
-            isActive: true,
-            isCurrent: true,
-            userTypeCategoryId,
-            status: 'ACTIVE', // Default buyer account should be ACTIVE
-            // Company-specific fields for company accounts
-            ...(tradeRole === 'COMPANY' && {
-              companyName: `${firstName} ${lastName} Company`,
-              companyAddress: '',
-              companyPhone: phoneNumber,
-              companyWebsite: '',
-              companyTaxId: '',
-            }),
-          },
-        });
-
-        // Update Master Account with last active user
-        await this.prisma.masterAccount.update({
-          where: { id: masterAccount.id },
-          data: { lastActiveUserId: user.id },
-        });
-
-        let idString = user.id.toString();
-        let requestId;
-
-        if (idString.length >= 7) {
-          requestId = idString;
-        } else {
-          requestId = '0'.repeat(7 - idString.length) + idString;
-        }
-
-        // Create username from firstName + 4 random digits
-        const cleanFirstName = firstName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-        const randomNumbers = Math.floor(1000 + Math.random() * 9000); // 4-digit number (1000-9999)
-        const username = `${cleanFirstName}${randomNumbers}`;
-
-        let updatedUser = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            uniqueId: requestId,
-            userName: username,
-          },
-        });
-
-        let data = {
-          email: createUserDto.email,
-          name: createUserDto.firstName,
-          otp: otp,
-        };
-        this.notificationService.mailService(data);
-
-        // Notify admins about new user registration
-        try {
-          const userName = `${firstName} ${lastName}`.trim();
-          await notifyAdminsNewUser(
-            this.notificationService,
-            updatedUser.id,
-            userName,
-            email,
-            tradeRole,
-            this.prisma,
-          );
-        } catch (notifError) {
-        }
-
-        return {
-          status: true,
-          message: 'Register Successfully',
-        };
-      } else {
-        // Social login (Google/Facebook)
-        if (createUserDto.email) {
-          let re =
-            /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
-          if (!re.test(String(createUserDto.email))) {
-            return {
-              status: 'false',
-              message: 'enter a valid email',
-              data: [],
-            };
-          }
-          createUserDto.email = createUserDto.email.toLowerCase();
-        }
-
-        // Check if Master Account already exists
-        const masterAccountExists = await this.prisma.masterAccount.findUnique({
-          where: { email: createUserDto.email },
-        });
-
-        if (masterAccountExists) {
-          return {
-            status: 'false',
-            message: 'email already exists',
-            data: [],
-          };
-        }
-
-        let tradeRole = createUserDto.tradeRole || 'BUYER';
-        let firstName = createUserDto.firstName;
-        let lastName = createUserDto.lastName;
-        let email = createUserDto.email;
-        let cc = createUserDto.cc;
-        let phoneNumber = createUserDto.phoneNumber;
-        const salt = await genSalt(10);
-        const password = await hash(createUserDto.password, salt);
-
-        let loginType;
-        if (createUserDto.loginType === 'FACEBOOK') {
-          loginType = 'FACEBOOK';
-        } else {
-          loginType = 'GOOGLE';
-        }
-
-        // Create Master Account first
-        const masterAccount = await this.prisma.masterAccount.create({
-          data: {
-            email,
-            password,
-            firstName,
-            lastName,
-            phoneNumber,
-            cc,
-            dateOfBirth: createUserDto.dateOfBirth
-              ? new Date(createUserDto.dateOfBirth)
-              : null,
-            gender: (createUserDto.gender as any) || 'MALE',
-            profilePicture: createUserDto.profilePicture,
-          },
-        });
-
-        // Create default User account (Buyer) linked to Master Account
-        let user = await this.prisma.user.create({
-          data: {
-            masterAccountId: masterAccount.id,
-            accountName: `${firstName} ${lastName} - ${tradeRole}`,
-            tradeRole: tradeRole as any,
-            isActive: true,
-            isCurrent: true,
-            userType: 'USER',
-            status: 'ACTIVE', // Default buyer account should be ACTIVE
-            // Company-specific fields for company accounts
-            ...(tradeRole === 'COMPANY' && {
-              companyName: `${firstName} ${lastName} Company`,
-              companyAddress: '',
-              companyPhone: phoneNumber,
-              companyWebsite: '',
-              companyTaxId: '',
-            }),
-          },
-        });
-
-        // Update Master Account with last active user
-        await this.prisma.masterAccount.update({
-          where: { id: masterAccount.id },
-          data: { lastActiveUserId: user.id },
-        });
-
-        let idString = user.id.toString();
-        let requestId;
-
-        if (idString.length >= 7) {
-          requestId = idString;
-        } else {
-          requestId = '0'.repeat(7 - idString.length) + idString;
-        }
-
-        // Create username from firstName + 4 random digits
-        const cleanFirstName = firstName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-        const randomNumbers = Math.floor(1000 + Math.random() * 9000); // 4-digit number (1000-9999)
-        const username = `${cleanFirstName}${randomNumbers}`;
-
-        let updatedUser = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            uniqueId: requestId,
-            userName: username,
-          },
-        });
-
-        return {
-          status: true,
-          message: 'Register Successfully',
-          data: updatedUser,
-        };
-      }
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in register',
-        error: getErrorMessage(error),
-      };
-    }
-  }
-
-  /**
-   * Validates the OTP sent during registration.
-   *
-   * Flow:
-   *  1. Looks up MasterAccount by email.
-   *  2. Compares the supplied OTP against the stored value.
-   *  3. Checks expiry (5-minute window).
-   *  4. Clears OTP fields on success and issues a JWT access token.
-   *
-   * @param payload - `{ email: string, otp: number }`.
-   * @returns Access token and merged user data (User + MasterAccount fields).
-   */
-  async registerValidateOtp(payload: any) {
-    try {
-      let { email, otp } = payload;
-
-      // Find the Master Account by email (where personal info is stored)
-      const masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email: email.toLowerCase() },
-      });
-
-      if (!masterAccount) {
-        return {
-          status: false,
-          message: 'User not found',
-          data: [],
-        };
-      }
-
-      // Check if OTP matches (OTP is stored in MasterAccount)
-      if (otp !== masterAccount.otp) {
-        return {
-          status: false,
-          message: 'Invalid OTP',
-          data: [],
-        };
-      }
-
-      // Check if OTP is expired
-      if (new Date() > masterAccount.otpValidTime) {
-        return {
-          status: false,
-          message: 'OTP Expires',
-          data: [],
-        };
-      }
-
-      // Clear OTP after successful verification
-      let updatedMasterAccount = await this.prisma.masterAccount.update({
-        where: { email: email.toLowerCase() },
-        data: {
-          otp: null,
-          otpValidTime: null,
-        },
-      });
-
-      // Find the default User account for this Master Account
-      const defaultUser = await this.prisma.user.findFirst({
-        where: {
-          masterAccountId: masterAccount.id,
-          isCurrent: true,
-        },
-      });
-
-      if (!defaultUser) {
-        return {
-          status: false,
-          message: 'Default user account not found',
-          data: [],
-        };
-      }
-
-      let userAuth = {
-        id: defaultUser.id,
-      };
-      let authToken = await this.authService.login(userAuth);
-      const restokenData = authToken;
-
-      return {
-        status: true,
-        message: 'OTP Verified Successfully',
-        accessToken: restokenData.accessToken,
-        refreshToken: restokenData.refreshToken,
-        data: {
-          ...defaultUser,
-          // Include personal info from Master Account
-          email: masterAccount.email,
-          firstName: masterAccount.firstName,
-          lastName: masterAccount.lastName,
-          phoneNumber: masterAccount.phoneNumber,
-          cc: masterAccount.cc,
-        },
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in registerValidateOtp',
-        error: getErrorMessage(error),
-      };
-    }
-  }
-
-  /**
-   * Regenerates and resends a 4-digit OTP to the user's email.
-   *
-   * Updates the MasterAccount record with the new OTP and a fresh
-   * 5-minute expiry window, then dispatches the email.
-   *
-   * @param payload - `{ email: string }`.
-   * @returns Confirmation message with the new OTP value.
-   */
-  async resendOtp(payload: any) {
-    try {
-      // Find the Master Account by email (where personal info is stored)
-      const masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email: payload.email.toLowerCase() },
-      });
-
-      if (!masterAccount) {
-        return {
-          status: false,
-          message: 'User not found',
-          data: [],
-        };
-      }
-
-      const { randomInt } = require('crypto');
-      let otp = randomInt(1000, 10000);
-      let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000); // 5 minutes
-
-      // Update OTP in Master Account
-      const updateMasterAccount = await this.prisma.masterAccount.update({
-        where: {
-          email: payload.email.toLowerCase(),
-        },
-        data: {
-          otp,
-          otpValidTime,
-        },
-      });
-
-      let data = {
-        email: payload.email,
-        name: masterAccount.firstName,
-        otp: otp,
-      };
-      this.notificationService.mailService(data);
-
-      return {
-        status: true,
-        message: 'Resend OTP Successfully',
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in resendOtp',
-        data: [],
-      };
-    }
-  }
-
-  // ===========================================================================
-  // SECTION: Authentication (Login)
-  // ===========================================================================
-
-  /**
-   * Authenticates a user via email and password (manual login).
-   *
-   * Flow:
-   *  1. Finds the MasterAccount by email; checks for soft-deletion.
-   *  2. If a pending OTP exists, prompts the user to verify first.
-   *  3. Compares the bcrypt-hashed password.
-   *  4. Resolves the last-active User account (or falls back to BUYER).
-   *  5. Marks that account as `isCurrent` and generates a JWT.
-   *
-   * @param payload - `{ email: string, password: string }`.
-   * @returns JWT access token and merged user/master-account data.
-   */
-  async login(payload: any) {
-    try {
-      const email = payload.email;
-
-      // Find the Master Account by email (where personal info and password are stored)
-      const masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email: email.toLowerCase() },
-      });
-
-      if (!masterAccount) {
-        return {
-          status: false,
-          message: 'User not found',
-          data: [],
-        };
-      }
-
-      // Check if Master Account is deleted
-      if (masterAccount.deletedAt) {
-        return {
-          status: false,
-          message: 'User Deleted',
-          data: [],
-        };
-      }
-
-      // Check if Master Account needs OTP verification (has OTP)
-      if (
-        masterAccount.otp &&
-        masterAccount.otpValidTime &&
-        new Date() < masterAccount.otpValidTime
-      ) {
-        return {
-          status: true,
-          message: 'An OTP was sent to your email.',
-          data: {
-            status: 'INACTIVE',
-          },
-        };
-      }
-
-      // Check password against Master Account
-      if (!compareSync(payload.password, masterAccount.password)) {
-        return {
-          status: false,
-          message: 'Invalid Credential',
-          data: [],
-        };
-      }
-
-      // Find the last active User account for this Master Account
-      let activeUser = null;
-
-      if (masterAccount.lastActiveUserId) {
-        // Try to find the last active user account
-        activeUser = await this.prisma.user.findFirst({
-          where: {
-            id: masterAccount.lastActiveUserId,
-            masterAccountId: masterAccount.id,
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-      }
-
-      // If no last active user or it's not found, find the default BUYER account
-      if (!activeUser) {
-        activeUser = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: masterAccount.id,
-            tradeRole: 'BUYER', // Default main account
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-      }
-
-      if (!activeUser) {
-        return {
-          status: false,
-          message: 'No active user account found',
-          data: [],
-        };
-      }
-
-      // Check if the account is banned (INACTIVE status)
-      // If the default buyer account is banned, prevent login
-      if (activeUser.status === 'INACTIVE') {
-        return {
-          status: false,
-          message: 'Your account has been banned. Please contact administrator.',
-          data: [],
-        };
-      }
-
-      // Set this account as current
-      await this.prisma.user.updateMany({
-        where: {
-          masterAccountId: masterAccount.id,
-          isCurrent: true,
-        },
-        data: {
-          isCurrent: false,
-        },
-      });
-
-      await this.prisma.user.update({
-        where: { id: activeUser.id },
-        data: { isCurrent: true },
-      });
-
-      // Create auth token with user context
-      let userAuth = {
-        id: activeUser.id,
-        tradeRole: activeUser.tradeRole,
-        userAccountId: activeUser.id, // Include the account context
-      };
-
-      let authToken = await this.authService.login(userAuth);
-      const restokenData = authToken;
-
-      // Exclude sensitive fields from response
-      const { password: _pw, otp: _otp, otpValidTime: _otpTime, resetPassword: _rp, ...safeUser } = activeUser as any;
-
-      return {
-        status: true,
-        message: 'Login Successfully',
-        accessToken: restokenData.accessToken,
-        refreshToken: restokenData.refreshToken,
-        data: {
-          ...safeUser,
-          // Include personal info from Master Account
-          email: masterAccount.email,
-          firstName: masterAccount.firstName,
-          lastName: masterAccount.lastName,
-          phoneNumber: masterAccount.phoneNumber,
-          cc: masterAccount.cc,
-          profilePicture: masterAccount.profilePicture,
-          dateOfBirth: masterAccount.dateOfBirth,
-          gender: masterAccount.gender,
-        },
-      };
-    } catch (error) {
-
-      return {
-        status: false,
-        message: 'error in login',
-        data: [],
-      };
-    }
-  }
-
-  /**
-   * Authenticates a user via social (Google/Facebook) credentials.
-   *
-   * Looks up the user by email.  If found, issues a JWT.  If not found,
-   * returns a "not found" response (auto-registration via social is
-   * currently commented out).
-   *
-   * @param payload - `{ email: string, firstName?: string, lastName?: string,
-   *                    loginType?: 'GOOGLE' | 'FACEBOOK' }`.
-   * @returns JWT access token and user data, or not-found status.
-   */
-  async socialLogin(payload: any) {
-    try {
-      const email = payload.email?.toLowerCase();
-      if (!email) {
-        return {
-          status: false,
-          message: 'Email is required',
-          data: [],
-        };
-      }
-
-      // Check if Master Account exists
-      let masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email },
-      });
-
-      let user;
-      const isNewUser = !masterAccount;
-
-      if (!masterAccount) {
-        // Auto-create user for social login (first time)
-        const firstName = payload.firstName || 'User';
-        const lastName = payload.lastName || '';
-        const tradeRole = payload?.tradeRole || 'BUYER';
-        const loginType = payload?.loginType || 'GOOGLE';
-        let userTypeCategoryId = 22; // Buyer
-        if (tradeRole === 'COMPANY' || tradeRole === 'FREELANCER') {
-          userTypeCategoryId = 66; // Vendor
-        }
-
-        // Generate a random password for social login users (they won't use it)
-        const salt = await genSalt(10);
-        const randomPassword = Math.random().toString(36).slice(-12) + Date.now().toString(36);
-        const hashedPassword = await hash(randomPassword, salt);
-
-        // Create Master Account
-        masterAccount = await this.prisma.masterAccount.create({
-          data: {
-            email,
-            firstName,
-            lastName,
-            password: hashedPassword, // Required field - random password for social login
-            phoneNumber: payload.phoneNumber || '', // Use from Google if available
-            cc: payload.cc || '', // Use from Google if available
-            gender: 'MALE', // Default
-            dateOfBirth: payload.dateOfBirth ? new Date(payload.dateOfBirth) : null, // Use from Google if available
-          },
-        });
-
-        // Create default User account (Buyer) linked to Master Account
-        user = await this.prisma.user.create({
-          data: {
-            masterAccountId: masterAccount.id,
-            accountName: `${firstName} ${lastName} - ${tradeRole}`,
-            tradeRole: tradeRole as any,
-            isActive: true,
-            isCurrent: true,
-            userTypeCategoryId,
-            status: 'ACTIVE',
-            // Company-specific fields for company accounts
-            ...(tradeRole === 'COMPANY' && {
-              companyName: `${firstName} ${lastName} Company`,
-              companyAddress: '',
-              companyPhone: '',
-              companyWebsite: '',
-              companyTaxId: '',
-            }),
-          },
-        });
-
-        // Update Master Account with last active user
-        await this.prisma.masterAccount.update({
-          where: { id: masterAccount.id },
-          data: { lastActiveUserId: user.id },
-        });
-
-        // Generate uniqueId
-        let idString = user.id.toString();
-        let requestId;
-        if (idString.length >= 7) {
-          requestId = idString;
-        } else {
-          requestId = '0'.repeat(7 - idString.length) + idString;
-        }
-
-        // Create username from firstName + 4 random digits
-        const cleanFirstName = firstName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-        const randomNumbers = Math.floor(1000 + Math.random() * 9000);
-        const username = `${cleanFirstName}${randomNumbers}`;
-
-        // Update user with uniqueId and username
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: {
-            uniqueId: requestId,
-            userName: username,
-          },
-        });
-
-        // Notify admins about new user registration
-        try {
-          const userName = `${firstName} ${lastName}`.trim();
-          await notifyAdminsNewUser(
-            this.notificationService,
-            user.id, // userId parameter
-            userName,
-            email,
-            tradeRole,
-            this.prisma,
-          );
-        } catch (notifError) {
-          // Don't fail registration if notification fails
-        }
-      } else {
-        // User exists - get the current active user account
-        user = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: masterAccount.id,
-            isCurrent: true,
-          },
-        });
-
-        if (!user) {
-          // If no current user, get the first user account
-          user = await this.prisma.user.findFirst({
-            where: {
-              masterAccountId: masterAccount.id,
-            },
-          });
-        }
-      }
-
-      if (!user) {
-        return {
-          status: false,
-          message: 'User account not found',
-          data: [],
-        };
-      }
-
-      // Generate auth token
-      let userAuth = {
-        id: user.id,
-      };
-      let authToken = await this.authService.login(userAuth);
-      const restokenData = authToken;
-
-      return {
-        status: true,
-        message: isNewUser ? 'Registered Successfully' : 'Login Successfully',
-        accessToken: restokenData.accessToken,
-        refreshToken: restokenData.refreshToken,
-        data: user,
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in socialLogin',
-        data: [],
-      };
-    }
-  }
-
-  // ===========================================================================
   // SECTION: Profile Retrieval & Management
   // ===========================================================================
 
@@ -925,127 +142,32 @@ export class UserService {
    * @param req     - Express request containing `req.user` (JWT payload).
    * @returns Full user profile including nested relations.
    */
-  async me(payload: any, req: any) {
+  async me(_payload: any, req: any) {
     try {
       const userId = req?.user?.id || req?.user?.userId;
-      const userAccountId = req?.user?.userAccountId; // Get account context from JWT
 
-
-      // If user is in a sub-account context
-      if (userAccountId) {
-
-        // Get the sub-account user details
-        const subAccountUser = await this.prisma.user.findUnique({
-          where: { id: userAccountId },
-          include: {
-            masterAccount: true,
-            userPhone: true,
-            userSocialLink: true,
-            userProfile: {
-              include: {
-                userProfileBusinessType: {
-                  include: {
-                    userProfileBusinessTypeTag: true,
-                  },
-                },
-              },
-            },
-            userBranch: {
-              include: {
-                userBranchBusinessType: {
-                  include: {
-                    userBranch_BusinessType_Tag: true,
-                  },
-                },
-                userBranchTags: {
-                  include: {
-                    userBranchTagsTag: true,
-                  },
-                },
-                userBranch_userBranchCategory: {
-                  include: {
-                    userBranchCategory_category: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-
-        if (!subAccountUser) {
-          return {
-            status: false,
-            message: 'Sub-account not found',
-            data: null,
-          };
-        }
-
-        // Check if the sub-account is banned (INACTIVE status)
-        if (subAccountUser.status === 'INACTIVE') {
-          return {
-            status: false,
-            message: 'Your account has been banned. Please contact administrator.',
-            data: null,
-          };
-        }
-
-        // Return sub-account user's data with personal info from Master Account
-        const subAccountData = {
-          ...subAccountUser,
-          isSubAccount: true,
-          userAccountId: userAccountId,
-          // Personal info inherited from Master Account
-          firstName: subAccountUser.masterAccount?.firstName,
-          lastName: subAccountUser.masterAccount?.lastName,
-          email: subAccountUser.masterAccount?.email,
-          phoneNumber: subAccountUser.masterAccount?.phoneNumber,
-          cc: subAccountUser.masterAccount?.cc,
-          profilePicture: subAccountUser.masterAccount?.profilePicture,
-          dateOfBirth: subAccountUser.masterAccount?.dateOfBirth,
-          gender: subAccountUser.masterAccount?.gender,
-        };
-
-
-        return {
-          status: true,
-          message: 'Fetch Successfully',
-          data: subAccountData,
-        };
-      }
-
-      // User is using main account - existing logic
-
-      let userDetail = await this.prisma.user.findUnique({
+      const userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         include: {
-          masterAccount: true, // Include MasterAccount for personal info
           userPhone: true,
           userSocialLink: true,
           userProfile: {
             include: {
               userProfileBusinessType: {
-                include: {
-                  userProfileBusinessTypeTag: true,
-                },
+                include: { userProfileBusinessTypeTag: true },
               },
             },
           },
           userBranch: {
             include: {
               userBranchBusinessType: {
-                include: {
-                  userBranch_BusinessType_Tag: true,
-                },
+                include: { userBranch_BusinessType_Tag: true },
               },
               userBranchTags: {
-                include: {
-                  userBranchTagsTag: true,
-                },
+                include: { userBranchTagsTag: true },
               },
               userBranch_userBranchCategory: {
-                include: {
-                  userBranchCategory_category: true,
-                },
+                include: { userBranchCategory_category: true },
               },
             },
           },
@@ -1053,14 +175,8 @@ export class UserService {
       });
 
       if (!userDetail) {
-        return {
-          status: false,
-          message: 'Not Found',
-          data: [],
-        };
+        return { status: false, message: 'Not Found', data: [] };
       }
-
-      // Check if the account is banned (INACTIVE status)
       if (userDetail.status === 'INACTIVE') {
         return {
           status: false,
@@ -1069,27 +185,10 @@ export class UserService {
         };
       }
 
-      // Add main account identification and personal info from MasterAccount
-      const mainAccountData = {
-        ...userDetail,
-        isSubAccount: false,
-        userAccountId: null,
-        // Personal info from MasterAccount
-        firstName: userDetail.masterAccount?.firstName,
-        lastName: userDetail.masterAccount?.lastName,
-        email: userDetail.masterAccount?.email,
-        phoneNumber: userDetail.masterAccount?.phoneNumber,
-        cc: userDetail.masterAccount?.cc,
-        profilePicture: userDetail.masterAccount?.profilePicture,
-        dateOfBirth: userDetail.masterAccount?.dateOfBirth,
-        gender: userDetail.masterAccount?.gender,
-      };
-
-
       return {
         status: true,
         message: 'Fetch Successfully',
-        data: mainAccountData,
+        data: userDetail,
       };
     } catch (error) {
       return {
@@ -1130,9 +229,6 @@ export class UserService {
           phoneNumber: true,
           cc: true,
           tradeRole: true,
-          otp: true,
-          otpValidTime: true,
-          resetPassword: true,
           profilePicture: true,
           identityProof: true,
           identityProofBack: true,
@@ -1140,9 +236,7 @@ export class UserService {
           onlineOfflineDateStatus: true,
           createdAt: true,
           updatedAt: true,
-          deletedAt: true,
           userType: true,
-          loginType: true,
           employeeId: true,
           userRoleName: true,
           userRoleId: true,
@@ -1276,7 +370,7 @@ export class UserService {
       }
 
       // Update Master Account (personal information)
-      const updatedMasterAccount = await this.prisma.masterAccount.update({
+      const updatedMasterAccount = await this.prisma.user.update({
         where: { id: currentUser.masterAccount.id },
         data: {
           firstName: payload.firstName || currentUser.masterAccount.firstName,
@@ -1412,45 +506,31 @@ export class UserService {
   async changePassword(payload: any, req: any) {
     try {
       const userId = req?.user?.id;
-      let userDetail = await this.prisma.user.findUnique({
-        where: { id: userId },
+      // Better Auth stores the credential password in `Account` (providerId =
+      // 'credential'), not on User. Verify against that and write back there.
+      const credential = await this.prisma.account.findFirst({
+        where: { userId, providerId: 'credential' },
       });
-      if (!userDetail) {
-        return {
-          status: false,
-          message: 'Not Found',
-          data: [],
-        };
+      if (!credential || !credential.password) {
+        return { status: false, message: 'No credential password set', data: [] };
       }
-
-      if (compareSync(payload.password, userDetail.password)) {
-        if (payload.newPassword != payload.confirmPassword) {
-          return {
-            status: false,
-            message: 'Password Missmatch',
-            data: [],
-          };
-        }
-        const salt = await genSalt(10);
-        const password = await hash(payload.newPassword, salt);
-
-        let updatedUserDetail = await this.prisma.user.update({
-          where: { id: userId },
-          data: { password: password },
-        });
-
-        return {
-          status: true,
-          message: 'The password has been updated successfully.',
-          data: updatedUserDetail,
-        };
-      } else {
-        return {
-          status: false,
-          message: 'Invalid Credential',
-          data: [],
-        };
+      if (!compareSync(payload.password, credential.password)) {
+        return { status: false, message: 'Invalid Credential', data: [] };
       }
+      if (payload.newPassword != payload.confirmPassword) {
+        return { status: false, message: 'Password Missmatch', data: [] };
+      }
+      const salt = await genSalt(10);
+      const newHash = await hash(payload.newPassword, salt);
+      await this.prisma.account.update({
+        where: { id: credential.id },
+        data: { password: newHash },
+      });
+      return {
+        status: true,
+        message: 'The password has been updated successfully.',
+        data: null,
+      };
     } catch (error) {
       return {
         status: false,
@@ -1678,287 +758,6 @@ export class UserService {
         data: userDetail,
       };
     } catch (error) {}
-  }
-
-  // ===========================================================================
-  // SECTION: Password Recovery (Forget / Verify OTP / Reset)
-  // ===========================================================================
-
-  /**
-   * Initiates the forgot-password flow.
-   *
-   * Validates the email, generates a 4-digit OTP (5-minute expiry), sets
-   * `resetPassword = 1` on the user record, generates a JWT-based reset
-   * link, and dispatches the OTP via email.
-   *
-   * @param payload - `{ email: string }`.
-   * @returns OTP value and confirmation message, or inactive/deleted status.
-   */
-  async forgetPassword(payload: any) {
-    try {
-      if (payload.email) {
-        let re =
-          /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/;
-        if (!re.test(String(payload.email))) {
-          return {
-            status: 'false',
-            message: 'enter a valid email',
-            data: [],
-          };
-        }
-        payload.email = payload.email.toLowerCase();
-      }
-
-      const masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email: payload.email },
-      });
-      if (!masterAccount) {
-        return {
-          status: false,
-          message:
-            'If you are register users you will get the instruction of reset password shortly',
-          data: [],
-        };
-      }
-
-      let userDetail = masterAccount.lastActiveUserId
-        ? await this.prisma.user.findFirst({
-            where: {
-              id: masterAccount.lastActiveUserId,
-              masterAccountId: masterAccount.id,
-              deletedAt: null,
-              isActive: true,
-            },
-          })
-        : null;
-      if (!userDetail) {
-        userDetail = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: masterAccount.id,
-            tradeRole: 'BUYER',
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-      }
-      if (!userDetail) {
-        return {
-          status: false,
-          message:
-            'If you are register users you will get the instruction of reset password shortly',
-          data: [],
-        };
-      }
-
-      if (userDetail && userDetail.status == 'ACTIVE') {
-        let userAuth = {
-          id: userDetail.id,
-        };
-        let otp = Math.floor(1000 + Math.random() * 9000);
-        let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000);
-        await this.prisma.user.update({
-          where: { id: userDetail.id },
-          data: {
-            resetPassword: 1,
-            otp: otp,
-            otpValidTime: otpValidTime,
-          },
-        });
-        let authToken = await this.authService.getToken(userAuth);
-        const restokenData = authToken;
-        var link =
-          process.env.FRONTEND_SERVER +
-          '/reset?token=' +
-          restokenData.accessToken;
-
-        let data = {
-          email: masterAccount.email,
-          name: masterAccount.firstName || userDetail.firstName,
-          otp: otp,
-          link: link,
-        };
-        this.notificationService.sendOtp(data);
-
-        return {
-          status: true,
-          message: 'A verification OTP was sent to your email.',
-        };
-      } else if (userDetail && userDetail.status == 'INACTIVE') {
-        return {
-          status: false,
-          message: 'User Account InActive',
-          data: [],
-        };
-      } else {
-        return {
-          status: false,
-          message: 'User Account Deleted',
-          data: [],
-        };
-      }
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in forgetPassword',
-        error: getErrorMessage(error),
-      };
-    }
-  }
-
-  /**
-   * Verifies an OTP during the forgot-password flow.
-   *
-   * Checks the OTP value and expiry.  On success, clears the OTP fields
-   * and issues a JWT access token so the user can proceed to reset their
-   * password.
-   *
-   * @param payload - `{ email: string, otp: number }`.
-   * @returns JWT access token on success.
-   */
-  async verifyOtp(payload: any) {
-    try {
-      const email = String(payload.email || '').toLowerCase();
-      const otp = payload.otp;
-      const masterAccount = await this.prisma.masterAccount.findUnique({
-        where: { email },
-      });
-      if (!masterAccount) {
-        return {
-          status: false,
-          message: 'User not found',
-          data: [],
-        };
-      }
-      let userDetail = masterAccount.lastActiveUserId
-        ? await this.prisma.user.findFirst({
-            where: {
-              id: masterAccount.lastActiveUserId,
-              masterAccountId: masterAccount.id,
-              deletedAt: null,
-              isActive: true,
-            },
-          })
-        : null;
-      if (!userDetail) {
-        userDetail = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: masterAccount.id,
-            tradeRole: 'BUYER',
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-      }
-      if (!userDetail) {
-        return {
-          status: false,
-          message: 'User not found',
-          data: [],
-        };
-      }
-      if (otp !== userDetail.otp) {
-        return {
-          status: false,
-          message: 'Invalid OTP',
-          data: userDetail,
-        };
-      }
-      if (new Date() > userDetail.otpValidTime) {
-        return {
-          status: false,
-          message: 'Otp Expires',
-          data: [],
-        };
-      }
-      let updatedUserDetail = await this.prisma.user.update({
-        where: { id: userDetail.id },
-        data: {
-          otp: null,
-          otpValidTime: null,
-        },
-      });
-
-      let userAuth = {
-        id: userDetail.id,
-      };
-      let authToken = await this.authService.login(userAuth);
-      const restokenData = authToken;
-      return {
-        status: true,
-        message: 'OTP Verified Successfully',
-        accessToken: restokenData.accessToken,
-        refreshToken: restokenData.refreshToken,
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in verfityOtp',
-        error: getErrorMessage(error),
-      };
-    }
-  }
-
-  /**
-   * Resets the user's password after OTP verification.
-   *
-   * Requires `resetPassword == 1` on the user record (set during
-   * `forgetPassword`).  Validates that `newPassword` matches
-   * `confirmPassword`, hashes the new password, and clears the
-   * `resetPassword` flag.
-   *
-   * @param payload - `{ newPassword: string, confirmPassword: string }`.
-   * @param req     - Express request containing `req.user` (JWT from OTP verify step).
-   * @returns Updated user record.
-   */
-  async resetPassword(payload: any, req: any) {
-    try {
-      // Handle both user object structures (from User model or custom object)
-      const userId = req.user.id || req.user.userId;
-      let userDetail = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
-      if (userDetail && userDetail.resetPassword == 1) {
-        if (payload.newPassword != payload.confirmPassword) {
-          return {
-            status: false,
-            message: 'PassWord Mismatch',
-            data: [],
-          };
-        }
-        const salt = await genSalt(10);
-        const password = await hash(payload.newPassword, salt);
-
-        let updatedUserDetail = await this.prisma.user.update({
-          where: { id: userId },
-          data: { resetPassword: 0, password: password },
-        });
-
-        if (userDetail.masterAccountId) {
-          await this.prisma.masterAccount.update({
-            where: { id: userDetail.masterAccountId },
-            data: { password: password },
-          });
-        }
-
-        return {
-          status: true,
-          message: 'The password has been updated successfully.',
-          data: updatedUserDetail,
-        };
-      } else {
-        return {
-          status: false,
-          message: 'Invalid Link',
-          data: [],
-        };
-      }
-    } catch (error) {
-      return {
-        status: false,
-        message: 'error in resetPassword',
-        error: getErrorMessage(error),
-      };
-    }
   }
 
   // ===========================================================================
@@ -2756,19 +1555,42 @@ export class UserService {
         };
       }
 
-      let otp = Math.floor(1000 + Math.random() * 9000);
-      let otpValidTime = new Date(new Date().getTime() + parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000);
-      const updateUser = await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          otp,
-          otpValidTime,
+      const otp = Math.floor(1000 + Math.random() * 9000);
+      const otpExpiryMs =
+        parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000;
+      const identifier = `${CHANGE_EMAIL_VERIFICATION_PREFIX}${userId}`;
+      const expiresAt = new Date(Date.now() + otpExpiryMs);
+
+      // Opportunistically prune expired verification rows (any
+      // `change-email:*` rows whose `expiresAt` is already in the past)
+      // and any prior pending row for THIS user — only one outstanding
+      // OTP per user at a time.
+      const now = new Date();
+      await this.prisma.verification.deleteMany({
+        where: {
+          OR: [
+            { identifier, expiresAt: { lt: now } },
+            { identifier },
+            {
+              identifier: { startsWith: CHANGE_EMAIL_VERIFICATION_PREFIX },
+              expiresAt: { lt: now },
+            },
+          ],
         },
       });
-      let data = {
+      await this.prisma.verification.create({
+        data: {
+          id: randomUUID(),
+          identifier,
+          value: JSON.stringify({ otp, pendingEmail: payload.email }),
+          expiresAt,
+        },
+      });
+
+      const data = {
         email: payload.email,
         name: userDetail.firstName,
-        otp: otp,
+        otp,
       };
       this.notificationService.mailService(data);
 
@@ -2800,7 +1622,7 @@ export class UserService {
       const { email, otp } = payload;
       // Handle both user object structures (from User model or custom object)
       const userId = req?.user?.id || req?.user?.userId;
-      let userDetail = await this.prisma.user.findUnique({
+      const userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
       });
       if (!userDetail) {
@@ -2810,23 +1632,58 @@ export class UserService {
           data: [],
         };
       }
-      if (otp !== userDetail.otp) {
+      const identifier = `${CHANGE_EMAIL_VERIFICATION_PREFIX}${userId}`;
+      const pendingRow = await this.prisma.verification.findFirst({
+        where: { identifier },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!pendingRow) {
         return {
           status: false,
           message: 'Invalid OTP',
           data: [],
         };
       }
-      if (new Date() > userDetail.otpValidTime) {
+      let pending: { otp: number; pendingEmail: string };
+      try {
+        pending = JSON.parse(pendingRow.value);
+      } catch {
+        await this.prisma.verification.delete({
+          where: { id: pendingRow.id },
+        });
+        return {
+          status: false,
+          message: 'Invalid OTP',
+          data: [],
+        };
+      }
+      if (otp !== pending.otp) {
+        return {
+          status: false,
+          message: 'Invalid OTP',
+          data: [],
+        };
+      }
+      if (Date.now() > pendingRow.expiresAt.getTime()) {
+        await this.prisma.verification.delete({
+          where: { id: pendingRow.id },
+        });
         return {
           status: false,
           message: 'Otp Expires',
           data: [],
         };
       }
-      let updatedEmail = await this.prisma.user.update({
+      // The new email originally sent to changeEmail is the source of
+      // truth — accept either it or the email passed back by the client
+      // (kept for backwards compat with the existing frontend request shape).
+      const newEmail = email || pending.pendingEmail;
+      const updatedEmail = await this.prisma.user.update({
         where: { id: userId },
-        data: { email: email },
+        data: { email: newEmail },
+      });
+      await this.prisma.verification.delete({
+        where: { id: pendingRow.id },
       });
 
       return {
@@ -4091,931 +2948,55 @@ export class UserService {
   }
 
   // ===========================================================================
-  // SECTION: Multi-Account System
+  // SECTION: Multi-Account System (REMOVED in Better Auth migration)
+  //
+  // The legacy User/MasterAccount split + sub-account hierarchy is gone.
+  // Each User row is now a flat top-level account. The endpoints below are
+  // kept (still routed by user.controller.ts) but return "feature removed"
+  // until the frontend is updated.
   // ===========================================================================
 
-  /**
-   * Lists every User account associated with the authenticated user's
-   * MasterAccount.
-   *
-   * Groups accounts by trade role (BUYER, FREELANCER, COMPANY) and
-   * enriches each with personal info from the MasterAccount plus
-   * placeholder statistics (messageCount, orderCount, etc.).
-   *
-   * @param req - Express request containing `req.user`.
-   * @returns Master account info, current account, accounts grouped by
-   *          type, and a flat `allAccounts` list.
-   */
-  async myAccounts(req: any) {
-    try {
-      const userId = req.user.id || req.user.userId;
-
-      // Get the current user to find their Master Account
-      const currentUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: { masterAccount: true },
-      });
-
-      if (!currentUser || !currentUser.masterAccount) {
-        return {
-          status: false,
-          message: 'User or Master Account not found',
-          error: 'User not found',
-        };
-      }
-
-      // Get all user accounts for this Master Account
-      const allAccounts = await this.prisma.user.findMany({
-        where: {
-          masterAccountId: currentUser.masterAccountId,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          tradeRole: true,
-          status: true,
-          isCurrent: true,
-          accountName: true,
-          createdAt: true,
-          masterAccountId: true,
-          addedBy: true,
-          isSubAccount: true,
-          profilePicture: true,
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-
-
-      // Get current active account
-      const currentAccount = allAccounts.find((account) => account.isCurrent);
-
-      // Group accounts by trade role
-      const buyerAccounts = allAccounts.filter(
-        (account) => account.tradeRole === 'BUYER',
-      );
-      const freelancerAccounts = allAccounts.filter(
-        (account) => account.tradeRole === 'FREELANCER',
-      );
-      const companyAccounts = allAccounts.filter(
-        (account) => account.tradeRole === 'COMPANY',
-      );
-
-      // Helper function to get new orders count for an account
-      // Counts only orders created in the last 7 days as "new orders"
-      const getOrdersCount = async (accountId: number, tradeRole: string) => {
-        try {
-          // Calculate the date 7 days ago
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-          if (tradeRole === 'COMPANY' || tradeRole === 'FREELANCER') {
-            // For sellers: count new orders (created in last 7 days) where they are the seller
-            const count = await this.prisma.orderProducts.count({
-              where: {
-                sellerId: accountId,
-                deletedAt: null,
-                status: 'ACTIVE',
-                createdAt: {
-                  gte: sevenDaysAgo, // Only orders created in the last 7 days
-                },
-              },
-            });
-            return count;
-          } else if (tradeRole === 'BUYER') {
-            // For buyers: count new orders (created in last 7 days) where they are the buyer
-            const count = await this.prisma.orderProducts.count({
-              where: {
-                userId: accountId,
-                deletedAt: null,
-                status: 'ACTIVE',
-                createdAt: {
-                  gte: sevenDaysAgo, // Only orders created in the last 7 days
-                },
-              },
-            });
-            return count;
-          }
-          return 0;
-        } catch (error) {
-          return 0;
-        }
-      };
-
-      // Helper function to get unread messages count for an account
-      const getMessagesCount = async (accountId: number) => {
-        try {
-          // Get all rooms where the account is a participant
-          const userRooms = await this.prisma.roomParticipants.findMany({
-            where: {
-              userId: accountId,
-            },
-            select: {
-              roomId: true,
-            },
-          });
-
-          const roomIds = userRooms.map((rp) => rp.roomId);
-
-          if (roomIds.length === 0) {
-            return 0;
-          }
-
-          // Count unread messages in those rooms that were not sent by the account
-          const count = await this.prisma.message.count({
-            where: {
-              roomId: { in: roomIds },
-              userId: { not: accountId }, // Messages not sent by the account
-              status: 'UNREAD',
-            },
-          });
-
-          return count;
-        } catch (error) {
-          return 0;
-        }
-      };
-
-      // Calculate statistics for each account
-      const accountsWithStats = await Promise.all(
-        allAccounts.map(async (account) => {
-          const [ordersCount, messagesCount] = await Promise.all([
-            getOrdersCount(account.id, account.tradeRole),
-            getMessagesCount(account.id),
-          ]);
-
-          return {
-            ...account,
-            // Personal info inherited from Master Account
-            firstName: currentUser.masterAccount.firstName,
-            lastName: currentUser.masterAccount.lastName,
-            email: currentUser.masterAccount.email,
-            phoneNumber: currentUser.masterAccount.phoneNumber,
-            cc: currentUser.masterAccount.cc,
-            profilePicture: currentUser.masterAccount.profilePicture,
-            // Statistics
-            orders: ordersCount,
-            messages: messagesCount,
-          };
-        }),
-      );
-
-      // Get statistics for main account (use currentUser.id, not masterAccount.id)
-      const mainAccountStats = await Promise.all([
-        getOrdersCount(currentUser.id, currentUser.tradeRole),
-        getMessagesCount(currentUser.id),
-      ]);
-
-      // Get statistics for current account if it exists
-      let currentAccountStats = [0, 0];
-      if (currentAccount) {
-        currentAccountStats = await Promise.all([
-          getOrdersCount(currentAccount.id, currentAccount.tradeRole),
-          getMessagesCount(currentAccount.id),
-        ]);
-      }
-
-      // Helper function to get account stats
-      const getAccountWithStats = async (account: any) => {
-        const [ordersCount, messagesCount] = await Promise.all([
-          getOrdersCount(account.id, account.tradeRole),
-          getMessagesCount(account.id),
-        ]);
-
-        return {
-          ...account,
-          firstName: currentUser.masterAccount.firstName,
-          lastName: currentUser.masterAccount.lastName,
-          email: currentUser.masterAccount.email,
-          phoneNumber: currentUser.masterAccount.phoneNumber,
-          cc: currentUser.masterAccount.cc,
-          profilePicture: currentUser.masterAccount.profilePicture,
-          orders: ordersCount,
-          messages: messagesCount,
-          isCurrentAccount: currentAccount?.id === account.id,
-        };
-      };
-
-      // Get stats for accounts by type
-      const buyerAccountsWithStats = await Promise.all(
-        buyerAccounts.map((account) => getAccountWithStats(account)),
-      );
-      const freelancerAccountsWithStats = await Promise.all(
-        freelancerAccounts.map((account) => getAccountWithStats(account)),
-      );
-      const companyAccountsWithStats = await Promise.all(
-        companyAccounts.map((account) => getAccountWithStats(account)),
-      );
-
-      const response = {
-        status: true,
-        message: 'Accounts retrieved successfully',
-        data: {
-          mainAccount: {
-            id: currentUser.id,
-            firstName: currentUser.masterAccount.firstName,
-            lastName: currentUser.masterAccount.lastName,
-            email: currentUser.masterAccount.email,
-            phoneNumber: currentUser.masterAccount.phoneNumber,
-            cc: currentUser.masterAccount.cc,
-            profilePicture: currentUser.masterAccount.profilePicture,
-            tradeRole: currentUser.tradeRole,
-            accountName: currentUser.accountName || `${currentUser.masterAccount.firstName} ${currentUser.masterAccount.lastName}`,
-            orders: mainAccountStats[0],
-            messages: mainAccountStats[1],
-            status: currentUser.status,
-            statusNote: currentUser.statusNote,
-            isMainAccount: true,
-            isCurrentAccount: currentAccount?.id === currentUser.id,
-          },
-          currentAccount: currentAccount
-            ? {
-                ...currentAccount,
-                firstName: currentUser.masterAccount.firstName,
-                lastName: currentUser.masterAccount.lastName,
-                email: currentUser.masterAccount.email,
-                phoneNumber: currentUser.masterAccount.phoneNumber,
-                cc: currentUser.masterAccount.cc,
-                profilePicture: currentUser.masterAccount.profilePicture,
-                orders: currentAccountStats[0],
-                messages: currentAccountStats[1],
-              }
-            : null,
-          accountsByType: {
-            buyer: buyerAccountsWithStats,
-            freelancer: freelancerAccountsWithStats,
-            company: companyAccountsWithStats,
-          },
-          allAccounts: accountsWithStats.map((account) => ({
-            ...account,
-            isCurrentAccount: currentAccount?.id === account.id,
-          })),
-        },
-      };
-
-      return response;
-    } catch (error) {
-      return {
-        status: false,
-        message: 'Error retrieving accounts',
-        error: getErrorMessage(error),
-      };
-    }
+  async myAccounts(_req: any) {
+    return {
+      status: true,
+      message: 'Multi-account feature removed',
+      data: {
+        masterAccount: null,
+        currentAccount: null,
+        allAccounts: [],
+        buyerAccounts: [],
+        freelancerAccounts: [],
+        companyAccounts: [],
+      },
+    };
   }
 
-  /**
-   * Creates a new sub-account (BUYER, FREELANCER, or COMPANY) under the
-   * current user's MasterAccount.
-   *
-   * Validates uniqueness of the account name within the same trade role.
-   * Generates a timestamp-based unique ID.  For COMPANY accounts,
-   * additional company-specific fields are persisted.
-   *
-   * @param payload - `{ tradeRole: string, accountName: string,
-   *                    companyName?, companyAddress?, companyPhone?,
-   *                    companyWebsite?, companyTaxId? }`.
-   * @param req     - Express request containing `req.user`.
-   * @returns Newly created sub-account summary.
-   */
-  async createAccount(payload: any, req: any) {
-    try {
-      const userId = req.user.id || req.user.userId;
-
-      // Get the current user to find their Master Account
-      const currentUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: { masterAccount: true },
-      });
-
-      if (!currentUser || !currentUser.masterAccount) {
-        return {
-          status: false,
-          message: 'User or Master Account not found',
-          data: null,
-        };
-      }
-
-      // Check if account name already exists for this user and trade role
-      const existingAccount = await this.prisma.user.findFirst({
-        where: {
-          masterAccountId: currentUser.masterAccountId,
-          tradeRole: payload.tradeRole,
-          accountName: payload.accountName,
-          deletedAt: null,
-        },
-      });
-
-      if (existingAccount) {
-        return {
-          status: false,
-          message: `You already have a ${payload.tradeRole.toLowerCase()} account with the name "${payload.accountName}"`,
-          data: null,
-        };
-      }
-
-      // Generate unique ID for the new account
-      let idString = Date.now().toString();
-      let requestId;
-      if (idString.length >= 7) {
-        requestId = idString;
-      } else {
-        requestId = '0'.repeat(7 - idString.length) + idString;
-      }
-
-      // For freelancer accounts, ensure the unique ID is properly formatted
-      if (payload.tradeRole === 'FREELANCER') {
-        // Ensure the unique ID is at least 7 digits
-        while (requestId.length < 7) {
-          requestId = '0' + requestId;
-        }
-      }
-
-      // Create new sub-account inheriting from Master Account
-      const newUserAccount = await this.prisma.user.create({
-        data: {
-          masterAccountId: currentUser.masterAccountId,
-          accountName: payload.accountName,
-          tradeRole: payload.tradeRole,
-          isActive: true,
-          isCurrent: false,
-          uniqueId: requestId, // Set the unique ID
-          // Company-specific fields (only for COMPANY role)
-          ...(payload.tradeRole === 'COMPANY' && {
-            companyName: payload.companyName || '',
-            companyAddress: payload.companyAddress || '',
-            companyPhone: payload.companyPhone || '',
-            companyWebsite: payload.companyWebsite || '',
-            companyTaxId: payload.companyTaxId || '',
-          }),
-        },
-      });
-
-
-      return {
-        status: true,
-        message:
-          'Sub-account created successfully! You can now switch to this account.',
-        data: {
-          id: newUserAccount.id,
-          accountName: newUserAccount.accountName,
-          tradeRole: newUserAccount.tradeRole,
-          companyName: newUserAccount.companyName,
-          companyAddress: newUserAccount.companyAddress,
-          companyPhone: newUserAccount.companyPhone,
-          companyWebsite: newUserAccount.companyWebsite,
-          companyTaxId: newUserAccount.companyTaxId,
-        },
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'Failed to create sub-account: ' + getErrorMessage(error),
-        data: null,
-      };
-    }
+  async createAccount(_payload: any, _req: any) {
+    return {
+      status: false,
+      message: 'Multi-account feature removed; sign up a new top-level account instead',
+    };
   }
 
-  /**
-   * Switches the authenticated user's active context to a different
-   * sub-account (or back to the main BUYER account).
-   *
-   * Flow:
-   *  1. De-flags all `isCurrent` accounts for the MasterAccount.
-   *  2. If `userAccountId === 0`, activates the default BUYER account.
-   *  3. Otherwise, activates the specified sub-account (after verifying
-   *     it belongs to the same MasterAccount).
-   *  4. Updates `lastActiveUserId` on MasterAccount.
-   *  5. Creates a new AccountSession with a fresh JWT (7-day expiry).
-   *
-   * @param payload - `{ userAccountId: number }` (0 = main account).
-   * @param req     - Express request containing `req.user`.
-   * @returns New JWT access token and account summary.
-   */
-  async switchAccount(payload: any, req: any) {
-    try {
-      // Handle both user object structures (from User model or custom object)
-      const userId = req.user.id || req.user.userId;
-      const { userAccountId } = payload;
-
-      // First, get the current user to find their masterAccountId
-      const currentUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: { masterAccount: true },
-      });
-
-
-      if (!currentUser || !currentUser.masterAccountId) {
-        return {
-          status: false,
-          message: 'User not found or no master account linked',
-          data: null,
-        };
-      }
-
-      // Deactivate all current accounts for this MasterAccount
-      await this.prisma.user.updateMany({
-        where: {
-          masterAccountId: currentUser.masterAccountId,
-          isCurrent: true,
-        },
-        data: {
-          isCurrent: false,
-        },
-      });
-
-      if (userAccountId === 0) {
-        // Switch to main account (no sub-account)
-        // Find the main account for this MasterAccount
-        const user = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: currentUser.masterAccountId,
-            tradeRole: 'BUYER', // Default main account is BUYER
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-
-        if (!user) {
-          return {
-            status: false,
-            message: 'Main account not found',
-            data: null,
-          };
-        }
-
-        // Check if the main account is banned (INACTIVE status)
-        if (user.status === 'INACTIVE') {
-          return {
-            status: false,
-            message: 'This account has been banned. Please contact administrator.',
-            data: null,
-          };
-        }
-
-        // Activate the main account as current
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { isCurrent: true },
-        });
-
-        // Update the lastActiveUserId in MasterAccount
-        await this.prisma.masterAccount.update({
-          where: { id: currentUser.masterAccountId },
-          data: { lastActiveUserId: user.id },
-        });
-
-        // Create new session for main account
-        const tokenResult = await this.authService.getToken({
-          id: user.id,
-          email: user.email,
-          tradeRole: user.tradeRole,
-          userAccountId: user.id, // This is the main account
-        });
-
-        const session = await this.prisma.accountSession.create({
-          data: {
-            userId: user.id, // Use the main account ID, not the master account ID
-            accessToken: tokenResult.accessToken,
-            isActive: true,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          },
-        });
-
-        return {
-          status: true,
-          message: 'Switched to main account successfully',
-          data: {
-            accessToken: session.accessToken,
-            account: {
-              id: user.id,
-              tradeRole: user.tradeRole,
-              accountName: 'Main Account',
-              isMainAccount: true,
-            },
-          },
-        };
-      } else {
-        // Switch to specific sub-account
-
-        if (!currentUser || !currentUser.masterAccountId) {
-          return {
-            status: false,
-            message: 'User not found or no master account linked',
-            data: null,
-          };
-        }
-
-        // Find the sub-account that belongs to the same MasterAccount
-
-        const userAccount = await this.prisma.user.findFirst({
-          where: {
-            id: userAccountId,
-            masterAccountId: currentUser.masterAccountId,
-            deletedAt: null,
-            isActive: true,
-          },
-        });
-
-
-        if (!userAccount) {
-          return {
-            status: false,
-            message: 'Account not found or access denied',
-            data: null,
-          };
-        }
-
-        // Check if the account is banned (INACTIVE status)
-        if (userAccount.status === 'INACTIVE') {
-          return {
-            status: false,
-            message: 'This account has been banned. Please contact administrator.',
-            data: null,
-          };
-        }
-
-        // Activate this account as current
-        await this.prisma.user.update({
-          where: { id: userAccountId },
-          data: { isCurrent: true },
-        });
-
-        // Update the lastActiveUserId in MasterAccount
-        await this.prisma.masterAccount.update({
-          where: { id: currentUser.masterAccountId },
-          data: { lastActiveUserId: userAccountId },
-        });
-
-        // Get master user details
-        const masterUser = await this.prisma.user.findUnique({
-          where: { id: userId },
-        });
-
-        // Create new session with account context
-        const tokenResult = await this.authService.getToken({
-          id: userAccount.id, // Use the sub-account ID, not the master account ID
-          email: userAccount.email,
-          tradeRole: userAccount.tradeRole,
-          userAccountId: userAccount.id, // This is the sub-account
-        });
-
-        const session = await this.prisma.accountSession.create({
-          data: {
-            userId: userAccount.id, // Use the sub-account ID, not the master account ID
-            accessToken: tokenResult.accessToken,
-            isActive: true,
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          },
-        });
-
-        return {
-          status: true,
-          message: 'Account switched successfully',
-          data: {
-            accessToken: session.accessToken,
-            account: userAccount,
-          },
-        };
-      }
-    } catch (error) {
-      return {
-        status: false,
-        message: 'Error switching account',
-        error: getErrorMessage(error),
-      };
-    }
+  async switchAccount(_payload: any, _req: any) {
+    return {
+      status: false,
+      message: 'Multi-account feature removed',
+    };
   }
 
-  /**
-   * One-time migration utility that converts legacy sub-accounts
-   * (stored as flags on the User record with `isSubAccount = true`)
-   * into standalone User records linked via `parentUserId`.
-   *
-   * For each un-migrated account:
-   *  1. Creates a new User record with placeholder data.
-   *  2. Creates a UserProfile and UserPhone for the new user.
-   *  3. Links the original sub-account to the new user via `parentUserId`.
-   *
-   * @param req - Express request containing `req.user`.
-   * @returns Migration summary with per-account status.
-   */
-  async migrateSubAccounts(req: any) {
-    try {
-      const userId = req.user.id || req.user.userId;
-
-      // Find all sub-accounts without subAccountUserId
-      const unmigatedAccounts = await this.prisma.user.findMany({
-        where: {
-          parentUserId: userId,
-          isSubAccount: true,
-          deletedAt: null,
-        },
-        select: {
-          id: true,
-          accountName: true,
-          tradeRole: true,
-          email: true,
-          phoneNumber: true,
-          cc: true,
-          firstName: true,
-          lastName: true,
-        },
-      });
-
-
-      const results = [];
-
-      for (const account of unmigatedAccounts) {
-        try {
-
-          // Create a new User record for this sub-account
-          const newSubUser = await this.prisma.user.create({
-            data: {
-              email: `${account.accountName.toLowerCase().replace(/\s+/g, '')}@subaccount.local`,
-              password: '$2b$10$defaulthash', // Default hash
-              firstName: account.accountName,
-              lastName: `(${account.tradeRole})`,
-              tradeRole: account.tradeRole,
-              phoneNumber: '1234567890',
-              cc: '+1',
-              status: 'ACTIVE',
-              userType: 'USER',
-              userName: account.accountName,
-              uniqueId: `SUB${Date.now()}${account.id}`,
-              gender: 'MALE',
-              dateOfBirth: new Date('1990-01-01'),
-              loginType: 'MANUAL',
-            },
-          });
-
-          // Create UserProfile for the sub-account
-          const userProfile = await this.prisma.userProfile.create({
-            data: {
-              userId: newSubUser.id,
-              profileType: account.tradeRole,
-              companyName: account.accountName,
-              phoneNumber: '1234567890',
-              cc: '+1',
-            },
-          });
-
-          // Create UserPhone for the sub-account
-          const userPhone = await this.prisma.userPhone.create({
-            data: {
-              userId: newSubUser.id,
-              phoneNumber: '1234567890',
-              cc: '+1',
-              status: 'ACTIVE',
-            },
-          });
-
-          // Update the User to link to the new sub-account user
-          const updatedAccount = await this.prisma.user.update({
-            where: { id: account.id },
-            data: { parentUserId: newSubUser.id },
-          });
-
-          results.push({
-            accountId: account.id,
-            accountName: account.accountName,
-            newSubUserId: newSubUser.id,
-            status: 'migrated',
-          });
-
-        } catch (error) {
-          results.push({
-            accountId: account.id,
-            accountName: account.accountName,
-            status: 'failed',
-            error: getErrorMessage(error),
-          });
-        }
-      }
-
-      return {
-        status: true,
-        message: 'Sub-account migration completed',
-        data: {
-          totalAccounts: unmigatedAccounts.length,
-          results: results,
-        },
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: 'Migration failed',
-        error: getErrorMessage(error),
-      };
-    }
+  async migrateSubAccounts(_req: any) {
+    return {
+      status: false,
+      message: 'Multi-account feature removed',
+    };
   }
 
-  /**
-   * Returns the currently active account for the authenticated user.
-   *
-   * Resolution order:
-   *  1. If JWT carries `userAccountId` (sub-account), return that account.
-   *  2. Otherwise, find the `isCurrent` account under the MasterAccount.
-   *  3. Fallback: return the default BUYER account.
-   *
-   * Each response includes personal info inherited from the MasterAccount
-   * and, for COMPANY accounts, company-specific fields.
-   *
-   * @param req - Express request containing `req.user`.
-   * @returns Current account details with `isMainAccount` flag.
-   */
-  async currentAccount(req: any) {
-    try {
-      // Handle both user object structures (from User model or custom object)
-      const userId = req.user.id || req.user.userId;
-      const userAccountId = req.user.userAccountId; // Get account context from JWT
-
-
-      // If we have a specific account context, use that
-      if (userAccountId && userAccountId !== userId) {
-        // User is in a sub-account context
-        const subAccount = await this.prisma.user.findUnique({
-          where: {
-            id: userAccountId,
-            deletedAt: null,
-            isActive: true,
-          },
-          include: {
-            masterAccount: true,
-          },
-        });
-
-        if (subAccount && subAccount.masterAccountId) {
-          // Verify this sub-account belongs to the same master account
-          const masterAccount = await this.prisma.masterAccount.findUnique({
-            where: { id: subAccount.masterAccountId },
-          });
-
-          if (masterAccount) {
-            return {
-              status: true,
-              message: 'Current account retrieved',
-              data: {
-                account: {
-                  id: subAccount.id,
-                  tradeRole: subAccount.tradeRole,
-                  accountName: subAccount.accountName,
-                  status: subAccount.status, // Add status field
-                  isCurrent: true,
-                  isMainAccount: false,
-                  // Include company details if it's a company account
-                  ...(subAccount.tradeRole === 'COMPANY' && {
-                    companyName: subAccount.companyName,
-                    companyAddress: subAccount.companyAddress,
-                    companyPhone: subAccount.companyPhone,
-                    companyWebsite: subAccount.companyWebsite,
-                    companyTaxId: subAccount.companyTaxId,
-                  }),
-                  // Include personal info from master account
-                  firstName: subAccount.masterAccount?.firstName,
-                  lastName: subAccount.masterAccount?.lastName,
-                  email: subAccount.masterAccount?.email,
-                  phoneNumber: subAccount.masterAccount?.phoneNumber,
-                  cc: subAccount.masterAccount?.cc,
-                  profilePicture: subAccount.masterAccount?.profilePicture,
-                  dateOfBirth: subAccount.masterAccount?.dateOfBirth,
-                  gender: subAccount.masterAccount?.gender,
-                },
-                isMainAccount: false,
-              },
-            };
-          }
-        }
-      }
-
-      // First, get the current user with their master account info
-      const currentUser = await this.prisma.user.findUnique({
-        where: {
-          id: userId,
-          deletedAt: null,
-          isActive: true,
-        },
-        include: {
-          masterAccount: true,
-        },
-      });
-
-      if (!currentUser) {
-        return {
-          status: false,
-          message: 'User not found',
-        };
-      }
-
-      // Check if user has a master account
-      if (!currentUser.masterAccountId) {
-        return {
-          status: false,
-          message: 'Master account not found',
-        };
-      }
-
-      // Find the current active account for this master account
-      const currentAccount = await this.prisma.user.findFirst({
-        where: {
-          masterAccountId: currentUser.masterAccountId,
-          isCurrent: true,
-          deletedAt: null,
-          isActive: true,
-        },
-        include: {
-          masterAccount: true,
-        },
-      });
-
-      if (currentAccount) {
-        // Return the current active account
-        return {
-          status: true,
-          message: 'Current account retrieved',
-          data: {
-            account: {
-              id: currentAccount.id,
-              tradeRole: currentAccount.tradeRole,
-              accountName: currentAccount.accountName,
-              status: currentAccount.status, // Add status field
-              isCurrent: true,
-              isMainAccount: false,
-              // Include company details if it's a company account
-              ...(currentAccount.tradeRole === 'COMPANY' && {
-                companyName: currentAccount.companyName,
-                companyAddress: currentAccount.companyAddress,
-                companyPhone: currentAccount.companyPhone,
-                companyWebsite: currentAccount.companyWebsite,
-                companyTaxId: currentAccount.companyTaxId,
-              }),
-              // Include personal info from master account
-              firstName: currentAccount.masterAccount?.firstName,
-              lastName: currentAccount.masterAccount?.lastName,
-              email: currentAccount.masterAccount?.email,
-              phoneNumber: currentAccount.masterAccount?.phoneNumber,
-              cc: currentAccount.masterAccount?.cc,
-              profilePicture: currentAccount.masterAccount?.profilePicture,
-              dateOfBirth: currentAccount.masterAccount?.dateOfBirth,
-              gender: currentAccount.masterAccount?.gender,
-            },
-            isMainAccount: false,
-          },
-        };
-      } else {
-        // Find the main account (the one created during registration)
-        const mainAccount = await this.prisma.user.findFirst({
-          where: {
-            masterAccountId: currentUser.masterAccountId,
-            tradeRole: 'BUYER', // Default main account is BUYER
-            deletedAt: null,
-            isActive: true,
-          },
-          include: {
-            masterAccount: true,
-          },
-        });
-
-        if (mainAccount) {
-          return {
-            status: true,
-            message: 'Current account retrieved',
-            data: {
-              account: {
-                id: mainAccount.id,
-                tradeRole: mainAccount.tradeRole,
-                accountName: mainAccount.accountName || 'Main Account',
-                status: mainAccount.status, // Add status field
-                isCurrent: true,
-                isMainAccount: true,
-                // Include personal info from master account
-                firstName: mainAccount.masterAccount?.firstName,
-                lastName: mainAccount.masterAccount?.lastName,
-                email: mainAccount.masterAccount?.email,
-                phoneNumber: mainAccount.masterAccount?.phoneNumber,
-                cc: mainAccount.masterAccount?.cc,
-                profilePicture: mainAccount.masterAccount?.profilePicture,
-                dateOfBirth: mainAccount.masterAccount?.dateOfBirth,
-                gender: mainAccount.masterAccount?.gender,
-              },
-              isMainAccount: true,
-            },
-          };
-        } else {
-          return {
-            status: false,
-            message: 'No active account found',
-          };
-        }
-      }
-    } catch (error) {
-      return {
-        status: false,
-        message: 'Error retrieving current account',
-        error: getErrorMessage(error),
-      };
-    }
+  async currentAccount(_req: any) {
+    return {
+      status: true,
+      message: 'Multi-account feature removed',
+      data: null,
+    };
   }
 }

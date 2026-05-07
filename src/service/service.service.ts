@@ -98,7 +98,7 @@ export class ServiceService {
    * @param {number}           userId - Authenticated user ID (may be team member).
    * @returns {Promise<{success: boolean, message: string, data?: any, error?: string}>}
    */
-  async createService(dto: CreateServiceDto, userId: number) {
+  async createService(dto: CreateServiceDto, userId: string) {
     try {
       let selectedUserId = userId;
       selectedUserId = await this.helperService.getAdminId(selectedUserId);
@@ -189,7 +189,7 @@ export class ServiceService {
     page: number,
     limit: number,
     ownService: boolean,
-    userId: number,
+    userId: string,
     term: any,
     sort: any,
   ) {
@@ -377,7 +377,7 @@ export class ServiceService {
    */
   async updateService(
     serviceId: number,
-    userId: number,
+    userId: string,
     dto: UpdateServiceDto,
   ) {
     try {
@@ -753,7 +753,7 @@ export class ServiceService {
    * @param {number} userId    - Authenticated user ID (currently unused).
    * @returns {Promise<{status: boolean, message: string, data: any[], totalCount?: number, error?: string}>}
    */
-  async getProductService(serviceId: number, userId: number) {
+  async getProductService(serviceId: number, userId: string) {
     try {
       const page = 1;
       const limit = 100;

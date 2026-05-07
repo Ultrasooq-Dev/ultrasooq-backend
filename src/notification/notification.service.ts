@@ -40,7 +40,13 @@ const _logDevFallback = (msg: any, reason: string) => {
   );
 };
 sgMail.send = async (msg: any) => {
+  const isProd = process.env.NODE_ENV === 'production';
   if (!_isSendgridConfigured()) {
+    if (isProd) {
+      throw new Error(
+        'SENDGRID_API_KEY and SENDGRID_SENDER are required in production',
+      );
+    }
     _logDevFallback(msg, 'SendGrid not configured');
     return [{ statusCode: 202 }, {}];
   }
@@ -51,6 +57,10 @@ sgMail.send = async (msg: any) => {
   try {
     return await _origSend(msg);
   } catch (err: any) {
+    if (isProd) {
+      // Re-throw without logging OTP/token contents to console.
+      throw err;
+    }
     const code = err?.code || err?.response?.statusCode;
     const sgMsg = err?.response?.body?.errors?.[0]?.message;
     _logDevFallback(
@@ -107,89 +117,6 @@ export class NotificationService {
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. To complete your registration, please use the following One-Time Password (OTP).</p>
-                                                      <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
-                                                      <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Please note that this OTP is valid for the next 10 minutes. if you don't verify within this time, you'll need to request a new OTP.</p>
-                                                      <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">If you didn't initiate this process, please disregard this email.
-                                                      </p>
-                                                      <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq.</p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Best regards,</p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">The Ultrasooq Team</p>
-                                                  </td>
-                                              </tr>
-                                              <tr>
-                                                  <td width="600" valign="top" style="padding: 32px 0">
-                                                  </td>
-                                              </tr>
-                                              <tr>
-                                                  <td width="600" valign="top" style="padding: 24px 0 0" align="center">
-                                                      <p style="margin: 0px;padding: 0 0;color: #000;font-size: 14px;font-weight: 400;">© 2025 Ultrasooq. All rights reserved </p>
-                                                  </td>
-                                              </tr>
-                                          </tbody>
-                                      </table>
-  
-                                  </div>
-                              </td>
-                          </tr>
-                      </tbody>
-                  </table>
-  
-              </td>
-  
-          </tr>
-      </tbody>
-  </table>`,
-    };
-    sgMail
-      .send(mailOptions)
-      .then(() => {
-        this.logger.log('Email sent successfully');
-      })
-      .catch((error) => {
-        this.logger.error(`Failed to send email: ${error.message}`, error.stack);
-      });
-  }
-
-  /**
-   * Sends an OTP verification email. Similar to {@link mailService} but uses
-   * a different subject line ("Verify OTP for Ultrasooq" instead of
-   * "Welcome To Ultrasooq").
-   *
-   * @param data - { email: string, name: string, otp: string }
-   *   - email: Recipient email address.
-   *   - name:  Recipient display name (used in greeting).
-   *   - otp:   One-Time Password to be verified.
-   */
-  async sendOtp(data) {
-    var mailOptions = {
-      // from: "shayankar@technoexponent.com",
-      from: process.env.SENDGRID_SENDER,
-      to: data.email,
-      subject: 'Verify OTP for Ultrasooq',
-      html: `<table id="m_2717022745648039245m_-4740547828852282236mailerPage" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;line-height:24px;width:100%;font-size:14px;color:#1c1c1e;background-color:#fff;margin:0;padding:0" bgcolor="#fff">
-      <tbody>
-          <tr>
-              <td valign="top" style="font-family:Arial;border-collapse:collapse">
-                  <table cellpadding="0" cellspacing="0" border="0" align="center" style="border-collapse:collapse;background-color:#fff;border-radius:4px;margin-top:0;margin-bottom:0;" bgcolor="#fff">
-                      <tbody>
-                          <tr>
-                              <td align="center" width="600" valign="top" style="padding: 15px 32px;">
-                              </td>
-                          </tr>
-                          <tr>
-                              <td width="600" valign="top">
-                                  <div style="background-color: #f5f5f5;padding: 24px 42px 50px;border-radius: 10px;">
-                                      <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
-                                          <tbody>
-                                              <tr>
-                                                  <td width="600" valign="top">
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Hello, ${data.name}</p>
-                                                      <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
-                                                      <p style="margin: 0px;padding: 0px;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;">Thank you for choosing Ultrasooq! Your security is important to us. To verify your OTP, please use the following One-Time Password (OTP).</p>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
                                                       <h3 style="margin: 0px;padding: 8px 0;color: #2f327d;font-size: 24px;font-weight: 600;">Your OTP : ${data.otp}</h3>
                                                       <p style="margin: 0px;padding: 8px 0;color: #000;font-size: 16px;line-height: 25px;font-weight: 400;"></p>
@@ -497,7 +424,7 @@ export class NotificationService {
    * Create a new notification
    */
   async createNotification(data: {
-    userId: number;
+    userId: string;
     type: string;
     title: string;
     message: string;

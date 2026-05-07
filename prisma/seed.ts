@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { PrismaClient, Status, TypeTrader, LoginType, SpecDataType, ProductType } from '../src/generated/prisma/client';
+import { randomUUID } from 'crypto';
+import { PrismaClient, Status, TypeTrader, SpecDataType, ProductType } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 
@@ -1084,144 +1085,102 @@ async function seedSpecTemplatesForLeaves(leafCategories: CategoryNode[]): Promi
 // ═══════════════════════════════════════════════════════════
 // STEP 5: Seed test users
 // ═══════════════════════════════════════════════════════════
-async function seedUsers(): Promise<{ sellerId: number; buyerId: number }> {
+async function upsertUserWithPassword(opts: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  cc: string;
+  tradeRole: TypeTrader;
+  passwordHash: string;
+}) {
+  const { email, firstName, lastName, phoneNumber, cc, tradeRole, passwordHash } = opts;
+  const user = await prisma.user.upsert({
+    where: { email },
+    update: {
+      firstName,
+      lastName,
+      name: `${firstName} ${lastName}`,
+      phoneNumber,
+      cc,
+      tradeRole,
+      status: Status.ACTIVE,
+      isActive: true,
+    },
+    create: {
+      id: randomUUID(),
+      email,
+      emailVerified: true,
+      name: `${firstName} ${lastName}`,
+      firstName,
+      lastName,
+      phoneNumber,
+      cc,
+      tradeRole,
+      status: Status.ACTIVE,
+      isActive: true,
+    },
+  });
+
+  const existing = await prisma.account.findFirst({
+    where: { userId: user.id, providerId: 'credential' },
+  });
+  if (existing) {
+    await prisma.account.update({
+      where: { id: existing.id },
+      data: { password: passwordHash },
+    });
+  } else {
+    await prisma.account.create({
+      data: {
+        id: randomUUID(),
+        userId: user.id,
+        accountId: user.id,
+        providerId: 'credential',
+        password: passwordHash,
+      },
+    });
+  }
+  return user;
+}
+
+async function seedUsers(): Promise<{ sellerId: string; buyerId: string }> {
   console.log('\n--- Seeding Test Users ---');
   const passwordHash = await bcrypt.hash('Test123!', 10);
-
-  const sellerMaster = await prisma.masterAccount.upsert({
-    where: { email: 'seller@test.com' },
-    update: { password: passwordHash },
-    create: {
-      email: 'seller@test.com',
-      password: passwordHash,
-      firstName: 'Test',
-      lastName: 'Seller',
-      phoneNumber: '+1234567890',
-      cc: '+1',
-    },
-  });
-
-  const seller = await prisma.user.upsert({
-    where: { email: 'seller@test.com' },
-    update: {
-      firstName: 'Test',
-      lastName: 'Seller',
-      password: passwordHash,
-      tradeRole: TypeTrader.COMPANY,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: sellerMaster.id,
-      isCurrent: true,
-    },
-    create: {
-      email: 'seller@test.com',
-      firstName: 'Test',
-      lastName: 'Seller',
-      password: passwordHash,
-      tradeRole: TypeTrader.COMPANY,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: sellerMaster.id,
-      isCurrent: true,
-    },
-  });
-
-  await prisma.masterAccount.update({
-    where: { id: sellerMaster.id },
-    data: { lastActiveUserId: seller.id },
-  });
-  console.log(`  Seller: masterAccount=${sellerMaster.id}, user=${seller.id}`);
-
-  const buyerMaster = await prisma.masterAccount.upsert({
-    where: { email: 'buyer@test.com' },
-    update: { password: passwordHash },
-    create: {
-      email: 'buyer@test.com',
-      password: passwordHash,
-      firstName: 'Test',
-      lastName: 'Buyer',
-      phoneNumber: '+1234567891',
-      cc: '+1',
-    },
-  });
-
-  const buyer = await prisma.user.upsert({
-    where: { email: 'buyer@test.com' },
-    update: {
-      firstName: 'Test',
-      lastName: 'Buyer',
-      password: passwordHash,
-      tradeRole: TypeTrader.BUYER,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: buyerMaster.id,
-      isCurrent: true,
-    },
-    create: {
-      email: 'buyer@test.com',
-      firstName: 'Test',
-      lastName: 'Buyer',
-      password: passwordHash,
-      tradeRole: TypeTrader.BUYER,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: buyerMaster.id,
-      isCurrent: true,
-    },
-  });
-
-  await prisma.masterAccount.update({
-    where: { id: buyerMaster.id },
-    data: { lastActiveUserId: buyer.id },
-  });
-  console.log(`  Buyer: masterAccount=${buyerMaster.id}, user=${buyer.id}`);
-
-  // ── Ultrasooq Company Account ──
   const ultrasooqPasswordHash = await bcrypt.hash('Ultra@1234', 10);
 
-  const ultrasooqMaster = await prisma.masterAccount.upsert({
-    where: { email: 'ultrasooq@gmail.com' },
-    update: { password: ultrasooqPasswordHash },
-    create: {
-      email: 'ultrasooq@gmail.com',
-      password: ultrasooqPasswordHash,
-      firstName: 'Ultrasooq',
-      lastName: 'Company',
-      phoneNumber: '+1234567892',
-      cc: '+1',
-    },
+  const seller = await upsertUserWithPassword({
+    email: 'seller@test.com',
+    firstName: 'Test',
+    lastName: 'Seller',
+    phoneNumber: '+1234567890',
+    cc: '+1',
+    tradeRole: TypeTrader.COMPANY,
+    passwordHash,
   });
+  console.log(`  Seller: user=${seller.id}`);
 
-  const ultrasooqCompany = await prisma.user.upsert({
-    where: { email: 'ultrasooq@gmail.com' },
-    update: {
-      firstName: 'Ultrasooq',
-      lastName: 'Company',
-      password: ultrasooqPasswordHash,
-      tradeRole: TypeTrader.COMPANY,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: ultrasooqMaster.id,
-      isCurrent: true,
-    },
-    create: {
-      email: 'ultrasooq@gmail.com',
-      firstName: 'Ultrasooq',
-      lastName: 'Company',
-      password: ultrasooqPasswordHash,
-      tradeRole: TypeTrader.COMPANY,
-      loginType: LoginType.MANUAL,
-      status: Status.ACTIVE,
-      masterAccountId: ultrasooqMaster.id,
-      isCurrent: true,
-    },
+  const buyer = await upsertUserWithPassword({
+    email: 'buyer@test.com',
+    firstName: 'Test',
+    lastName: 'Buyer',
+    phoneNumber: '+1234567891',
+    cc: '+1',
+    tradeRole: TypeTrader.BUYER,
+    passwordHash,
   });
+  console.log(`  Buyer: user=${buyer.id}`);
 
-  await prisma.masterAccount.update({
-    where: { id: ultrasooqMaster.id },
-    data: { lastActiveUserId: ultrasooqCompany.id },
+  const ultrasooq = await upsertUserWithPassword({
+    email: 'ultrasooq@gmail.com',
+    firstName: 'Ultrasooq',
+    lastName: 'Company',
+    phoneNumber: '+1234567892',
+    cc: '+1',
+    tradeRole: TypeTrader.COMPANY,
+    passwordHash: ultrasooqPasswordHash,
   });
-  console.log(`  Ultrasooq Company: masterAccount=${ultrasooqMaster.id}, user=${ultrasooqCompany.id}`);
+  console.log(`  Ultrasooq Company: user=${ultrasooq.id}`);
 
   return { sellerId: seller.id, buyerId: buyer.id };
 }

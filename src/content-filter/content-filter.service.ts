@@ -11,7 +11,7 @@ const CACHE_KEY = 'content-filter:rules';
 const CACHE_TTL = 3600; // 1 hour
 
 interface AnalyzeContext {
-  userId?: number;
+  userId?: string;
   context?: string;
   field?: string;
 }
@@ -94,7 +94,7 @@ export class ContentFilterService implements OnModuleInit {
 
   async analyzeFields(
     fields: Record<string, string>,
-    context?: { userId?: number; context?: string },
+    context?: { userId?: string; context?: string },
   ): Promise<Record<string, ScoredResult>> {
     const results: Record<string, ScoredResult> = {};
 
@@ -123,7 +123,7 @@ export class ContentFilterService implements OnModuleInit {
   }
 
   async logViolation(
-    userId: number,
+    userId: string,
     context: string,
     field: string,
     text: string,

@@ -964,24 +964,38 @@ export class AdminMemberService {
       const password = payload?.password || randomstring.generate({ length: 8, charset: 'alphanumeric' });
       const employeeId = randomstring.generate({ length: 8, charset: 'alphanumeric' });
       const hashedPassword = await hash(password, salt);
-      
+
+      // ADMINMEMBER tradeRole was dropped in the Better Auth migration; admin
+      // members are now distinguished by userType=ADMIN. We persist the
+      // credential password in `Account` (Better Auth's table), not on User.
+      const { randomUUID } = await import('crypto');
+      const newUserId = randomUUID();
       let newUser = await this.prisma.user.create({
         data: {
+          id: newUserId,
           firstName: payload?.firstName || null,
           lastName: payload?.lastName || null,
+          name: `${payload?.firstName || ''} ${payload?.lastName || ''}`.trim(),
           email: payload.email,
-          password: hashedPassword,
-          tradeRole: "ADMINMEMBER",
+          emailVerified: true,
+          tradeRole: 'BUYER',
           cc: payload?.cc || null,
           phoneNumber: payload?.phoneNumber || null,
           userType: 'ADMIN',
           status: 'ACTIVE',
-          // userRoleName: userRoleDetail?.userRoleName,
-          // userRoleId: userRoleID,
           employeeId,
           addedBy: userId,
-          adminRoleId: adminRoleId
-        }
+          adminRoleId: adminRoleId,
+        },
+      });
+      await this.prisma.account.create({
+        data: {
+          id: randomUUID(),
+          userId: newUserId,
+          accountId: newUserId,
+          providerId: 'credential',
+          password: hashedPassword,
+        },
       });
 
       let idString = newUser.id.toString();

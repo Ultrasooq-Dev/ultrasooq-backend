@@ -12,9 +12,29 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) } as any);
 const SKU_PREFIX = 'HSEED-';
 const ORDER_NO_PREFIX = 'HSEED-ORD-';
 
-// Sellers + buyers (verified existing in DB - both local and prod)
-const SELLERS = [13, 14, 15, 16, 17];
-const BUYERS = [18, 19, 20, 21, 22, 23];
+// Sellers + buyers — populated from DB at the start of main(). The hard-coded
+// integer ids that used to live here became invalid when User.id became a
+// Better Auth string. We pull whoever is already seeded.
+let SELLERS: string[] = [];
+let BUYERS: string[] = [];
+
+async function loadSellersAndBuyers() {
+  const sellers = await prisma.user.findMany({
+    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] } },
+    select: { id: true },
+    take: 5,
+  });
+  const buyers = await prisma.user.findMany({
+    where: { tradeRole: 'BUYER' },
+    select: { id: true },
+    take: 6,
+  });
+  if (sellers.length === 0 || buyers.length === 0) {
+    throw new Error('No seeded sellers or buyers — run `npm run seed:admin` first');
+  }
+  SELLERS = sellers.map((s) => s.id);
+  BUYERS = buyers.map((b) => b.id);
+}
 
 // Category targets matched to homepage section filters
 const CONSUMER_ELECTRONICS = [13, 43, 74];     // Mobile Phones, Computers & Office, Audio & Video
@@ -477,6 +497,7 @@ async function seedAllBulk() {
 
 async function main() {
   console.log('Target host:', new URL(url!).host);
+  await loadSellersAndBuyers();
   await cleanup();
   await seedAllBulk();
   console.log(`\n═══ Done — ${PRODUCTS.length} products seeded ═══`);

@@ -1,62 +1,48 @@
 /**
- * @file auth.service.ts — Authentication Service (JWT + Refresh Token Operations)
+ * @file auth.service.ts — Legacy JWT helper service
  *
  * @intent
- *   Central authority for JWT token creation, validation, and refresh token
- *   management. Provides five core operations:
- *   - login (initial access + refresh token after authentication)
- *   - getToken (access token for account switching)
- *   - validateToken (verification used by guards on every protected request)
- *   - refreshAccessToken (exchange refresh token for new access + refresh token pair)
- *   - revokeRefreshToken (invalidate a refresh token on logout)
+ *   Provides the JWT signing/verification helpers that the legacy
+ *   `JwtAuthGuard` (in `src/guards/AuthGuard.ts`) and a couple of internal
+ *   call-sites (`admin.service.login`, `user.service.switchAccount`) still
+ *   depend on.
  *
- * @idea
- *   Uses @nestjs/jwt's JwtService for short-lived access tokens (default 1h)
- *   and opaque refresh tokens stored in the database (7d expiry) with rotation.
- *   Access token payload is minimal: { sub, email, tradeRole, userType }.
- *   Refresh tokens are cryptographically random 64-byte hex strings.
+ * @scope
+ *   Reduced surface as of Phase 4 of the Better Auth migration:
+ *   - `login(user)`        — signs an access token for a user (no refresh
+ *                            token; Better Auth owns sessions now).
+ *   - `getToken(user)`     — signs a JWT with account-context claims for the
+ *                            multi-account switch flow.
+ *   - `validateToken(jwt)` — verifies signature/expiry; used by guards.
+ *   - `getSessionConfig()` — reads JWT expiry from the PageSetting table
+ *                            (5-minute cache).
  *
- * @usage
- *   - Provided by AuthModule.
- *   - Consumed by:
- *     - UserService — calls login() after authentication; calls getToken() on account switch.
- *     - AuthGuard / SuperAdminAuthGuard — calls validateToken() on every request.
- *     - ChatGateway — validates WebSocket connections.
- *     - UserController — exposes /auth/refresh and /auth/logout endpoints.
+ *   The `generateRefreshToken`, `refreshAccessToken`, and
+ *   `revokeRefreshToken` methods (which depended on the now-dropped
+ *   `RefreshToken` Prisma model) were removed — see Phase 4 in
+ *   MIGRATION_TODO.mdx. Better Auth replaces refresh-token rotation with
+ *   its own sliding-window session cookie.
  *
- * @dataflow
- *   login(user)              → signs minimal JWT + generates refresh token → returns { data, userId, accessToken, refreshToken }
- *   getToken(user)           → signs JWT with account context → returns { data, userId, accessToken }
- *   validateToken(jwt)       → verifies signature + expiry → returns { error, user, message }
- *   refreshAccessToken(rt)   → validates refresh token, rotates, returns new pair
- *   revokeRefreshToken(rt)   → marks refresh token as revoked in DB
+ *   Existing clients that already hold an access token continue to work
+ *   until expiry; once expired, they hit 401 from the legacy guard and
+ *   must re-authenticate via Better Auth.
  *
  * @depends
  *   - @nestjs/common    (Injectable)
  *   - @nestjs/jwt       (JwtService — sign/verify operations)
- *   - PrismaService     (RefreshToken table operations)
- *   - crypto            (secure random token generation)
+ *   - PrismaService     (PageSetting read for session config)
  *   - process.env.JWT_SECRET, process.env.JWT_EXPIRY
- *
- * @notes
- *   - Access token expiry defaults to 1h (JWT_EXPIRY env var).
- *   - Refresh tokens expire after 7 days and are rotated on each use.
- *   - validateToken() handles three payload formats for backward compatibility:
- *     (a) decoded.user with full object — legacy login() tokens
- *     (b) decoded.user with { id, tradeRole } — getToken() tokens
- *     (c) decoded.sub at top level — new minimal login() tokens
  */
 
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
   // ─── Session config cache (reads from PageSetting slug: "session-settings") ───
   private sessionConfigCache: {
-    data: { jwtAccessTokenExpiry: string; refreshTokenDays: number };
+    data: { jwtAccessTokenExpiry: string };
     expiry: number;
   } | null = null;
 
@@ -66,17 +52,14 @@ export class AuthService {
   ) {}
 
   /**
-   * getSessionConfig — Reads session timing from the PageSetting table
-   * (slug: "session-settings") with a 5-minute in-memory cache.
+   * getSessionConfig — Reads the JWT access-token expiry from the
+   * PageSetting table (slug: "session-settings") with a 5-minute cache.
    *
    * Falls back to env vars / defaults if no DB record exists.
    *
-   * @returns { jwtAccessTokenExpiry: string, refreshTokenDays: number }
+   * @returns { jwtAccessTokenExpiry: string }
    */
-  async getSessionConfig(): Promise<{
-    jwtAccessTokenExpiry: string;
-    refreshTokenDays: number;
-  }> {
+  async getSessionConfig(): Promise<{ jwtAccessTokenExpiry: string }> {
     // Return cached value if still valid
     if (this.sessionConfigCache && Date.now() < this.sessionConfigCache.expiry) {
       return this.sessionConfigCache.data;
@@ -84,7 +67,6 @@ export class AuthService {
 
     const defaults = {
       jwtAccessTokenExpiry: (process.env.JWT_EXPIRY || '1h') as string,
-      refreshTokenDays: 7,
     };
 
     try {
@@ -99,10 +81,6 @@ export class AuthService {
             typeof s.jwtAccessTokenExpiry === 'string'
               ? s.jwtAccessTokenExpiry
               : defaults.jwtAccessTokenExpiry,
-          refreshTokenDays:
-            typeof s.refreshTokenDays === 'number' && s.refreshTokenDays > 0
-              ? s.refreshTokenDays
-              : defaults.refreshTokenDays,
         };
 
         this.sessionConfigCache = {
@@ -123,8 +101,7 @@ export class AuthService {
   }
 
   /**
-   * login — Creates a short-lived access token and a database-backed refresh token
-   * after successful user authentication (email/password or OAuth).
+   * login — Creates a short-lived access token for the given user.
    *
    * @param user - The authenticated user object. Must have `id`; optionally
    *               `email`, `tradeRole`, `userType` for JWT claims.
@@ -132,10 +109,14 @@ export class AuthService {
    *   - data: The user object (echoed back for convenience).
    *   - userId: The user's primary key.
    *   - accessToken: Signed JWT string (default 1h expiry).
-   *   - refreshToken: Opaque token string (7d expiry, stored in DB).
    *
-   * @usage Called by UserService.login(), UserService.socialLogin(),
-   *        UserService.registerValidateOtp(), UserService.verifyOtp().
+   * @usage Called by `AdminService.login` and (transitively) by
+   *        `UserService.switchAccount`. The original
+   *        legacy /api/v1/user/login endpoint that used to call this is
+   *        gone — see MIGRATION_TODO.mdx Phase 4.
+   *
+   * @notes No longer issues a refresh token — the `RefreshToken` model was
+   *        dropped in Phase 4. Better Auth owns sessions/refresh now.
    */
   async login(user) {
     // Read session config from DB (cached 5 min) with env fallback
@@ -154,14 +135,10 @@ export class AuthService {
       expiresIn: sessionConfig.jwtAccessTokenExpiry as any,
     });
 
-    // Generate a refresh token and store it in the database
-    const refreshToken = await this.generateRefreshToken(user.id);
-
     return {
       data: user,
       userId: user.id,
       accessToken,
-      refreshToken,
     };
   }
 
@@ -176,11 +153,8 @@ export class AuthService {
    *                 this identifies the specific UserAccount record.
    * @returns Same shape as login(): { data, userId, accessToken }.
    *
-   * @usage Called by UserService during account switching (switchAccount flow),
-   *        and when a refreshed token is needed with updated role context.
-   *
-   * @notes Unlike login(), this method only embeds id, tradeRole, and optionally
-   *        userAccountId in the JWT payload — a more minimal and secure approach.
+   * @usage Called by `UserService.switchAccount`. Embeds
+   *        id, tradeRole, and optionally userAccountId.
    */
   async getToken(user) {
     // Read session config from DB (cached 5 min) with env fallback
@@ -228,12 +202,6 @@ export class AuthService {
    *   → else if decoded.sub exists → return full decoded object (getToken() tokens)
    *   → else → invalid structure error
    *   → catch: TokenExpiredError, JsonWebTokenError, or generic error
-   *
-   * @notes
-   *   - This is a synchronous method (no async/await needed) despite being
-   *     called with `await` in guards — this is harmless but unnecessary.
-   *   - The dual payload handling (decoded.user vs decoded.sub) supports both
-   *     old and new token formats for backwards compatibility.
    */
   validateToken(jwt: string) {
     try {
@@ -303,123 +271,6 @@ export class AuthService {
             message: 'Unable to Process Token',
           };
       }
-    }
-  }
-
-  // ===========================================================================
-  // REFRESH TOKEN METHODS
-  // ===========================================================================
-
-  /**
-   * generateRefreshToken — Creates a cryptographically random refresh token,
-   * stores it in the database with a 7-day expiry, and returns the raw token string.
-   *
-   * @param userId - The user's primary key.
-   * @returns The raw refresh token string (hex-encoded).
-   */
-  async generateRefreshToken(userId: number): Promise<string> {
-    // Read session config from DB (cached 5 min) with env fallback
-    const sessionConfig = await this.getSessionConfig();
-
-    const token = crypto.randomBytes(64).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + sessionConfig.refreshTokenDays);
-
-    await this.prisma.refreshToken.create({
-      data: {
-        token,
-        userId,
-        expiresAt,
-      },
-    });
-
-    return token;
-  }
-
-  /**
-   * refreshAccessToken — Validates a refresh token, generates a new access token
-   * and rotates the refresh token (revoke old, create new).
-   *
-   * @param refreshToken - The raw refresh token string from the client.
-   * @returns Object containing new accessToken and refreshToken.
-   * @throws Error if the refresh token is invalid, expired, or revoked.
-   */
-  async refreshAccessToken(
-    refreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Find the refresh token in the database
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-      include: { user: true },
-    });
-
-    if (!storedToken) {
-      throw new Error('Invalid refresh token');
-    }
-
-    if (storedToken.revoked) {
-      // Possible token reuse attack — revoke all tokens for this user
-      await this.prisma.refreshToken.updateMany({
-        where: { userId: storedToken.userId },
-        data: { revoked: true },
-      });
-      throw new Error('Refresh token has been revoked — all sessions invalidated');
-    }
-
-    if (storedToken.expiresAt < new Date()) {
-      throw new Error('Refresh token has expired');
-    }
-
-    const user = storedToken.user;
-
-    // Read session config from DB (cached 5 min) with env fallback
-    const sessionConfig = await this.getSessionConfig();
-
-    // Generate new access token with minimal payload
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      tradeRole: user.tradeRole,
-      userType: user.userType,
-    };
-
-    const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET,
-      expiresIn: sessionConfig.jwtAccessTokenExpiry as any,
-    });
-
-    // Rotate: generate new refresh token and revoke old one
-    const newRefreshToken = await this.generateRefreshToken(user.id);
-
-    await this.prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: {
-        revoked: true,
-        replacedBy: newRefreshToken,
-      },
-    });
-
-    return {
-      accessToken,
-      refreshToken: newRefreshToken,
-    };
-  }
-
-  /**
-   * revokeRefreshToken — Marks a refresh token as revoked in the database.
-   *
-   * @param token - The raw refresh token string to revoke.
-   */
-  async revokeRefreshToken(token: string): Promise<void> {
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token },
-    });
-
-    if (storedToken) {
-      await this.prisma.refreshToken.update({
-        where: { id: storedToken.id },
-        data: { revoked: true },
-      });
     }
   }
 }

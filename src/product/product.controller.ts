@@ -919,27 +919,6 @@ export class ProductController {
   }
 
   /**
-   * @method addLocation
-   * @description Creates a new location record in the product-location reference data.
-   *
-   * @intent Populate the location master list for product geographic assignments.
-   *
-   * @usage `POST /product/addLocation` (public)
-   *
-   * @dataflow payload -> Prisma productLocation.create() -> { status, message, data }
-   *
-   * @dependencies {@link ProductService.addLocation}
-   *
-   * @param {any} req - Express request object.
-   * @param {any} payload - Location data (name, coordinates, etc.).
-   * @returns {Promise<{status: boolean, message: string, data?: any}>}
-   */
-  @Post('/addLocation')
-  addLocation(@Request() req, @Body() payload: any) {
-    return this.productService.addLocation(payload, req);
-  }
-
-  /**
    * @method locationList
    * @description Retrieves all active location records.
    *
@@ -2205,36 +2184,6 @@ export class ProductController {
   }
 
   // ---- **** RFQ PRODUCT END **** ----
-
-  // ---- **** CUSTOM FIELD FOR PRODUCT BEGINS **** ----
-
-  /**
-   * @method createCustomFieldValue
-   * @description Creates or updates custom field values for a product-price entry.
-   *
-   * @intent Allow sellers to attach dynamic form field answers (defined per category)
-   *   to their product price listings.
-   *
-   * @usage `POST /product/createCustomFieldValue` (AuthGuard protected)
-   *
-   * @dataflow payload (productPriceId, field values) -> Prisma customFieldValue upserts
-   *   -> { status, message, data }
-   *
-   * @dependencies {@link ProductService.createCustomFieldValue}
-   *
-   * @notes Custom fields are category-driven; the schema is defined in `dynamicFormCategory`.
-   *
-   * @param {any} req - Express request with JWT-decoded `user` object.
-   * @param {any} payload - Custom field data (productPriceId, field ID-value pairs).
-   * @returns {Promise<{status: boolean, message: string, data?: any}>}
-   */
-  @UseGuards(AuthGuard)
-  @Post('/createCustomFieldValue')
-  createCustomFieldValue(@Request() req, @Body() payload: any) {
-    return this.productService.createCustomFieldValue(payload, req);
-  }
-
-  // ---- **** CUSTOM FIELD FOR PRODUCT ENDS **** ----
 
   // -------------------------------------------------------------- Factories Product Begins -------------------------------------------------------  */
 

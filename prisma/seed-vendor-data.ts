@@ -7,7 +7,17 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) } as any);
 
 async function main() {
-  const sellerId = 6; // seller@ultrasooq.com
+  // Resolve seeded users by email; the legacy hard-coded integer ids are gone
+  // now that User.id is a Better Auth string.
+  const seller = await prisma.user.findFirst({ where: { email: 'seller@ultrasooq.com' }, select: { id: true } });
+  const buyer = await prisma.user.findFirst({ where: { email: 'buyer@ultrasooq.com' }, select: { id: true } });
+  const admin = await prisma.user.findFirst({ where: { email: 'admin@ultrasooq.com' }, select: { id: true } });
+  const freelancer = await prisma.user.findFirst({ where: { email: 'freelancer@ultrasooq.com' }, select: { id: true } });
+  if (!seller || !buyer || !admin || !freelancer) {
+    throw new Error('Seed users missing — run `npm run seed:admin` first');
+  }
+  const sellerId = seller.id;
+  const buyerId = buyer.id;
 
   // 1. Find or create product
   let product = await prisma.product.findFirst({
@@ -49,7 +59,7 @@ async function main() {
   console.log('ProductPrice:', pp.id);
 
   // Valid user IDs we created
-  const userIds = [2, 5, 6, 7]; // admin, buyer, seller, freelancer
+  const userIds = [admin.id, buyer.id, seller.id, freelancer.id];
 
   // 3. ProductViews (50)
   for (let i = 1; i <= 50; i++) {
@@ -111,7 +121,6 @@ async function main() {
   console.log('12 cart adds');
 
   // 6. Orders (8)
-  const buyerId = 5; // buyer@ultrasooq.com
   const statuses = ['DELIVERED', 'DELIVERED', 'DELIVERED', 'DELIVERED', 'SHIPPED', 'CONFIRMED', 'PLACED', 'CANCELLED'];
   for (let i = 0; i < 8; i++) {
     const order = await prisma.order.create({

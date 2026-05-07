@@ -10,9 +10,6 @@ describe('DisambiguationService', () => {
   beforeEach(() => {
     mockKnowledgeGraph = {
       disambiguate: jest.fn(),
-      expandUseCase: jest.fn(),
-      findCompatible: jest.fn(),
-      getAccessories: jest.fn(),
     } as any;
 
     mockPrisma = {

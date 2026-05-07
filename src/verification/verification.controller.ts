@@ -72,7 +72,7 @@ export class VerificationController {
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Test CR verification on a user (read-only, no data updates)' })
-  async testVerify(@Body() body: { userId: number }) {
+  async testVerify(@Body() body: { userId: string }) {
     // Find the user's CR document
     const profile = await this.verificationService['prisma'].userProfile.findFirst({
       where: { userId: body.userId, deletedAt: null },

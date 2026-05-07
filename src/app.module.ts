@@ -81,11 +81,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { SpecificationModule } from './specification/specification.module';
-import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
 import { ContentFilterModule } from './content-filter/content-filter.module';
 import { RecommendationModule } from './recommendation/recommendation.module';
 import { SearchIntelligenceModule } from './search-intelligence/search-intelligence.module';
 import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingestion.module';
+import { AuthBetterModule } from './auth-better/auth-better.module';
 
 @Module({
   imports: [
@@ -112,12 +112,40 @@ import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingest
                 },
               }
             : undefined,
+        // Redact sensitive request/response fields. Replaces values with
+        // [REDACTED] rather than removing them, so log shape stays stable.
+        // This prevents Better Auth verification/reset tokens, API keys,
+        // cookies, and Authorization headers from leaking into log sinks.
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers["x-api-key"]',
+            'req.headers["x-scraper-key"]',
+            'req.query.token',
+            'req.query.code',
+            'req.query.otp',
+            'res.headers["set-cookie"]',
+          ],
+          remove: false,
+          censor: '[REDACTED]',
+        },
         serializers: {
-          req: (req) => ({
-            id: req.id,
-            method: req.method,
-            url: req.url,
-          }),
+          // Mask token=, code=, otp= query params anywhere in req.url so
+          // Better Auth verification/reset URLs (e.g. /api/auth/verify-email
+          // ?token=...) never appear in plaintext in HTTP request logs.
+          req: (req: any) => {
+            const url: string = req.url || '';
+            const masked = url.replace(
+              /([?&])(token|code|otp)=[^&]*/gi,
+              '$1$2=[REDACTED]',
+            );
+            return {
+              id: req.id,
+              method: req.method,
+              url: masked,
+            };
+          },
           res: (res) => ({
             statusCode: res.statusCode,
           }),
@@ -179,11 +207,11 @@ import { AnalyticsIngestionModule } from './analytics-ingestion/analytics-ingest
     WalletModule,
     // ScraperModule — extracted to standalone app (port 3002)
     BannerModule,
-    StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
     ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
     RecommendationModule, // Recommendation engine — personalized, product-based, trending
     SearchIntelligenceModule, // Search intelligence — query parsing, intent classification, category/brand resolution
     AnalyticsIngestionModule, // Analytics ingestion — public event/error endpoints, session tracking
+    AuthBetterModule,     // Better Auth-aware endpoints (PATCH /user/me/trade-role, etc.) — see MIGRATION_TODO.mdx
   ],
   controllers: [AppController],
   providers: [

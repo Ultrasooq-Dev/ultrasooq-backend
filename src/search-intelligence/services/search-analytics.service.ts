@@ -6,7 +6,7 @@ export interface SearchLogData {
   parsedType: string; // 'single' | 'multi' | 'shopping_list' | 'browse'
   language: string;
   resultCount: number;
-  userId?: number;
+  userId?: string;
   deviceId?: string;
   resolvedBrandId?: number;
   resolvedCategoryIds?: number[];

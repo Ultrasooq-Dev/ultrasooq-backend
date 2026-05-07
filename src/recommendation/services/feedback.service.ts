@@ -20,7 +20,7 @@ export class FeedbackService {
       position?: number;
       algorithm?: string;
     },
-    userId: number | null,
+    userId: string | null,
     deviceId: string | null,
   ): Promise<void> {
     // Deduplicate: skip if same recId+action recorded within 5 seconds

@@ -141,7 +141,7 @@ Respond ONLY with valid JSON, no markdown or explanation.
   // STEP 2: Auto-fill company profile from extracted data
   // ═══════════════════════════════════════════════════════════
 
-  async autoFillProfile(userId: number, extractedData: CRExtractedData) {
+  async autoFillProfile(userId: string, extractedData: CRExtractedData) {
     try {
       // Find or create user profile
       const profile = await this.prisma.userProfile.findFirst({
@@ -190,7 +190,7 @@ Respond ONLY with valid JSON, no markdown or explanation.
   // STEP 3: Find & create branches from CR data
   // ═══════════════════════════════════════════════════════════
 
-  async createBranchesFromCR(userId: number, extractedData: CRExtractedData) {
+  async createBranchesFromCR(userId: string, extractedData: CRExtractedData) {
     try {
       const branches = extractedData.branches || [];
       if (branches.length === 0) {
@@ -301,7 +301,7 @@ Only include matches with score >= 60. Max 10 matches.`;
   // STEP 5: Assign matched categories to user
   // ═══════════════════════════════════════════════════════════
 
-  async assignCategories(userId: number, matches: CategoryMatch[]) {
+  async assignCategories(userId: string, matches: CategoryMatch[]) {
     try {
       const assigned: number[] = [];
       for (const match of matches) {
@@ -359,7 +359,7 @@ Only include matches with score >= 60. Max 10 matches.`;
   // FULL PIPELINE: Extract → Fill → Branch → Match → Assign
   // ═══════════════════════════════════════════════════════════
 
-  async runFullPipeline(userId: number, crDocumentUrl: string) {
+  async runFullPipeline(userId: string, crDocumentUrl: string) {
     const results: any = {
       extraction: null,
       profileFill: null,

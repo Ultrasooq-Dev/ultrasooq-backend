@@ -104,7 +104,7 @@ export class ServiceController {
    * @returns {Promise<{success: boolean, message: string, data: any}>} Envelope response.
    */
   @Post('create')
-  createService(@Body() dto: CreateServiceDto, @GetUser('id') userId: number) {
+  createService(@Body() dto: CreateServiceDto, @GetUser('id') userId: string) {
     return this.service.createService(dto, userId);
   }
 
@@ -150,7 +150,7 @@ export class ServiceController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('ownService', ParseBoolPipe)
     ownService: boolean,
-    @GetUser('id') userId: number,
+    @GetUser('id') userId: string,
     @Query('term') term: string,
     @Query('sort') sort: string,
   ) {
@@ -478,7 +478,7 @@ export class ServiceController {
   updateService(
     @Param('serviceid', ParseIntPipe) serviceId: number,
     @Body() dto: UpdateServiceDto,
-    @GetUser('id') userId: number,
+    @GetUser('id') userId: string,
   ) {
     return this.service.updateService(serviceId, userId, dto);
   }
@@ -518,7 +518,7 @@ export class ServiceController {
   @Get('product/:serviceid')
   getProductService(
     @Param('serviceid', ParseIntPipe) serviceId: number,
-    @GetUser('id') userId: number,
+    @GetUser('id') userId: string,
   ) {
     return this.service.getProductService(serviceId, userId);
   }

@@ -27,7 +27,7 @@ export enum NotificationType {
  */
 export async function notifyOrderStatusChange(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   orderNumber: string,
   orderId: number,
   status: string,
@@ -57,7 +57,7 @@ export async function notifyOrderStatusChange(
  */
 export async function notifyNewMessage(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   senderName: string,
   messageId: number,
   roomId: number,
@@ -83,7 +83,7 @@ export async function notifyNewMessage(
  */
 export async function notifyNewRFQQuote(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   rfqId: number,
   quoteId: number,
   sellerName: string,
@@ -104,7 +104,7 @@ export async function notifyNewRFQQuote(
  */
 export async function notifyNewReview(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   productName: string,
   reviewId: number,
   productId: string,
@@ -125,7 +125,7 @@ export async function notifyNewReview(
  */
 export async function notifyPaymentReceived(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   amount: number,
   orderId: number,
 ) {
@@ -145,7 +145,7 @@ export async function notifyPaymentReceived(
  */
 export async function notifyShipmentUpdate(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   orderNumber: string,
   orderId: number,
   trackingNumber?: string,
@@ -170,7 +170,7 @@ export async function notifyShipmentUpdate(
  */
 export async function notifySystemEvent(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   title: string,
   message: string,
   link?: string,
@@ -190,7 +190,7 @@ export async function notifySystemEvent(
  */
 export async function notifyStockChange(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   productName: string,
   productId: string,
   productPriceId: number,
@@ -239,7 +239,7 @@ export async function notifyStockChange(
  */
 export async function notifyPriceChange(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   productName: string,
   productId: string,
   productPriceId: number,
@@ -278,7 +278,7 @@ export async function notifyPriceChange(
  */
 export async function notifyBuygroupSale(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   productName: string,
   productId: string,
   productPriceId: number,
@@ -339,7 +339,7 @@ export async function notifyBuygroupSale(
  */
 export async function notifyRfqQuoteStatus(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   rfqId: number,
   status: 'submitted' | 'accepted' | 'rejected',
 ) {
@@ -384,7 +384,7 @@ import { PrismaService } from '../prisma/prisma.service';
 /**
  * Get all admin user IDs
  */
-async function getAllAdminUserIds(prisma: PrismaService): Promise<number[]> {
+async function getAllAdminUserIds(prisma: PrismaService): Promise<string[]> {
   const admins = await prisma.user.findMany({
     where: {
       userType: 'ADMIN',
@@ -404,7 +404,7 @@ export async function notifyAdminsNewProduct(
   notificationService: NotificationService,
   productId: string,
   productName: string,
-  userId: number,
+  userId: string,
   prisma: PrismaService,
 ) {
   try {
@@ -441,7 +441,7 @@ export async function notifyAdminsNewProduct(
  */
 export async function notifyAdminsNewUser(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   userName: string,
   email: string,
   tradeRole: string,
@@ -470,7 +470,7 @@ export async function notifyAdminsNewUser(
  */
 export async function notifyAdminsIdentityProofUpload(
   notificationService: NotificationService,
-  userId: number,
+  userId: string,
   userName: string,
   prisma: PrismaService,
 ) {
@@ -499,7 +499,7 @@ export async function notifyAdminsDropshipableProduct(
   notificationService: NotificationService,
   productId: string,
   productName: string,
-  userId: number,
+  userId: string,
   prisma: PrismaService,
 ) {
   try {

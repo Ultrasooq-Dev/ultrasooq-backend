@@ -167,14 +167,20 @@ export class TeamMemberService {
       let userRoleName = userRoleDetail.userRoleName;
       let userRoleId = userRoleID
 
-      // -- Create the User record with tradeRole 'MEMBER' --
+      // -- Create the User record + Better Auth credential row --
+      // tradeRole MEMBER was dropped in the Better Auth migration; team
+      // membership is tracked via the TeamMember row created downstream.
+      const { randomUUID } = await import('crypto');
+      const newUserId = randomUUID();
       let newUser = await this.prisma.user.create({
         data: {
+          id: newUserId,
+          name: `${firstName || ''} ${lastName || ''}`.trim(),
           firstName,
           lastName,
           email,
-          password: hashedPassword,
-          tradeRole: 'MEMBER',
+          emailVerified: true,
+          tradeRole: 'BUYER',
           cc,
           phoneNumber,
           userType: 'USER',
@@ -182,8 +188,17 @@ export class TeamMemberService {
           userRoleName,
           userRoleId,
           employeeId: employeeId,
-          addedBy: userId
-        }
+          addedBy: userId,
+        },
+      });
+      await this.prisma.account.create({
+        data: {
+          id: randomUUID(),
+          userId: newUserId,
+          accountId: newUserId,
+          providerId: 'credential',
+          password: hashedPassword,
+        },
       });
 
       // -- Build a zero-padded uniqueId (minimum 7 digits) --

@@ -39,7 +39,7 @@ export class HelperService {
    * @param   userId - The ID of the currently authenticated user.
    * @returns The resolved admin/owner ID, or null if userId is falsy.
    */
-  async getAdminId(userId: number): Promise<number | null> {
+  async getAdminId(userId: string): Promise<string | null> {
     if (!userId) return null; // Handle case where userId is undefined
 
     const adminDetail = await this.prisma.user.findUnique({
@@ -47,7 +47,9 @@ export class HelperService {
       select: { id: true, tradeRole: true, addedBy: true },
     });
 
-    return adminDetail?.tradeRole === 'MEMBER' ? adminDetail.addedBy : userId;
+    // tradeRole MEMBER was dropped — team members are now identified via the
+    // TeamMember row; addedBy on User points at the parent owner.
+    return adminDetail?.addedBy ?? userId;
   }
 
   /**
@@ -63,15 +65,19 @@ export class HelperService {
    * @param   userId - The ID of the currently authenticated admin user.
    * @returns The resolved super-admin/sub-admin ID, or null if userId is falsy.
    */
-  async getSuperAdminORSubAdminId(userId: number): Promise<number | null> {
-    if (!userId) return null; // Handle case where userId is undefined
+  async getSuperAdminORSubAdminId(userId: string): Promise<string | null> {
+    if (!userId) return null;
 
     const adminDetail = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, tradeRole: true, addedBy: true },
+      select: { id: true, userType: true, addedBy: true },
     });
 
-    return adminDetail?.tradeRole === 'ADMINMEMBER' ? adminDetail.addedBy : userId;
+    // ADMINMEMBER tradeRole was dropped; admin team members are now
+    // userType=ADMIN with `addedBy` pointing at the super-admin.
+    return adminDetail?.userType === 'ADMIN' && adminDetail.addedBy
+      ? adminDetail.addedBy
+      : userId;
   }
 
   /**

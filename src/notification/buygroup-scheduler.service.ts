@@ -182,7 +182,7 @@ export class BuygroupSchedulerService {
    * Includes duplicate prevention to avoid sending same notification multiple times
    */
   private async sendBuygroupNotification(
-    userIds: number[],
+    userIds: string[],
     productName: string,
     productId: string,
     productPriceId: number,

@@ -36,12 +36,12 @@ export class CreateRoomOrderDto {
     /** @description Array of user IDs to add as room participants (must include the creator). */
     @IsArray()
     @ArrayNotEmpty()
-    readonly participants: number[];
+    readonly participants: string[];
 
     /** @description User ID of the room creator. */
     @IsNotEmpty()
-    @IsInt()
-    readonly creatorId: number;
+    @IsString()
+    readonly creatorId: string;
 
     /** @description Client-generated unique identifier for idempotent message deduplication. */
     @IsOptional()

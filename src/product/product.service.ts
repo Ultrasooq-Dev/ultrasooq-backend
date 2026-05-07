@@ -4980,58 +4980,6 @@ export class ProductService {
   }
 
   /**
-   * @method addLocation
-   * @description Creates a new location record in the product-location reference data.
-   *
-   * @intent Populate the location master list for product geographic assignments.
-   *
-   * @usage Called by `ProductController.addLocation()` via `POST /product/addLocation`.
-   *
-   * @dataflow payload (locationName) -> Prisma productLocation.create() -> { status, message, data }
-   *
-   * @dependencies PrismaClient
-   *
-   * @param {any} payload - Location data.
-   * @param {any} req - Express request object.
-   * @returns {Promise<{status: boolean, message: string, data?: any, error?: string}>}
-   */
-  async addLocation(payload: any, req: any) {
-    try {
-      if (!payload?.locationName) {
-        return {
-          status: false,
-
-          message: 'locationName is required',
-
-          data: [],
-        };
-      }
-
-      let addLocation = await this.prisma.locationList.create({
-        data: {
-          locationName: payload.locationName,
-        },
-      });
-
-      return {
-        status: false,
-
-        message: 'error in addLocation',
-
-        data: addLocation,
-      };
-    } catch (error) {
-      return {
-        status: false,
-
-        message: 'error in addLocation',
-
-        error: getErrorMessage(error),
-      };
-    }
-  }
-
-  /**
    * @method locationList
    * @description Retrieves all active location records.
    *
@@ -7949,32 +7897,6 @@ export class ProductService {
 
   async hideRfqRequest(rfqQuotesUserId: number, isHidden: boolean, req: any) {
     return this.productRfqService.hideRfqRequest(rfqQuotesUserId, isHidden, req);
-  }
-
-  // ---- **** CUSTOM FIELD FOR PRODUCT BEGINS **** ----
-
-  /**
-   * @method createCustomFieldValue
-   * @description Creates or updates custom field values for a product-price entry.
-   *
-   * @intent Allow sellers to attach dynamic form field answers to their price listings.
-   *
-   * @usage Called by `ProductController.createCustomFieldValue()` via
-   *   `POST /product/createCustomFieldValue`.
-   *
-   * @dataflow payload (productPriceId, field values) -> loop -> Prisma customFieldValue upserts
-   *   -> { status, message, data }
-   *
-   * @dependencies PrismaClient
-   *
-   * @notes Custom fields are category-driven via the dynamicFormCategory schema.
-   *
-   * @param {any} payload - Custom field data (productPriceId, field ID-value pairs).
-   * @param {any} req - Express request with `user.id` from JWT.
-   * @returns {Promise<{status: boolean, message: string, data?: any, error?: string}>}
-   */
-  async createCustomFieldValue(payload: any, req: any) {
-    return this.productRfqService.createCustomFieldValue(payload, req);
   }
 
   /* ----------------------------------------------------------- Factories Product -------------------------------------------------------  */

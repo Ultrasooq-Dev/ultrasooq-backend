@@ -175,21 +175,6 @@ export class OrderService {
         ...(payload.serviceCartIds || [])
       ];
 
-      let cartProductServiceRelation = await this.prisma.cartProductService.findMany({
-        where: {
-          OR: [
-            { cartId: { in: totalCartIds } },
-            { relatedCartId: { in: totalCartIds } }
-          ]
-        }
-      });
-
-      // return {
-      //   status: true,
-      //   message: 'Created Successfully',
-      //   data: cartProductServiceRelation
-      // };
-
       let userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -480,13 +465,6 @@ export class OrderService {
         totalCustomerPay += totalPrice;
       }
 
-      // return {
-      //   status: true,
-      //   message: 'Created Successfully',
-      //   data: cartProductServiceRelation,
-      //   productList: productList
-      // };
-
       const uniqueSellerIds = [...new Set(productList.map(item => item.sellerId))];
 
       let isShipping = false;
@@ -683,24 +661,6 @@ export class OrderService {
             cartOrder[product.cartId] = orderProduct.id;
           }
 
-          // Create order product service relations
-          if (cartProductServiceRelation.length > 0) {
-            for (const relation of cartProductServiceRelation) {
-              const orderProductId = cartOrder[relation.cartId];
-              const relatedOrderProductId = relation.relatedCartId ? cartOrder[relation.relatedCartId] : null;
-              if (orderProductId) {
-                await tx.orderProductService.create({
-                  data: {
-                    productId: relation.productId,
-                    serviceId: relation.serviceId,
-                    orderProductId: orderProductId,
-                    relatedOrderProductId: relatedOrderProductId,
-                    orderProductType: relation.cartType,
-                  },
-                });
-              }
-            }
-          }
         }
 
         // 6. Create billing address
@@ -2652,15 +2612,6 @@ export class OrderService {
         ...(payload.cartIds || []),
         ...(payload.serviceCartIds || [])
       ];
-
-      let cartProductServiceRelation = await this.prisma.cartProductService.findMany({
-        where: {
-          OR: [
-            { cartId: { in: totalCartIds } },
-            { relatedCartId: { in: totalCartIds } }
-          ]
-        }
-      });
 
       let userDetail = await this.prisma.user.findUnique({
         where: { id: userId },

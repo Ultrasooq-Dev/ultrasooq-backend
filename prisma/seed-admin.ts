@@ -1,4 +1,14 @@
+/**
+ * seed-admin.ts — Creates a small set of canonical Better Auth users for dev:
+ * super admin, test buyer, test seller, test freelancer.
+ *
+ * Each account gets a row in `user` (Better Auth core) plus a paired row in
+ * `account` (providerId='credential') that holds the bcrypt password Better
+ * Auth verifies on sign-in. ID values are explicit cuids so re-running is
+ * idempotent (upsert by email).
+ */
 import 'dotenv/config';
+import { randomUUID } from 'crypto';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
@@ -14,7 +24,7 @@ const ACCOUNTS = [
     firstName: 'Super',
     lastName: 'Admin',
     userName: 'superadmin',
-    tradeRole: 'MEMBER' as const,
+    tradeRole: 'BUYER' as const, // platform admins still need a tradeRole; userType=ADMIN gates admin UI
     userType: 'ADMIN' as const,
     phoneNumber: '+96812345678',
     uniqueId: '0000001',
@@ -56,72 +66,66 @@ const ACCOUNTS = [
 ];
 
 async function main() {
-  const password = await bcrypt.hash('Password123!', 10);
+  const passwordHash = await bcrypt.hash('Password123!', 10);
 
   for (const acct of ACCOUNTS) {
-    // 1. Upsert MasterAccount (frontend login queries this table)
-    const master = await prisma.masterAccount.upsert({
-      where: { email: acct.email },
-      update: {
-        password,
-        firstName: acct.firstName,
-        lastName: acct.lastName,
-        phoneNumber: acct.phoneNumber,
-        cc: '+968',
-      },
-      create: {
-        email: acct.email,
-        password,
-        firstName: acct.firstName,
-        lastName: acct.lastName,
-        phoneNumber: acct.phoneNumber,
-        cc: '+968',
-      },
-    });
-
-    // 2. Upsert User (linked to MasterAccount)
     const user = await prisma.user.upsert({
       where: { email: acct.email },
       update: {
-        password,
         firstName: acct.firstName,
         lastName: acct.lastName,
+        name: `${acct.firstName} ${acct.lastName}`,
         userName: acct.userName,
         tradeRole: acct.tradeRole,
         userType: acct.userType,
         status: 'ACTIVE',
         isActive: true,
-        isCurrent: true,
-        loginType: 'MANUAL',
-        masterAccountId: master.id,
-      },
-      create: {
-        email: acct.email,
-        password,
-        firstName: acct.firstName,
-        lastName: acct.lastName,
-        userName: acct.userName,
-        tradeRole: acct.tradeRole,
-        userType: acct.userType,
-        status: 'ACTIVE',
-        isActive: true,
-        isCurrent: true,
-        loginType: 'MANUAL',
         phoneNumber: acct.phoneNumber,
         cc: '+968',
         uniqueId: acct.uniqueId,
         accountName: acct.accountName,
-        masterAccountId: master.id,
+      },
+      create: {
+        id: randomUUID(),
+        email: acct.email,
+        emailVerified: true,
+        name: `${acct.firstName} ${acct.lastName}`,
+        firstName: acct.firstName,
+        lastName: acct.lastName,
+        userName: acct.userName,
+        tradeRole: acct.tradeRole,
+        userType: acct.userType,
+        status: 'ACTIVE',
+        isActive: true,
+        phoneNumber: acct.phoneNumber,
+        cc: '+968',
+        uniqueId: acct.uniqueId,
+        accountName: acct.accountName,
       },
     });
 
-    // 3. Link MasterAccount.lastActiveUserId → User
-    await prisma.masterAccount.update({
-      where: { id: master.id },
-      data: { lastActiveUserId: user.id },
+    // Better Auth credential row — password lives here, not on User.
+    const existingAccount = await prisma.account.findFirst({
+      where: { userId: user.id, providerId: 'credential' },
     });
+    if (existingAccount) {
+      await prisma.account.update({
+        where: { id: existingAccount.id },
+        data: { password: passwordHash },
+      });
+    } else {
+      await prisma.account.create({
+        data: {
+          id: randomUUID(),
+          userId: user.id,
+          accountId: user.id,
+          providerId: 'credential',
+          password: passwordHash,
+        },
+      });
+    }
 
-    console.log(`${acct.tradeRole} → user:${user.id} master:${master.id} ${acct.email}`);
+    console.log(`${acct.tradeRole} → user:${user.id} ${acct.email}`);
   }
 }
 

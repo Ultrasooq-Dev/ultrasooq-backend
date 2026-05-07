@@ -1,12 +1,13 @@
 import { IsNumber, IsString, IsOptional, Min } from 'class-validator';
 
 export class WalletTransferDto {
-  @IsNumber()
-  toUserId: number;
+  @IsString()
+  toUserId: string;
 
+  // Multi-account hierarchy was dropped — kept for backward compat, ignored.
   @IsOptional()
-  @IsNumber()
-  toUserAccountId?: number;
+  @IsString()
+  toUserAccountId?: string;
 
   @IsNumber()
   @Min(0.01, { message: 'Amount must be greater than 0' })

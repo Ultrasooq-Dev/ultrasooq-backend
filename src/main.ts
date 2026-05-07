@@ -55,8 +55,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import * as compression from 'compression';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth-better/auth';
 
 // Pino logger configuration
 import { Logger } from 'nestjs-pino';
@@ -85,6 +88,10 @@ if (!globalThis.crypto) {
 // error happens at module-init time.
 process.on('unhandledRejection', (reason: any) => {
   console.error('[FATAL] Unhandled Promise Rejection:', reason?.stack || reason);
+  // Mirror uncaughtException: a fatal init-time rejection should not leave
+  // the process alive serving 500s. Give the logger a moment to flush, then
+  // exit so the process manager (Docker/PM2/K8s) can restart the container.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('uncaughtException', (error: Error) => {
@@ -126,6 +133,61 @@ async function bootstrap() {
       level: 6, // Balanced compression level (1 = fastest, 9 = best compression)
     }),
   );
+
+  // CORS preflight for /api/auth/* — must come BEFORE the auth handler
+  // because Nest's app.enableCors() runs later in the chain. The auth
+  // handler doesn't respond to OPTIONS, so without this preflight 404s.
+  app.use('/api/auth', (req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    const allowed =
+      process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()) ?? [];
+    if (origin && allowed.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, Accept, X-Request-Id',
+    );
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      return res.end();
+    }
+    next();
+  });
+
+  // Strict limiter for state-changing auth endpoints (login, sign-up, password reset).
+  const authStrictLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many auth attempts, please try again later.' },
+  });
+
+  // Lax limiter for read-mostly /api/auth/get-session — frontend middleware
+  // polls this on every protected navigation.
+  const authReadLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Apply strict limiter to write-heavy paths first; lax limiter to the rest.
+  app.use(['/api/auth/sign-in', '/api/auth/sign-up', '/api/auth/forget-password', '/api/auth/reset-password', '/api/auth/two-factor', '/api/auth/verify-email'], authStrictLimiter);
+  app.use('/api/auth', authReadLimiter);
+
+  // Better Auth handler — must be mounted BEFORE any JSON body parser so the
+  // library can read the raw request stream. Any express.json() before this
+  // consumes the body and silently breaks state-changing auth routes. Lives
+  // at /api/auth/* and is outside the global /api/v1 prefix.
+  app.use('/api/auth', toNodeHandler(auth));
 
   // Configure body parser for larger payloads
   const maxRequestSize = process.env.MAX_REQUEST_SIZE || '10mb';
@@ -216,16 +278,22 @@ async function bootstrap() {
     .addServer('http://localhost:3000', 'Development Server')
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
-    customSiteTitle: 'Ultrasooq API Documentation',
-    customfavIcon: 'https://nestjs.com/img/logo-small.svg',
-  });
+  // Swagger UI is gated behind NODE_ENV !== 'production'. Production must
+  // never serve /api-docs (avoids leaking internal route shape & operation IDs).
+  if (process.env.NODE_ENV !== 'production') {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document, {
+      customSiteTitle: 'Ultrasooq API Documentation',
+      customfavIcon: 'https://nestjs.com/img/logo-small.svg',
+    });
+  }
 
   const port = parseInt(process.env.PORT || '3000', 10);
   await app.listen(port, '0.0.0.0'); // Listen on all network interfaces
   const url = await app.getUrl();
   logger.log(`USER App is Running on port ${url}`);
-  logger.log(`API Documentation available at ${url}/api-docs`);
+  if (process.env.NODE_ENV !== 'production') {
+    logger.log(`API Documentation available at ${url}/api-docs`);
+  }
 }
 bootstrap();

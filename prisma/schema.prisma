@@ -11,6 +11,7 @@ datasource db {
 // Fields: name (permission label), addedBy (ID of the user who created the permission).
 // Relations: UserRolePermission (M:N join to UserRole via UserRolePermission).
 // Used by the RBAC system for seller-side team member access control.
+
 model Permission {
   id                 Int                  @id @default(autoincrement())
   name               String?
@@ -22,184 +23,149 @@ model Permission {
   userRolePermission UserRolePermission[]
 }
 
-// User — Core identity model for all platform participants (buyers, sellers, freelancers, admins, team members).
-// Fields: email/password (credentials), tradeRole (BUYER/FREELANCER/COMPANY/MEMBER/ADMINMEMBER), loginType (MANUAL/SOCIAL),
-//   otp/otpValidTime (email/phone verification), customerId/stripeAccountId (Stripe payment integration),
-//   isSubAccount/parentUserId/masterAccountId (sub-account hierarchy for multi-account management),
-//   company* fields (business profile for COMPANY role), userRoleId (seller team RBAC role), adminRoleId (admin RBAC role).
-// Relations: Products (creator/admin), ProductPrice (seller listings), Orders (seller side via OrderProducts),
-//   RFQ (buyer/seller quote flows), Rooms/Messages (chat), Services, Cart, TeamMember, AdminMember, SubAccounts (self-join),
-//   MasterAccount (multi-account switching), UserAddress/UserPhone/UserProfile/UserBranch (profile data).
-// Central entity; nearly every other model references User directly or indirectly.
-// Soft delete: status=DELETE + deletedAt. New users start with status=WAITING pending verification.
-model User {
-  id                                            Int                           @id @default(autoincrement())
-  email                                         String?                       @unique
-  firstName                                     String?
-  lastName                                      String?
-  createdAt                                     DateTime                      @default(now())
-  deletedAt                                     DateTime?
-  updatedAt                                     DateTime?                     @updatedAt
-  cc                                            String?
-  dateOfBirth                                   DateTime?
-  gender                                        Gender?                       @default(MALE)
-  otp                                           Int?
-  otpValidTime                                  DateTime?
-  password                                      String?
-  phoneNumber                                   String?
-  profilePicture                                String?
-  resetPassword                                 Int                           @default(0)
-  status                                        Status                        @default(WAITING)
-  tradeRole                                     TypeTrader                    @default(BUYER)
-  uniqueId                                      String?
-  identityProof                                 String?
-  onlineOffline                                 String?
-  onlineOfflineDateStatus                       DateTime?
-  identityProofBack                             String?
-  userType                                      UserType?
-  loginType                                     LoginType                     @default(MANUAL)
-  userName                                      String?
-  employeeId                                    String?
-  userRoleId                                    Int?
-  userRoleName                                  String?
-  customerId                                    String?
-  stripeAccountId                               String?
-  addedBy                                       Int?
-  adminRoleId                                   Int?
-  userTypeCategoryId                            Int?
-  isSubAccount                                  Boolean                       @default(false)
-  parentUserId                                  Int?
-  accountName                                   String?
-  companyAddress                                String?
-  companyName                                   String?
-  companyPhone                                  String?
-  companyTaxId                                  String?
-  companyWebsite                                String?
-  isActive                                      Boolean                       @default(true)
-  isCurrent                                     Boolean                       @default(false)
-  masterAccountId                               Int?
-  statusNote                                    String?
-  accountSessions                               AccountSession[]              @relation("UserSessions")
-  adminMember                                   AdminMember[]                 @relation("subAdmin")
-  cartDetails                                   Cart[]
-  ExistingProduct_ExistingProduct_adminIdToUser ExistingProduct[]             @relation("ExistingProduct_adminIdToUser")
-  ExistingProduct_ExistingProduct_userIdToUser  ExistingProduct[]             @relation("ExistingProduct_userIdToUser")
-  helCenterUserDetail                           HelpCenter[]                  @relation("helpCenterUserDetail")
-  lastActiveMasterAccount                       MasterAccount?                @relation("LastActiveUser")
-  messages                                      Message[]                     @relation("UserMessages")
-  user_orderProductsSeller                      OrderProducts[]               @relation("OrderProductsSeller")
-  adminProduct                                  Product[]                     @relation("ProductAdmin")
-  userProduct                                   Product[]                     @relation("ProductUser")
-  // Dropshipping relations
-  dropshipProducts                              Product[]                     @relation("DropshipVendor")
-  originalProducts                              Product[]                     @relation("OriginalVendor")
-  user_producPrice                              ProductPrice[]                @relation("ProductPriceUser")
-  user_producPriceReview                        ProductPriceReview[]          @relation("ProductPriceReviewUser")
-  user_productAnswerUser                        ProductQuestion[]             @relation("ProductAnswerUser")
-  productQuesion                                ProductQuestion[]             @relation("questionByUser")
-  productQuestionAnswer                         ProductQuestionAnswer[]       @relation("answerByUser")
-  user_productReview                            ProductReview[]               @relation("ProductReviewUser")
-  approved_rfq_product_Price_requests           RfqQuoteProductPriceRequest[] @relation("approvedByUser")
-  rfq_product_price_buyer_requests              RfqQuoteProductPriceRequest[] @relation("requestedBuyer")
-  rejected_rfq_product_Price_requests           RfqQuoteProductPriceRequest[] @relation("rejectedByUser")
-  requested_rfq_product_Price_requests          RfqQuoteProductPriceRequest[] @relation("requestedByUser")
-  rfq_product_price_seller_requests             RfqQuoteProductPriceRequest[] @relation("requestedSeller")
-  user_rfqQuotesUserBuyer                       RfqQuotesUsers[]              @relation("RfqQuotesUserBuyer")
-  user_rfqQuotesUserSeller                      RfqQuotesUsers[]              @relation("RfqQuotesUserSeller")
-  vendorSuggestedProducts                       RfqSuggestedProduct[]         @relation("VendorSuggestions")
-  createdRooms                                  Room[]                        @relation("CreatedRooms")
-  rooms                                         RoomParticipants[]            @relation("UserRooms")
-  services                                      Service[]
-  sharedLink                                    SharedLink[]                  @relation("linkGeneratorDetail")
-  teamMemberDetail                              TeamMember[]
-  adminRoleDetail                               AdminRole?                    @relation(fields: [adminRoleId], references: [id])
-  notifications                                 Notification[]                @relation("UserNotifications")
-  masterAccount                                 MasterAccount?                @relation("MasterAccountUsers", fields: [masterAccountId], references: [id])
-  systemLogs                                    SystemLog[]
-  mainUser                                      User?                         @relation("SubAccounts", fields: [parentUserId], references: [id])
-  subAccounts                                   User[]                        @relation("SubAccounts")
-  userRoleDetail                                UserRole?                     @relation(fields: [userRoleId], references: [id])
-  userTypeCategoryDetail                        Category?                     @relation(fields: [userTypeCategoryId], references: [id])
-  UserAddress                                   UserAddress[]
-  userBranch                                    UserBranch[]
-  userPhone                                     UserPhone[]
-  userProfile                                   UserProfile[]
-  userProfileBusinessType                       UserProfileBusinessType[]
-  userSocialLink                                UserSocialLink[]
-  wallets                                       Wallet[]
-  walletSettings                                WalletSettings[]
-  walletUserAccount                             Wallet[]                      @relation("WalletUserAccount")
-  productViews                                  ProductView[]                 @relation("UserProductViews")
-  productSearches                               ProductSearch[]               @relation("UserProductSearches")
-  productClicks                                 ProductClick[]                @relation("UserProductClicks")
-  refreshTokens                                 RefreshToken[]
-  contentFilterLogs                             ContentFilterLog[]
-  recommendationFeedback                        RecommendationFeedback[]      @relation("UserRecommendationFeedback")
-  complaints                                    Complaint[]                   @relation("ComplaintBuyer")
-  refundRequests                                RefundRequest[]               @relation("RefundBuyer")
-  supportConversations                          SupportConversation[]         @relation("SupportUser")
-  assignedSupportConversations                  SupportConversation[]         @relation("SupportAssignee")
+// User — Better Auth's user model, the single source of truth for all platform participants.
+// String `id` (cuid-ish) is the canonical user identifier across the schema. Better Auth's core
+// columns (id, name, email, emailVerified, image, createdAt, updatedAt) live alongside the
+// platform's own business fields (tradeRole, profile, business profile, RBAC links, Stripe ids).
+// Authentication credentials live exclusively in `Account` (Better Auth's `account` table) for
+// the `credential` provider; sessions live in `Session`. Verification tokens live in `Verification`.
+//
+// Custom fields exposed to the Better Auth client via `additionalFields` (see
+// src/auth-better/auth.ts) are duplicated as plain Prisma columns here so the rest of the app
+// can query them directly. Adding a column here requires adding the matching `additionalFields`
+// entry over there if the frontend needs to read it through `auth.api.getSession()`.
 
-  @@index([parentUserId])
-  @@index([masterAccountId])
+model User {
+  id                                   String                        @id
+  email                                String                        @unique
+  emailVerified                        Boolean                       @default(false)
+  name                                 String                        @default("")
+  image                                String?
+  createdAt                            DateTime                      @default(now())
+  updatedAt                            DateTime                      @updatedAt
+  // ── App-internal profile / business fields ─────────────────────────
+  firstName                            String?
+  lastName                             String?
+  cc                                   String?
+  phoneNumber                          String?
+  dateOfBirth                          DateTime?
+  gender                               Gender?
+  profilePicture                       String?
+  status                               Status                        @default(ACTIVE)
+  tradeRole                            TypeTrader                    @default(BUYER)
+  uniqueId                             String?
+  identityProof                        String?
+  identityProofBack                    String?
+  onlineOffline                        String?
+  onlineOfflineDateStatus              DateTime?
+  userType                             UserType?
+  userName                             String?
+  employeeId                           String?
+  userRoleId                           Int?
+  userRoleName                         String?
+  customerId                           String?
+  stripeAccountId                      String?
+  addedBy                              String?
+  adminRoleId                          Int?
+  userTypeCategoryId                   Int?
+  isActive                             Boolean                       @default(true)
+  statusNote                           String?
+  // COMPANY profile fields (populated by PATCH /api/v1/user/me/trade-role)
+  companyName                          String?
+  companyAddress                       String?
+  companyPhone                         String?
+  companyWebsite                       String?
+  companyTaxId                         String?
+  // FREELANCER profile field
+  accountName                          String?
+  // ── Better Auth core relations ─────────────────────────────────────
+  sessions                             Session[]
+  accounts                             Account[]
+  // ── App relations ──────────────────────────────────────────────────
+  adminMember                          AdminMember[]                 @relation("subAdmin")
+  cartDetails                          Cart[]
+  adminExistingProduct                 ExistingProduct[]             @relation("ExistingProduct_adminIdToUser")
+  userExistingProduct                  ExistingProduct[]             @relation("ExistingProduct_userIdToUser")
+  helCenterUserDetail                  HelpCenter[]                  @relation("helpCenterUserDetail")
+  messages                             Message[]                     @relation("UserMessages")
+  user_orderProductsSeller             OrderProducts[]               @relation("OrderProductsSeller")
+  adminProduct                         Product[]                     @relation("ProductAdmin")
+  userProduct                          Product[]                     @relation("ProductUser")
+  dropshipProducts                     Product[]                     @relation("DropshipVendor")
+  originalProducts                     Product[]                     @relation("OriginalVendor")
+  user_producPrice                     ProductPrice[]                @relation("ProductPriceUser")
+  user_producPriceReview               ProductPriceReview[]          @relation("ProductPriceReviewUser")
+  user_productAnswerUser               ProductQuestion[]             @relation("ProductAnswerUser")
+  productQuesion                       ProductQuestion[]             @relation("questionByUser")
+  productQuestionAnswer                ProductQuestionAnswer[]       @relation("answerByUser")
+  user_productReview                   ProductReview[]               @relation("ProductReviewUser")
+  approved_rfq_product_Price_requests  RfqQuoteProductPriceRequest[] @relation("approvedByUser")
+  rfq_product_price_buyer_requests     RfqQuoteProductPriceRequest[] @relation("requestedBuyer")
+  rejected_rfq_product_Price_requests  RfqQuoteProductPriceRequest[] @relation("rejectedByUser")
+  requested_rfq_product_Price_requests RfqQuoteProductPriceRequest[] @relation("requestedByUser")
+  rfq_product_price_seller_requests    RfqQuoteProductPriceRequest[] @relation("requestedSeller")
+  user_rfqQuotesUserBuyer              RfqQuotesUsers[]              @relation("RfqQuotesUserBuyer")
+  user_rfqQuotesUserSeller             RfqQuotesUsers[]              @relation("RfqQuotesUserSeller")
+  vendorSuggestedProducts              RfqSuggestedProduct[]         @relation("VendorSuggestions")
+  createdRooms                         Room[]                        @relation("CreatedRooms")
+  rooms                                RoomParticipants[]            @relation("UserRooms")
+  services                             Service[]
+  sharedLink                           SharedLink[]                  @relation("linkGeneratorDetail")
+  teamMemberDetail                     TeamMember[]
+  adminRoleDetail                      AdminRole?                    @relation(fields: [adminRoleId], references: [id])
+  notifications                        Notification[]                @relation("UserNotifications")
+  systemLogs                           SystemLog[]
+  userRoleDetail                       UserRole?                     @relation(fields: [userRoleId], references: [id])
+  userTypeCategoryDetail               Category?                     @relation(fields: [userTypeCategoryId], references: [id])
+  userAddress                          UserAddress[]
+  userBranch                           UserBranch[]
+  userPhone                            UserPhone[]
+  userProfile                          UserProfile[]
+  userProfileBusinessType              UserProfileBusinessType[]
+  userSocialLink                       UserSocialLink[]
+  wallets                              Wallet[]
+  walletSettings                       WalletSettings[]
+  productViews                         ProductView[]                 @relation("UserProductViews")
+  productSearches                      ProductSearch[]               @relation("UserProductSearches")
+  productClicks                        ProductClick[]                @relation("UserProductClicks")
+  contentFilterLogs                    ContentFilterLog[]
+  recommendationFeedback               RecommendationFeedback[]      @relation("UserRecommendationFeedback")
+  complaints                           Complaint[]                   @relation("ComplaintBuyer")
+  refundRequests                       RefundRequest[]               @relation("RefundBuyer")
+  supportConversations                 SupportConversation[]         @relation("SupportUser")
+  assignedSupportConversations         SupportConversation[]         @relation("SupportAssignee")
+
+  twoFactorEnabled    Boolean?     @default(false)
+  phoneNumberVerified Boolean?
+  role                String?
+  banned              Boolean?     @default(false)
+  banReason           String?
+  banExpires          DateTime?
+  username            String?
+  lastLoginMethod   String?
+  displayUsername     String?
+  members             Member[]
+  invitations         Invitation[]
+  twofactors          TwoFactor[]
+  passkeys            Passkey[]
+
+  @@unique([username])
+  @@index([email])
   @@index([userRoleId])
   @@index([adminRoleId])
   @@index([status])
   @@index([tradeRole])
 }
 
-// RefreshToken — Stores opaque refresh tokens for JWT token rotation.
-// Each token is tied to a user, has an expiry, and can be revoked.
-// replacedBy tracks token rotation chains for security auditing.
-model RefreshToken {
-  id         Int      @id @default(autoincrement())
-  token      String   @unique
-  userId     Int
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  revoked    Boolean  @default(false)
-  replacedBy String?
-
-  @@index([userId])
-  @@index([token])
-}
-
-// MasterAccount — Represents a top-level account that owns multiple User sub-accounts.
-// Fields: email/password/firstName/lastName/phoneNumber (master credentials),
-//   lastActiveUserId (the User sub-account most recently active under this master).
-// Relations: users (one-to-many User via MasterAccountUsers), lastActiveUser (one-to-one User).
-// Enables multi-account switching: one person can manage several trade roles (buyer/seller)
-// under a single master login, toggling between them via lastActiveUserId.
-model MasterAccount {
-  id               Int       @id @default(autoincrement())
-  email            String    @unique
-  password         String
-  firstName        String
-  lastName         String
-  phoneNumber      String
-  cc               String
-  dateOfBirth      DateTime?
-  gender           Gender?   @default(MALE)
-  profilePicture   String?
-  lastActiveUserId Int?      @unique
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime?
-  otp              Int?
-  otpValidTime     DateTime?
-  lastActiveUser   User?     @relation("LastActiveUser", fields: [lastActiveUserId], references: [id])
-  users            User[]    @relation("MasterAccountUsers")
-}
-
 // UserRole — Defines named roles for seller team members (e.g., Manager, Sales Rep).
 // Fields: userRoleName (role label), addedBy (the seller who created this role).
 // Relations: UserRolePermission (M:N join to Permission), TeamMember (members assigned this role), User (direct link).
 // Part of the seller-side RBAC system: sellers create roles, attach permissions, then assign roles to team members.
+
 model UserRole {
   id                 Int                  @id @default(autoincrement())
   userRoleName       String?
-  addedBy            Int?
+  addedBy            String?
   status             Status               @default(ACTIVE)
   createdAt          DateTime             @default(now())
   updatedAt          DateTime?            @updatedAt
@@ -213,6 +179,7 @@ model UserRole {
 // Fields: userRoleId (FK to UserRole), permissionId (FK to Permission).
 // Relations: permissionDetail -> Permission, userRoleDetail -> UserRole.
 // Each row grants a specific permission to a specific seller team role.
+
 model UserRolePermission {
   id               Int         @id @default(autoincrement())
   userRoleId       Int?
@@ -233,6 +200,7 @@ model UserRolePermission {
 //   cityId/countryId/stateId (FK to geographic lookup tables), town (sub-city level).
 // Relations: userDetail -> User, cityDetail -> Cities, countryDetail -> Countries, stateDetail -> States.
 // Users can have multiple saved addresses for checkout convenience.
+
 model UserAddress {
   id            Int        @id @default(autoincrement())
   status        Status     @default(ACTIVE)
@@ -244,7 +212,7 @@ model UserAddress {
   deletedAt     DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
-  userId        Int?
+  userId        String?
   cc            String?
   firstName     String?
   lastName      String?
@@ -268,6 +236,7 @@ model UserAddress {
 // Fields: phoneNumber (the number), cc (country code), userId (FK to owning User).
 // Relations: user -> User.
 // Allows users to store multiple contact phone numbers beyond the primary one on User.
+
 model UserPhone {
   id          Int       @id @default(autoincrement())
   phoneNumber String
@@ -275,7 +244,7 @@ model UserPhone {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   status      Status    @default(ACTIVE)
-  userId      Int
+  userId      String
   cc          String?
   user        User      @relation(fields: [userId], references: [id])
 
@@ -286,6 +255,7 @@ model UserPhone {
 // Fields: linkType (e.g., "facebook", "linkedin"), link (the URL), userId (FK to User).
 // Relations: user -> User.
 // Displayed on seller/company public profiles.
+
 model UserSocialLink {
   id        Int       @id @default(autoincrement())
   linkType  String?
@@ -294,7 +264,7 @@ model UserSocialLink {
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  userId    Int
+  userId    String
   user      User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -306,6 +276,7 @@ model UserSocialLink {
 //   annualPurchasingVolume (buyer-specific metric), phoneNumber/cc (profile-level contact).
 // Relations: user -> User, userProfileBusinessType (M:N to Tags via UserProfileBusinessType).
 // A user may have multiple profiles (one per trade role or business entity).
+
 model UserProfile {
   id                      Int                       @id @default(autoincrement())
   profileType             String
@@ -322,7 +293,7 @@ model UserProfile {
   deletedAt               DateTime?
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
-  userId                  Int
+  userId                  String
   annualPurchasingVolume  String?
   crDocument              String?                   @db.VarChar(500)
   cc                      String?
@@ -337,13 +308,14 @@ model UserProfile {
 // Fields: userId (FK to User), userProfileId (FK to UserProfile), businessTypeId (FK to Tags).
 // Relations: userProfileBusinessTypeTag -> Tags, userDetail -> User, userProfileBusinessType -> UserProfile.
 // Categorizes what type of business the user profile represents (e.g., manufacturer, distributor).
+
 model UserProfileBusinessType {
   id                         Int         @id @default(autoincrement())
   status                     Status      @default(ACTIVE)
   deletedAt                  DateTime?
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
-  userId                     Int
+  userId                     String
   userProfileId              Int
   businessTypeId             Int
   userProfileBusinessTypeTag Tags        @relation(fields: [businessTypeId], references: [id])
@@ -362,6 +334,7 @@ model UserProfileBusinessType {
 // Relations: user -> User, userBranchBusinessType (business types), userBranchCategory (categories),
 //   userBranchTags (tags for search/filter).
 // Sellers with multiple locations list each branch separately.
+
 model UserBranch {
   id                            Int                      @id @default(autoincrement())
   userProfileId                 Int
@@ -385,7 +358,7 @@ model UserBranch {
   deletedAt                     DateTime?
   createdAt                     DateTime                 @default(now())
   updatedAt                     DateTime                 @updatedAt
-  userId                        Int
+  userId                        String
   cc                            String?
   user                          User                     @relation(fields: [userId], references: [id])
   countryDetail                 Countries?               @relation(fields: [countryId], references: [id])
@@ -405,9 +378,10 @@ model UserBranch {
 // Fields: userId, businessTypeId (FK to Tags), userBranchId (FK to UserBranch).
 // Relations: userBranch_BusinessType_Tag -> Tags, userBranch -> UserBranch.
 // Describes the business type of a specific branch (e.g., warehouse, retail showroom).
+
 model UserBranchBusinessType {
   id                          Int        @id @default(autoincrement())
-  userId                      Int
+  userId                      String
   businessTypeId              Int
   status                      Status     @default(ACTIVE)
   deletedAt                   DateTime?
@@ -425,9 +399,10 @@ model UserBranchBusinessType {
 // Fields: userId, userBranchId (FK to UserBranch), tagId (FK to Tags).
 // Relations: userBranchTagsTag -> Tags, userBranch -> UserBranch.
 // Enables tagging branches with keywords for discovery (e.g., "wholesale", "electronics").
+
 model UserBranchTags {
   id                Int        @id @default(autoincrement())
-  userId            Int
+  userId            String
   status            Status     @default(ACTIVE)
   deletedAt         DateTime?
   createdAt         DateTime   @default(now())
@@ -445,9 +420,10 @@ model UserBranchTags {
 // Fields: userId, userBranchId (FK to UserBranch), categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: userBranchCategory_category -> Category, userBranch -> UserBranch.
 // Specifies which product categories a particular branch handles.
+
 model UserBranchCategory {
   id                          Int         @id @default(autoincrement())
-  userId                      Int?
+  userId                      String?
   userBranchId                Int?
   categoryId                  Int?
   categoryLocation            String?
@@ -466,9 +442,10 @@ model UserBranchCategory {
 // Fields: userId, categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: categoryDetail -> Category.
 // Unlike UserBranchCategory, this applies at the user/company level rather than a specific branch.
+
 model UserBusinessCategory {
   id               Int       @id @default(autoincrement())
-  userId           Int?
+  userId           String?
   categoryId       Int?
   categoryLocation String?
   status           Status    @default(ACTIVE)
@@ -485,11 +462,12 @@ model UserBusinessCategory {
 // Fields: userId (FK to the member User), userRoleId (FK to UserRole), addedBy (the seller who added them).
 // Relations: userDetail -> User, userRolDetail -> UserRole.
 // When a seller invites a team member (MEMBER tradeRole), a TeamMember row links them to the seller's UserRole.
+
 model TeamMember {
   id            Int       @id @default(autoincrement())
-  userId        Int?
+  userId        String?
   userRoleId    Int?
-  addedBy       Int?
+  addedBy       String?
   status        Status    @default(ACTIVE)
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
@@ -506,6 +484,7 @@ model TeamMember {
 // Relations: ProductTags, ExistingProductTags, ServiceTag (tag products/services for search),
 //   UserBranchBusinessType, UserBranchTags, UserProfileBusinessType (tag user profiles/branches).
 // Provides a unified tagging taxonomy for search, filtering, and categorization across the platform.
+
 model Tags {
   id                       Int                       @id @default(autoincrement())
   tagName                  String
@@ -531,6 +510,7 @@ model Tags {
 //   Products, Services, ExistingProducts, DynamicFormCategory, UserBranchCategory, UserBusinessCategory,
 //   Fees (linked fee schedules for store, RFQ, and customer contexts), policy (linked policy rules).
 // Central taxonomy model; categories drive navigation menus, fee calculations, and product organization.
+
 model Category {
   id                               Int                     @id @default(autoincrement())
   name                             String
@@ -557,7 +537,7 @@ model Category {
   menuChild                        Category[]              @relation("MenuParentChild")
   parent                           Category?               @relation("ParentChild", fields: [parentId], references: [id])
   children                         Category[]              @relation("ParentChild")
-  category_policy                  policy?                 @relation(fields: [policy], references: [id])
+  category_policy                  Policy?                 @relation(fields: [policy], references: [id])
   categoryRfq_fees                 Fees?                   @relation("CategoryRfq", fields: [rfq], references: [id])
   categoryStore_fees               Fees?                   @relation("CategoryStore", fields: [store], references: [id])
   category_categoryIdDetail        CategoryConnectTo[]     @relation("CategoryDetail")
@@ -585,9 +565,6 @@ model Category {
   categoryMappings    CategoryMapping[]
   crossSellAsSource   CrossSellRule[]      @relation("CrossSellSource")
   crossSellAsTarget   CrossSellRule[]      @relation("CrossSellTarget")
-  useCaseMappings     UseCaseMapping[]     @relation("CategoryUseCases")
-  accessoryAsSource   AccessoryLink[]      @relation("AccessorySource")
-  accessoryAsTarget   AccessoryLink[]      @relation("AccessoryTarget")
   termDisambiguations TermDisambiguation[] @relation("TermDisambiguation")
 
   @@index([parentId])
@@ -599,6 +576,7 @@ model Category {
 //   connectToType (type of connection).
 // Relations: categoryConnectTo_category -> Category (source), connectToDetail -> Category (target).
 // Used to link categories from different hierarchies (e.g., linking a menu category to a product category).
+
 model CategoryConnectTo {
   id                         Int       @id @default(autoincrement())
   categoryId                 Int?
@@ -624,6 +602,7 @@ model CategoryConnectTo {
 //   FeesCountry (country-level applicability), FeesCategoryConnectTo (category-level scoping),
 //   FeesToFeesDetail (vendor-consumer detail pairing), policy.
 // Fees are hierarchical: a fee can be scoped globally or narrowed to country -> state -> city -> town via child models.
+
 model Fees {
   id                         Int                     @id @default(autoincrement())
   feeName                    String?
@@ -639,7 +618,7 @@ model Fees {
   fees_categoryRfq           Category[]              @relation("CategoryRfq")
   fees_categoryStore         Category[]              @relation("CategoryStore")
   menuDetail                 Category?               @relation("menuDetail", fields: [menuId], references: [id])
-  fees_policy                policy?                 @relation(fields: [policyId], references: [id])
+  fees_policy                Policy?                 @relation(fields: [policyId], references: [id])
   fees_feesCategoryConnectTo FeesCategoryConnectTo[]
   fees_feesCountry           FeesCountry[]
   feesDetails                FeesDetail[]
@@ -655,6 +634,7 @@ model Fees {
 // Relations: feesDetail_fees -> Fees, vendorLocation/consumerLocation -> FeesLocation,
 //   FeesToFeesDetail (pairing of vendor/consumer details).
 // Contains the actual numeric rates/caps used in platform fee calculations at checkout.
+
 model FeesDetail {
   id                     Int                @id @default(autoincrement())
   feeId                  Int?
@@ -690,6 +670,7 @@ model FeesDetail {
 // Fields: feeId (FK to parent Fees), vendorDetailId (FK to FeesDetail for vendor), consumerDetailId (FK to FeesDetail for consumer).
 // Relations: fees_feesToFeesDetail -> Fees, vendorDetail -> FeesDetail, consumerDetail -> FeesDetail.
 // Allows the system to look up the matching vendor and consumer fee schedules together for a transaction.
+
 model FeesToFeesDetail {
   id                    Int         @id @default(autoincrement())
   feeId                 Int?
@@ -709,6 +690,7 @@ model FeesToFeesDetail {
 //   feeId (associated Fees), feeLocationType (vendor/consumer identifier).
 // Relations: Cities, Countries, States (geographic lookups), consumerFeesDetails/vendorFeesDetails -> FeesDetail.
 // Enables location-specific fee overrides: a fee can have different rates per country/state/city/town.
+
 model FeesLocation {
   id                   Int          @id @default(autoincrement())
   countryId            Int?
@@ -732,6 +714,7 @@ model FeesLocation {
 // Fields: feeId (FK to Fees), countryId (FK to Countries).
 // Relations: feesCountry_country -> Countries, feesCountry_fees -> Fees, feesCountry_feesState -> FeesState (children).
 // First level of the fee geography hierarchy: Fees -> FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesCountry {
   id                    Int         @id @default(autoincrement())
   feeId                 Int?
@@ -749,6 +732,7 @@ model FeesCountry {
 // Fields: feeId, feesCountryId (FK to FeesCountry parent), stateId (FK to States), countryId.
 // Relations: feesState_feesCountry -> FeesCountry (parent), feesState_state -> States, feesState_feesCity -> FeesCity (children).
 // Second level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesState {
   id                    Int          @id @default(autoincrement())
   feeId                 Int?
@@ -768,6 +752,7 @@ model FeesState {
 // Fields: feeId, feesCountryId, feesStateId (FK to FeesState parent), cityId (FK to Cities), countryId, stateId.
 // Relations: feesCity_city -> Cities, feesCity_feesState -> FeesState (parent), feesCity_feesTown -> FeesTown (children).
 // Third level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesCity {
   id                 Int        @id @default(autoincrement())
   feeId              Int?
@@ -790,6 +775,7 @@ model FeesCity {
 //   cityId, countryId, stateId (denormalized geographic IDs).
 // Relations: feesTown_feesCity -> FeesCity (parent).
 // Fourth/final level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesTown {
   id                Int       @id @default(autoincrement())
   feeId             Int?
@@ -811,6 +797,7 @@ model FeesTown {
 // Fields: feeId (FK to Fees), categoryId (FK to Category), categoryLocation (breadcrumb path), feesCountryId.
 // Relations: categoryDetail -> Category, feesCategoryConnectTo_fees -> Fees.
 // Scopes a fee schedule to particular product/service categories beyond geographic filtering.
+
 model FeesCategoryConnectTo {
   id                         Int       @id @default(autoincrement())
   feeId                      Int?
@@ -825,12 +812,13 @@ model FeesCategoryConnectTo {
   feesCategoryConnectTo_fees Fees?     @relation(fields: [feeId], references: [id])
 }
 
-// policy — Defines platform policy rules that can be attached to categories and fees.
+// Policy — Defines platform policy rules that can be attached to categories and fees.
 // Fields: ruleName (policy name), rule (policy content/text), categoryName (associated category label),
 //   parentId (self-referencing for hierarchical policy trees).
 // Relations: policy_category -> Category[], policy_fees -> Fees[], parent/children (self-join for nesting).
 // Governs business rules such as return policies, listing requirements, or fee terms per category.
-model policy {
+
+model Policy {
   id              Int        @id @default(autoincrement())
   ruleName        String?
   rule            String?
@@ -842,8 +830,8 @@ model policy {
   parentId        Int?
   policy_category Category[]
   policy_fees     Fees[]
-  parent          policy?    @relation("ParentChild", fields: [parentId], references: [id])
-  children        policy[]   @relation("ParentChild")
+  parent          Policy?    @relation("ParentChild", fields: [parentId], references: [id])
+  children        Policy[]   @relation("ParentChild")
 }
 
 // Product — Core product catalog entity representing an item listed on the marketplace.
@@ -857,6 +845,7 @@ model policy {
 //   Cart, OrderProducts, RFQProduct/RfqQuotesProducts (RFQ flow), CustomizeProduct (factory customization),
 //   SellerReward/SharedLink (referral rewards), Wishlist.
 // Products default to INACTIVE status and require activation/approval before being visible.
+
 model Product {
   id                              String                    @id @default(cuid())
   productName                     String
@@ -872,8 +861,8 @@ model Product {
   updatedAt                       DateTime                  @updatedAt
   brandId                         Int?
   placeOfOriginId                 Int?
-  adminId                         Int?
-  userId                          Int?
+  adminId                         String?
+  userId                          String?
   categoryLocation                String?
   shortDescription                String?
   productType                     ProductType?
@@ -883,9 +872,9 @@ model Product {
   productViewCount                Int?                      @default(0)
   // Dropshipping fields
   originalProductId               String?
-  dropshipVendorId                Int?
+  dropshipVendorId                String?
   dropshipMarkup                  Decimal?                  @db.Decimal(8, 2)
-  originalVendorId                Int?
+  originalVendorId                String?
   isDropshipped                   Boolean                   @default(false)
   customMarketingContent          Json?
   additionalMarketingImages       Json?
@@ -904,7 +893,6 @@ model Product {
   cartProductServices             CartProductService[]
   product_customizeProduct        CustomizeProduct[]
   factoriesCartDetail             FactoriesCart[]
-  orderProductServices            OrderProductService[]
   orderProducts                   OrderProducts[]
   adminBy                         User?                     @relation("ProductAdmin", fields: [adminId], references: [id])
   brand                           Brand?                    @relation(fields: [brandId], references: [id])
@@ -944,7 +932,6 @@ model Product {
   scrapedProductRaw      ScrapedProductRaw[]
   scrapedAutoParts       ScrapedAutoPart[]
   recommendationFeedback RecommendationFeedback[] @relation("ProductRecommendationFeedback")
-  compatibilityRules     CompatibilityRule[]      @relation("ProductCompatibility")
   productVariants        ProductVariant[]         @relation("ProductVariants")
 
   @@index([categoryId, status, deletedAt])
@@ -969,10 +956,11 @@ model Product {
 // Relations: Product, User (seller), Cart, OrderProducts, ProductPriceReview, ProductSellerImage,
 //   Cities/Countries/States (product location), Category (menu).
 // This is the key join table enabling the multi-seller marketplace: many sellers can offer different prices for one product.
+
 model ProductPrice {
   id                              Int                  @id @default(autoincrement())
   productId                       String?
-  adminId                         Int?
+  adminId                         String?
   productPrice                    Decimal              @db.Decimal(8, 2)
   offerPrice                      Decimal              @db.Decimal(8, 2)
   productPriceBarcode             String?
@@ -1037,6 +1025,7 @@ model ProductPrice {
 // Fields: productId, productPriceId (links to both product and seller price), object (JSON blob of variant attributes).
 // Relations: None defined (uses raw IDs without Prisma-level FK relations).
 // Variant data is stored as flexible JSON to accommodate varying attribute schemas per category.
+
 model ProductVariant {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1058,6 +1047,7 @@ model ProductVariant {
 // Fields: productId (FK to Product), productPriceId, countryId (FK to Countries), countryName.
 // Relations: countryDetail -> Countries, productDetail -> Product.
 // Part of geographic sell restrictions: sellers specify which countries they will serve for a given product.
+
 model ProductSellCountry {
   id             Int        @id @default(autoincrement())
   productId      String?
@@ -1079,6 +1069,7 @@ model ProductSellCountry {
 // Fields: productId (FK to Product), productPriceId, stateId (FK to States), stateName.
 // Relations: productDetail -> Product, stateDetail -> States.
 // State-level geographic sell restriction, used alongside ProductSellCountry and ProductSellCity.
+
 model ProductSellState {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1100,6 +1091,7 @@ model ProductSellState {
 // Fields: productId (FK to Product), productPriceId, cityId (FK to Cities), cityName.
 // Relations: cityDetail -> Cities, productDetail -> Product.
 // City-level geographic sell restriction, the most granular sell-region control for products.
+
 model ProductSellCity {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1121,6 +1113,7 @@ model ProductSellCity {
 // Fields: productPriceId (FK to ProductPrice), imageName/image (image data), videoName/video (video data).
 // Relations: productSellerImage_productPrice -> ProductPrice.
 // Allows each seller to upload their own product photos/videos independent of the base product images.
+
 model ProductSellerImage {
   id                              Int           @id @default(autoincrement())
   productPriceId                  Int?
@@ -1141,10 +1134,11 @@ model ProductSellerImage {
 // Fields: productId (FK to Product), adminId, specification (value text), label (specification name).
 // Relations: productSpecification_product -> Product.
 // Multiple rows per product allow structured spec display (e.g., "Weight: 1.5kg", "Material: Steel").
+
 model ProductSpecification {
   id                           Int       @id @default(autoincrement())
   productId                    String?
-  adminId                      Int?
+  adminId                      String?
   specification                String?
   status                       Status    @default(ACTIVE)
   deletedAt                    DateTime?
@@ -1160,10 +1154,11 @@ model ProductSpecification {
 // Fields: productId (FK to Product), adminId, shortDescription (text content).
 // Relations: productShortDescription_product -> Product.
 // Allows structured short descriptions, potentially per-seller or per-admin.
+
 model ProductShortDescription {
   id                              Int       @id @default(autoincrement())
   productId                       String?
-  adminId                         Int?
+  adminId                         String?
   shortDescription                String?
   status                          Status    @default(ACTIVE)
   deletedAt                       DateTime?
@@ -1178,6 +1173,7 @@ model ProductShortDescription {
 // Fields: productId (FK to Product), tagId (FK to Tags).
 // Relations: productTags_product -> Product, productTagsTag -> Tags.
 // Tags improve product discoverability via search and filtering.
+
 model ProductTags {
   id                  Int       @id @default(autoincrement())
   productId           String
@@ -1198,6 +1194,7 @@ model ProductTags {
 //   variant (JSON linking this image to specific product variant combos).
 // Relations: productImages_product -> Product.
 // These are the canonical product images shared across all sellers, unlike ProductSellerImage which is per-seller.
+
 model ProductImages {
   id                    Int       @id @default(autoincrement())
   productId             String
@@ -1220,10 +1217,11 @@ model ProductImages {
 //   minimumOrder (minimum order count to qualify), startTime/endTime (reward period), stock (available reward slots).
 // Relations: productDetail -> Product.
 // Sellers create reward programs; affiliates share links and earn rewards per sale via SharedLink.
+
 model SellerReward {
   id               Int       @id @default(autoincrement())
   productId        String?
-  adminId          Int?
+  adminId          String?
   rewardPercentage Decimal?  @db.Decimal(8, 2)
   minimumOrder     Int?
   startTime        DateTime?
@@ -1245,13 +1243,14 @@ model SellerReward {
 //   totalReward (accumulated reward amount).
 // Relations: linkGeneratedByDetail -> User, productDetail -> Product.
 // When a buyer purchases through a shared link, the link generator earns the seller reward.
+
 model SharedLink {
   id                    Int       @id @default(autoincrement())
   sellerRewardId        Int?
   productId             String?
-  adminId               Int?
+  adminId               String?
   generatedLink         String?
-  linkGeneratedBy       Int?
+  linkGeneratedBy       String?
   myTotalSell           Int?
   ordersPlaced          Int?
   totalReward           Decimal?  @db.Decimal(8, 2)
@@ -1270,9 +1269,10 @@ model SharedLink {
 // Fields: userId (FK to reviewing User), productId (FK to Product), title/description (review text), rating (numeric score).
 // Relations: productReview_product -> Product, reviewByUserDetail -> User.
 // Aggregated ratings are used for product ranking and display on product detail pages.
+
 model ProductReview {
   id                    Int       @id @default(autoincrement())
-  userId                Int?
+  userId                String?
   productId             String?
   status                Status    @default(ACTIVE)
   title                 String?
@@ -1293,9 +1293,10 @@ model ProductReview {
 //   title/description (review text), rating (numeric score).
 // Relations: productPriceReview_productPrice -> ProductPrice, productPriceReview_user -> User.
 // Enables per-seller rating: buyers can rate the same product differently depending on which seller they purchased from.
+
 model ProductPriceReview {
   id                              Int           @id @default(autoincrement())
-  userId                          Int?
+  userId                          String?
   productPriceId                  Int?
   productId                       String?
   status                          Status        @default(ACTIVE)
@@ -1305,7 +1306,7 @@ model ProductPriceReview {
   deletedAt                       DateTime?
   createdAt                       DateTime      @default(now())
   updatedAt                       DateTime      @updatedAt
-  adminId                         Int?
+  adminId                         String?
   productPriceReview_productPrice ProductPrice? @relation(fields: [productPriceId], references: [id])
   productPriceReview_user         User?         @relation("ProductPriceReviewUser", fields: [userId], references: [id])
 
@@ -1316,7 +1317,7 @@ model ProductPriceReview {
 
 model ProductView {
   id           Int       @id @default(autoincrement())
-  userId       Int?
+  userId       String?
   deviceId     String?
   productId    String
   viewCount    Int       @default(1)
@@ -1339,7 +1340,7 @@ model ProductView {
 
 model ProductSearch {
   id         Int       @id @default(autoincrement())
-  userId     Int?
+  userId     String?
   deviceId   String?
   searchTerm String
   productId  String?
@@ -1361,7 +1362,7 @@ model ProductSearch {
 
 model ProductClick {
   id          Int       @id @default(autoincrement())
-  userId      Int?
+  userId      String?
   deviceId    String?
   productId   String
   clickSource String?
@@ -1384,20 +1385,20 @@ model ProductClick {
 //   questionType (PRODUCT or SERVICE), serviceId, userAccountId.
 // Relations: answerByuserIdDetail/questionByuserIdDetail -> User, productQuestionAnswerDetail -> ProductQuestionAnswer[].
 // Supports a public Q&A section where buyers ask and sellers/other buyers answer questions.
+
 model ProductQuestion {
   id                          Int                     @id @default(autoincrement())
   productId                   String?
   status                      Status                  @default(ACTIVE)
   question                    String?
-  questionByuserId            Int?
+  questionByuserId            String?
   answer                      String?
-  answerByuserId              Int?
+  answerByuserId              String?
   deletedAt                   DateTime?
   createdAt                   DateTime                @default(now())
   updatedAt                   DateTime                @updatedAt
   questionType                QuestionType?
   serviceId                   Int?
-  userAccountId               Int?
   answerByuserIdDetail        User?                   @relation("ProductAnswerUser", fields: [answerByuserId], references: [id])
   questionByuserIdDetail      User?                   @relation("questionByUser", fields: [questionByuserId], references: [id])
   productQuestionAnswerDetail ProductQuestionAnswer[]
@@ -1411,13 +1412,14 @@ model ProductQuestion {
 //   answerByuserId (FK to answering User), questionType (PRODUCT/SERVICE), serviceId.
 // Relations: answerByUserDetail -> User, productQuestion -> ProductQuestion.
 // Enables threaded answers: multiple users can answer the same product/service question.
+
 model ProductQuestionAnswer {
   id                 Int              @id @default(autoincrement())
   productId          String?
   status             Status           @default(ACTIVE)
   productQuestionId  Int?
   answer             String?
-  answerByuserId     Int?
+  answerByuserId     String?
   deletedAt          DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -1433,10 +1435,11 @@ model ProductQuestionAnswer {
 // Fields: adminId (seller), userId (buyer), productId (source product).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Prevents duplicate RFQ product entries and tracks which products were cloned for quote requests.
+
 model ProductDuplicateRfq {
   id        Int       @id @default(autoincrement())
-  adminId   Int?
-  userId    Int?
+  adminId   String?
+  userId    String?
   productId String?
   status    Status    @default(ACTIVE)
   deletedAt DateTime?
@@ -1448,10 +1451,11 @@ model ProductDuplicateRfq {
 // Fields: adminId (seller), userId (buyer), productId (source product).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Prevents duplicate factory product entries and tracks which products were cloned for customization requests.
+
 model ProductDuplicateFactories {
   id        Int       @id @default(autoincrement())
-  adminId   Int?
-  userId    Int?
+  adminId   String?
+  userId    String?
   productId String?
   status    Status    @default(ACTIVE)
   deletedAt DateTime?
@@ -1465,10 +1469,11 @@ model ProductDuplicateFactories {
 // Relations: productDetails -> Product, customizeProductImageDetail -> CustomizeProductImage[],
 //   factoriesCartDetail -> FactoriesCart[], factoriesRequest -> FactoriesRequest[].
 // Part of the factory flow: buyer requests a customized version of a product from a seller.
+
 model CustomizeProduct {
   id                          Int                     @id @default(autoincrement())
-  sellerId                    Int?
-  buyerId                     Int?
+  sellerId                    String?
+  buyerId                     String?
   productId                   String?
   status                      Status                  @default(ACTIVE)
   note                        String?
@@ -1491,6 +1496,7 @@ model CustomizeProduct {
 // Fields: productId, customizeProductId (FK to CustomizeProduct), link (file URL), linkType (image/document type).
 // Relations: customizeProductDetail -> CustomizeProduct.
 // Buyers attach reference images or design files to illustrate their customization requirements.
+
 model CustomizeProductImage {
   id                     Int               @id @default(autoincrement())
   productId              String?
@@ -1511,9 +1517,10 @@ model CustomizeProductImage {
 //   productId (FK to Product), quantity.
 // Relations: customizeProductDetail -> CustomizeProduct, productDetails -> Product.
 // Holds items before a buyer submits a formal FactoriesRequest.
+
 model FactoriesCart {
   id                     Int               @id @default(autoincrement())
-  userId                 Int?
+  userId                 String?
   deviceId               String?
   customizeProductId     Int?
   productId              String?
@@ -1536,11 +1543,12 @@ model FactoriesCart {
 //   firstName/lastName/phoneNumber/cc/address/city/province/country/postCode (shipping info).
 // Relations: customizeProductDetail -> CustomizeProduct.
 // Represents the formal request after a buyer finalizes their factory cart.
+
 model FactoriesRequest {
   id                     Int               @id @default(autoincrement())
-  buyerId                Int?
-  sellerId               Int?
-  RequestNo              String?
+  buyerId                String?
+  sellerId               String?
+  requestNo              String?
   customizeProductId     Int?
   productId              String?
   quantity               Int?
@@ -1572,12 +1580,13 @@ model FactoriesRequest {
 //   adminId/userId (seller/buyer), productNote (buyer's notes), rfqProductName (name if no existing product).
 // Relations: rfqProduct_product -> Product, rfqProduct_rfqCart -> RFQCart[], rfqProductImage -> RFQProductImages[].
 // Buyers create RFQ products to request quotes; these can reference catalog products or be custom-described items.
+
 model RFQProduct {
   id                 Int                @id @default(autoincrement())
   productId          String?
   status             Status             @default(ACTIVE)
-  adminId            Int?
-  userId             Int?
+  adminId            String?
+  userId             String?
   type               rFqType            @default(P)
   productNote        String?
   rfqProductName     String?
@@ -1596,6 +1605,7 @@ model RFQProduct {
 // Fields: rfqProductId (FK to RFQProduct), imageName/image (file name/path).
 // Relations: rfqProductImage_rfqProduct -> RFQProduct.
 // Buyers upload reference images when creating RFQ product requests.
+
 model RFQProductImages {
   id                         Int         @id @default(autoincrement())
   rfqProductId               Int?
@@ -1614,6 +1624,7 @@ model RFQProductImages {
 // Fields: locationName (display name).
 // Relations: None.
 // General-purpose location reference; distinct from the Countries/States/Cities geographic hierarchy.
+
 model LocationList {
   id           Int       @id @default(autoincrement())
   locationName String?
@@ -1627,6 +1638,7 @@ model LocationList {
 // Fields: brandName, addedBy (creator user ID), brandType (classification string).
 // Relations: brandProducts -> Product[], brandExistingProducts -> ExistingProduct[].
 // Products reference a Brand to enable brand-based filtering and search.
+
 model Brand {
   id                    Int               @id @default(autoincrement())
   brandName             String?
@@ -1645,6 +1657,7 @@ model Brand {
 // Fields: countryName.
 // Relations: countryListProducts -> Product[], countryListExistingProducts -> ExistingProduct[].
 // Distinct from the Countries model (which is used for geographic addresses/fees); this is for product origin labeling.
+
 model CountryList {
   id                          Int               @id @default(autoincrement())
   countryName                 String?
@@ -1663,9 +1676,10 @@ model CountryList {
 //   sharedLinkId (referral link tracking), object (JSON for variant/extra data).
 // Relations: Product, ProductPrice, Service, User, CartProductService[], CartServiceFeature[].
 // Supports both logged-in users (userId) and guests (deviceId) with product and service cart items.
+
 model Cart {
   id                  Int                  @id @default(autoincrement())
-  userId              Int?
+  userId              String?
   deviceId            String?
   productId           String?
   quantity            Int?
@@ -1696,6 +1710,7 @@ model Cart {
 // Fields: cartId (FK to Cart), serviceFeatureId (FK to ServiceFeature), quantity, bookingDateTime (scheduled time).
 // Relations: cart -> Cart, serviceFeature -> ServiceFeature.
 // When a buyer adds a service to their cart, they select features (e.g., hours, add-ons) and a booking slot.
+
 model CartServiceFeature {
   id               Int            @id @default(autoincrement())
   cartId           Int
@@ -1714,6 +1729,7 @@ model CartServiceFeature {
 //   cartType, relatedCartId/relatedCartType (cross-reference to the paired cart entry).
 // Relations: cart -> Cart, product -> Product, service -> Service.
 // Supports bundled purchases where a product and service are bought together (e.g., product + installation).
+
 model CartProductService {
   id              Int     @id @default(autoincrement())
   productId       String
@@ -1734,9 +1750,10 @@ model CartProductService {
 //   quantity, rfqCartType (DEFAULT/P/R), offerPrice/offerPriceFrom/offerPriceTo (buyer's price expectations), note.
 // Relations: rfqCart_productDetails -> Product, rfqProductDetails -> RFQProduct.
 // Buyers assemble their RFQ cart with products and desired quantities/prices before submitting quotes.
+
 model RFQCart {
   id                     Int          @id @default(autoincrement())
-  userId                 Int?
+  userId                 String?
   deviceId               String?
   rfqProductId           Int?
   quantity               Int?
@@ -1767,9 +1784,10 @@ model RFQCart {
 //   advanceAmount/dueAmount (for partial/installment payments).
 // Relations: order_orderProducts -> OrderProducts[], order_orderAddress -> OrderAddress[].
 // The parent order entity; individual line items are in OrderProducts with per-seller breakdown.
+
 model Order {
   id                      Int             @id @default(autoincrement())
-  userId                  Int?
+  userId                  String?
   orderNo                 String?
   paymentMethod           String?
   totalPrice              Decimal?        @db.Decimal(10, 2)
@@ -1804,6 +1822,7 @@ model Order {
 // Fields: paymobOrderId (gateway order reference), saveCardObject (JSON of card details), token (reusable payment token), orderId.
 // Relations: None defined at Prisma level.
 // Enables "save card for future purchases" functionality via tokenized card storage from Paymob.
+
 model OrderSaveCardToken {
   id             Int       @id @default(autoincrement())
   paymobOrderId  Int?
@@ -1822,10 +1841,11 @@ model OrderSaveCardToken {
 //   status (shipping status string), receipt (proof of shipment), fromTime/toTime (delivery window).
 // Relations: orderProductDetail -> OrderProducts[], serviceDetail -> Service.
 // Each seller in a multi-seller order can have a separate shipping record and method.
+
 model OrderShipping {
   id                 Int               @id @default(autoincrement())
   orderId            Int?
-  sellerId           Int?
+  sellerId           String?
   orderShippingType  OrderShippingType
   serviceId          Int?
   status             String
@@ -1856,13 +1876,14 @@ model OrderShipping {
 //   purchasedAmount (what the seller receives after platform fees).
 // Relations: None defined at Prisma level (uses raw IDs).
 // When an order contains products from multiple sellers, each seller gets their own OrderSeller with amounts.
+
 model OrderSeller {
   id              Int       @id @default(autoincrement())
   orderId         Int?
   orderNo         String?
   sellerOrderNo   String?
   amount          Decimal?  @db.Decimal(10, 2)
-  sellerId        Int?
+  sellerId        String?
   status          Status    @default(ACTIVE)
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
@@ -1881,46 +1902,46 @@ model OrderSeller {
 //   breakdown (JSON fee/price breakdown), cashbackToCustomer/customerPay/platformFee/sellerReceives (financial split),
 //   object (JSON variant/extra data), orderProductReceipt, orderShippingId (FK to OrderShipping),
 //   orderProductType (PRODUCT/SERVICE), serviceId (FK to Service), serviceFeatures (JSON).
-// Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service, OrderProductService[].
+// Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service.
 // The core order line item; tracks per-product status and financials independently.
+
 model OrderProducts {
-  id                        Int                   @id @default(autoincrement())
-  userId                    Int?
+  id                        Int                @id @default(autoincrement())
+  userId                    String?
   orderId                   Int?
   productId                 String?
-  salePrice                 Decimal?              @db.Decimal(10, 2)
-  purchasePrice             Decimal?              @db.Decimal(10, 2)
+  salePrice                 Decimal?           @db.Decimal(10, 2)
+  purchasePrice             Decimal?           @db.Decimal(10, 2)
   deletedAt                 DateTime?
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
-  status                    Status                @default(ACTIVE)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  status                    Status             @default(ACTIVE)
   orderProductDate          DateTime?
-  orderProductStatus        OrderProductStatus    @default(PLACED)
+  orderProductStatus        OrderProductStatus @default(PLACED)
   orderQuantity             Int?
-  sellerId                  Int?
+  sellerId                  String?
   cancelReason              String?
   orderNo                   String?
   orderSellerId             Int?
   sellerOrderNo             String?
   productPriceId            Int?
   breakdown                 Json?
-  cashbackToCustomer        Decimal?              @db.Decimal(10, 2)
-  customerPay               Decimal?              @db.Decimal(10, 2)
-  platformFee               Decimal?              @db.Decimal(10, 2)
-  sellerReceives            Decimal?              @db.Decimal(10, 2)
+  cashbackToCustomer        Decimal?           @db.Decimal(10, 2)
+  customerPay               Decimal?           @db.Decimal(10, 2)
+  platformFee               Decimal?           @db.Decimal(10, 2)
+  sellerReceives            Decimal?           @db.Decimal(10, 2)
   object                    Json?
   orderProductReceipt       String?
   orderShippingId           Int?
-  orderProductType          OrderProductType      @default(PRODUCT)
+  orderProductType          OrderProductType   @default(PRODUCT)
   serviceFeatures           Json?
   serviceId                 Int?
-  orderProductServices      OrderProductService[]
-  orderProduct_order        Order?                @relation(fields: [orderId], references: [id])
-  orderShippingDetail       OrderShipping?        @relation(fields: [orderShippingId], references: [id])
-  orderProduct_product      Product?              @relation(fields: [productId], references: [id])
-  orderProduct_productPrice ProductPrice?         @relation(fields: [productPriceId], references: [id])
-  sellerDetail              User?                 @relation("OrderProductsSeller", fields: [sellerId], references: [id])
-  service                   Service?              @relation(fields: [serviceId], references: [id])
+  orderProduct_order        Order?             @relation(fields: [orderId], references: [id])
+  orderShippingDetail       OrderShipping?     @relation(fields: [orderShippingId], references: [id])
+  orderProduct_product      Product?           @relation(fields: [productId], references: [id])
+  orderProduct_productPrice ProductPrice?      @relation(fields: [productPriceId], references: [id])
+  sellerDetail              User?              @relation("OrderProductsSeller", fields: [sellerId], references: [id])
+  service                   Service?           @relation(fields: [serviceId], references: [id])
   // Delivery management relations
   deliveryEvents            DeliveryEvent[]
   pickupCode                PickupCode?
@@ -1937,35 +1958,17 @@ model OrderProducts {
   @@index([orderProductStatus])
 }
 
-// OrderProductService — Links an order line item to an associated service (product-service bundle in order).
-// Fields: productId (FK to Product), serviceId (FK to Service), orderProductId (FK to OrderProducts),
-//   orderProductType, relatedOrderProductId (cross-reference to paired order line item).
-// Relations: orderProduct -> OrderProducts, product -> Product, service -> Service.
-// Persists the product-service bundle pairing from CartProductService into the fulfilled order.
-model OrderProductService {
-  id                    Int           @id @default(autoincrement())
-  productId             String
-  serviceId             Int
-  orderProductId        Int
-  orderProductType      String?
-  relatedOrderProductId Int?
-  orderProduct          OrderProducts @relation(fields: [orderProductId], references: [id])
-  product               Product       @relation(fields: [productId], references: [id])
-  service               Service       @relation(fields: [serviceId], references: [id])
-
-  @@index([orderProductId])
-}
-
 // DeliveryEvent — Status history timeline for order delivery tracking.
 // Records every status change with actor (SELLER/BUYER/SYSTEM), timestamp, and optional metadata.
 // Enables delivery timeline visualization and audit trail for dispute resolution.
+
 model DeliveryEvent {
   id              Int            @id @default(autoincrement())
   orderProductId  Int
   orderShippingId Int?
   event           String // "CONFIRMED", "SHIPPED", "OFD", "DELIVERED", "RECEIVED", "TRACKING_ADDED", "PICKUP_READY", etc.
   actor           String // "SELLER", "BUYER", "SYSTEM", "CARRIER"
-  actorUserId     Int?
+  actorUserId     String?
   note            String?
   metadata        Json? // { photoUrl, trackingSnapshot, carrierStatus, pickupCode }
   createdAt       DateTime       @default(now())
@@ -1979,6 +1982,7 @@ model DeliveryEvent {
 // PickupCode — Verification code for in-store pickup orders.
 // Generated when PICKUP order reaches CONFIRMED status. Buyer shows QR/code at store,
 // seller verifies to complete the order. Auto-expires after configurable days.
+
 model PickupCode {
   id                Int           @id @default(autoincrement())
   orderProductId    Int           @unique
@@ -1989,7 +1993,7 @@ model PickupCode {
   pickupWindowEnd   DateTime?
   expiresAt         DateTime? // Auto-cancel deadline
   collectedAt       DateTime?
-  collectedByUserId Int?
+  collectedByUserId String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   orderProduct      OrderProducts @relation(fields: [orderProductId], references: [id])
@@ -2005,6 +2009,7 @@ model PickupCode {
 //   cityId/countryId/stateId (geographic FK references).
 // Relations: orderAddress_order -> Order.
 // Address is copied at checkout so later changes to UserAddress do not affect historical orders.
+
 model OrderAddress {
   id                 Int         @id @default(autoincrement())
   orderId            Int?
@@ -2037,6 +2042,7 @@ model OrderAddress {
 //   emiStartDate, emiInstallmentsPaid (paid so far), emiStatus (ONGOING/COMPLETED/STOPPED), nextEmiDueDate.
 // Relations: None defined at Prisma level (uses raw orderId).
 // Supports buy-now-pay-later: buyers can split order payment into monthly installments.
+
 model OrderEMI {
   id                        Int       @id @default(autoincrement())
   orderId                   Int?
@@ -2056,6 +2062,7 @@ model OrderEMI {
 // Fields: formData (serialized form structure), formName, productId (optional FK to a specific product).
 // Relations: dynamicForm_dynamicFormCategory -> DynamicFormCategory[], elements -> DynamicFormElement[].
 // Enables category-specific custom attributes: admins define form schemas; sellers fill them when listing products.
+
 model DynamicForm {
   id                              Int                   @id @default(autoincrement())
   formData                        String?
@@ -2074,6 +2081,7 @@ model DynamicForm {
 //   formId (FK to DynamicForm), parentId (self-referencing for nested/grouped elements).
 // Relations: form -> DynamicForm, parent/children (self-join for element nesting).
 // Represents a single form input; supports hierarchical element structures (e.g., fieldsets containing fields).
+
 model DynamicFormElement {
   id        Int                  @id @default(autoincrement())
   keyName   String?
@@ -2096,6 +2104,7 @@ model DynamicFormElement {
 // Fields: formId (FK to DynamicForm), categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: categoryIdDetail -> Category, formIdDetail -> DynamicForm.
 // When a product is listed under a category, the linked dynamic forms determine which extra fields appear.
+
 model DynamicFormCategory {
   id               Int          @id @default(autoincrement())
   formId           Int?
@@ -2117,9 +2126,10 @@ model DynamicFormCategory {
 //   rfqDate (requested delivery date).
 // Relations: rfqQuoteAddress_rfqQuotes -> RfqQuotes[].
 // Each RFQ quote submission includes a delivery address where the buyer wants goods shipped.
+
 model RfqQuoteAddress {
   id                        Int         @id @default(autoincrement())
-  userId                    Int?
+  userId                    String?
   status                    Status      @default(ACTIVE)
   firstName                 String?
   lastName                  String?
@@ -2152,9 +2162,10 @@ model RfqQuoteAddress {
 // Relations: rfqQuotes_rfqQuoteAddress -> RfqQuoteAddress, rfqQuotesProducts -> RfqQuotesProducts[],
 //   rfqQuotes_rfqQuotesUsers -> RfqQuotesUsers[], rfqQuoteProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Flow: buyer creates RfqQuotes -> adds RfqQuotesProducts -> sellers are assigned via RfqQuotesUsers -> negotiate prices.
+
 model RfqQuotes {
   id                           Int                           @id @default(autoincrement())
-  buyerID                      Int?
+  buyerID                      String?
   rfqQuoteAddressId            Int?
   status                       Status                        @default(ACTIVE)
   deletedAt                    DateTime?
@@ -2174,6 +2185,7 @@ model RfqQuotes {
 //   quantity, offerPrice/offerPriceFrom/offerPriceTo (buyer's expected price/range), note.
 // Relations: rfqQuotesDetail -> RfqQuotes, rfqProductDetails -> Product, rfqProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Each RFQ can contain multiple products with individual quantity and price expectations.
+
 model RfqQuotesProducts {
   id                      Int                           @id @default(autoincrement())
   rfqQuotesId             Int?
@@ -2198,24 +2210,22 @@ model RfqQuotesProducts {
 }
 
 // RfqQuotesUsers — Join table linking an RFQ quote to the buyer-seller pair negotiating it.
-// Fields: rfqQuotesId (FK to RfqQuotes), buyerID/sellerID (FK to User), offerPrice (seller's quoted price),
-//   userAccountBuyerId/userAccountSellerId (sub-account IDs if applicable).
+// Fields: rfqQuotesId (FK to RfqQuotes), buyerID/sellerID (FK to User), offerPrice (seller's quoted price).
 // Relations: buyerIDDetail/sellerIDDetail -> User, rfqQuotesUser_rfqQuotes -> RfqQuotes,
 //   messagaes -> Message[] (chat messages in this negotiation), rfqProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Each seller invited to an RFQ gets a row here; price negotiation happens via linked Messages.
+
 model RfqQuotesUsers {
   id                      Int                           @id @default(autoincrement())
   status                  Status                        @default(ACTIVE)
   rfqQuotesId             Int?
-  buyerID                 Int?
-  sellerID                Int?
+  buyerID                 String?
+  sellerID                String?
   offerPrice              Decimal?                      @db.Decimal(10, 2)
   isHidden                Boolean                       @default(false)
   deletedAt               DateTime?
   createdAt               DateTime                      @default(now())
   updatedAt               DateTime                      @updatedAt
-  userAccountBuyerId      Int?
-  userAccountSellerId     Int?
   messagaes               Message[]
   rfqProductPriceRequests RfqQuoteProductPriceRequest[]
   suggestedProducts       RfqSuggestedProduct[]
@@ -2232,10 +2242,11 @@ model RfqQuotesUsers {
 // Fields: userId (buyer), productId (FK to Product).
 // Relations: wishlist_productDetail -> Product.
 // Simple save-for-later functionality; one row per user-product pair.
+
 model Wishlist {
   id                     Int       @id @default(autoincrement())
   status                 Status    @default(ACTIVE)
-  userId                 Int?
+  userId                 String?
   productId              String?
   deletedAt              DateTime?
   createdAt              DateTime  @default(now())
@@ -2250,11 +2261,12 @@ model Wishlist {
 // Fields: creatorId (FK to User who initiated the room), rfqId (optional RFQ context), orderProductId (optional order context).
 // Relations: creator -> User, messages -> Message[] (room messages), participants -> RoomParticipants[].
 // Rooms can be general chat, RFQ negotiation, or order-related discussion contexts.
+
 model Room {
   id             Int                @id @default(autoincrement())
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
-  creatorId      Int
+  creatorId      String
   rfqId          Int?
   orderProductId Int?
   messages       Message[]          @relation("RoomMessages")
@@ -2271,6 +2283,7 @@ model Room {
 // Relations: user -> User, room -> Room, rfqQuotesUser -> RfqQuotesUsers,
 //   attachments -> ChatAttachments[], rfqProductPriceRequest -> RfqQuoteProductPriceRequest (1:1 for price proposals).
 // Messages support text, file attachments, and embedded RFQ price requests.
+
 model Message {
   id                     Int                          @id @default(autoincrement())
   content                String
@@ -2279,7 +2292,7 @@ model Message {
   updatedAt              DateTime                     @updatedAt
   rfqId                  Int?
   rfqQuotesUserId        Int?
-  userId                 Int
+  userId                 String
   roomId                 Int
   orderProductId         Int?
   attachments            ChatAttachments[]
@@ -2300,6 +2313,7 @@ model Message {
 //   uniqueId (unique identifier for deduplication), presignedUrl (temporary download URL).
 // Relations: message -> Message.
 // Supports file sharing in chat; uses presigned URLs for secure, time-limited file access.
+
 model ChatAttachments {
   id            Int              @id @default(autoincrement())
   fileName      String
@@ -2326,17 +2340,18 @@ model ChatAttachments {
 // Relations: approvedBy/rejectedBy/requestedBy/requestedBuyer/requestedSeller -> User,
 //   message -> Message, rfqQuotes -> RfqQuotes, rfqQuoteProduct -> RfqQuotesProducts, rfqQuotesUser -> RfqQuotesUsers.
 // Central to the RFQ negotiation workflow: buyer/seller exchange price proposals as structured chat messages.
+
 model RfqQuoteProductPriceRequest {
   id                Int                          @id @default(autoincrement())
   rfqQuoteId        Int
   rfqQuoteProductId Int
   rfqQuotesUserId   Int
   messageId         Int                          @unique
-  sellerId          Int?
-  buyerId           Int?
-  requestedById     Int
-  approvedById      Int?
-  rejectedById      Int?
+  sellerId          String?
+  buyerId           String?
+  requestedById     String
+  approvedById      String?
+  rejectedById      String?
   requestedPrice    Float
   status            RfqProductPriceRequestStatus @default(PENDING)
   createdAt         DateTime                     @default(now())
@@ -2361,7 +2376,7 @@ model RfqSuggestedProduct {
   messageId          Int
   rfqQuoteProductId  Int
   suggestedProductId String
-  vendorId           Int
+  vendorId           String
   rfqQuotesUserId    Int
   offerPrice         Decimal?          @db.Decimal(8, 2)
   quantity           Int?
@@ -2386,9 +2401,10 @@ model RfqSuggestedProduct {
 // Fields: userId (FK to User), roomId (FK to Room).
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
+
 model RoomParticipants {
   id         Int      @id @default(autoincrement())
-  userId     Int
+  userId     String
   roomId     Int
   isPinned   Boolean  @default(false)
   isArchived Boolean  @default(false)
@@ -2402,44 +2418,11 @@ model RoomParticipants {
   @@index([roomId])
 }
 
-// CustomField — Seller-defined custom form fields for a specific product.
-// Fields: adminId (seller), userId, productId, formName/formData (field definition and serialized schema).
-// Relations: None defined at Prisma level (uses raw IDs).
-// Allows sellers to add custom attribute fields beyond the standard product schema and dynamic forms.
-model CustomField {
-  id        Int       @id @default(autoincrement())
-  adminId   Int?
-  userId    Int?
-  productId String?
-  formName  String?
-  formData  String?
-  status    Status    @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-}
-
-// CustomFieldValue — Stores the actual value entered for a CustomField or DynamicForm element.
-// Fields: adminId (seller), userId, formId (FK to form), keyName (field identifier), value (entered value).
-// Relations: None defined at Prisma level (uses raw IDs).
-// Pairs with CustomField/DynamicForm to store seller-entered data for custom product attributes.
-model CustomFieldValue {
-  id        Int       @id @default(autoincrement())
-  adminId   Int?
-  userId    Int?
-  formId    Int?
-  keyName   String?
-  value     String?
-  status    Status    @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-}
-
 // Countries — Geographic lookup table for countries (used for addresses, fees, product locations).
 // Fields: sortname (ISO code), name (country name), phoneCode (international dialing code).
 // Relations: FeesCountry, FeesLocation, ProductPrice, ProductSellCountry, Service, UserAddress.
 // Referenced throughout the platform for geographic filtering, fee calculation, and address management.
+
 model Countries {
   id                           Int                  @id @default(autoincrement())
   sortname                     String?
@@ -2463,6 +2446,7 @@ model Countries {
 // Fields: name (state name), countryId (FK to Countries).
 // Relations: FeesLocation, FeesState, ProductPrice, ProductSellState, Service, UserAddress.
 // Second level of geographic hierarchy: Countries -> States -> Cities.
+
 model States {
   id                     Int                @id @default(autoincrement())
   name                   String?
@@ -2485,6 +2469,7 @@ model States {
 // Fields: name (city name), stateId (FK to States).
 // Relations: FeesCity, FeesLocation, ProductPrice, ProductSellCity, Service (from/to/range cities), UserAddress.
 // Third level of geographic hierarchy: Countries -> States -> Cities. Services use cities for route definitions.
+
 model Cities {
   id                   Int               @id @default(autoincrement())
   name                 String?
@@ -2505,31 +2490,15 @@ model Cities {
   city_userBranch      UserBranch[]
 }
 
-// PaymentErrorLog — Audit log for payment processing failures.
-// Fields: userId, paymentIntentId (payment gateway reference), payload (JSON of the failed request/response),
-//   location (code location/endpoint where the error occurred), errorMessage.
-// Relations: None.
-// Used for debugging and monitoring payment integration issues with Stripe/Paymob.
-model PaymentErrorLog {
-  id              Int       @id @default(autoincrement())
-  userId          Int?
-  paymentIntentId String?
-  payload         Json?
-  location        String?
-  errorMessage    String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-}
-
 // AdminPermission — Defines granular permissions for admin/sub-admin roles (platform-level RBAC).
 // Fields: name (permission label), addedBy (creator).
 // Relations: adminRolePermission -> AdminRolePermission[] (M:N join to AdminRole).
 // Separate from seller-side Permission; this controls what platform admin members can do.
+
 model AdminPermission {
   id                  Int                   @id @default(autoincrement())
   name                String?
-  addedBy             Int?
+  addedBy             String?
   status              Status                @default(ACTIVE)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime?             @updatedAt
@@ -2541,10 +2510,11 @@ model AdminPermission {
 // Fields: adminRoleName (role label), addedBy (creator).
 // Relations: adminMemberDetail -> AdminMember[], adminRolePermission -> AdminRolePermission[], user -> User[].
 // Part of platform-level RBAC: admin roles are assigned to admin members with specific permissions.
+
 model AdminRole {
   id                  Int                   @id @default(autoincrement())
   adminRoleName       String?
-  addedBy             Int?
+  addedBy             String?
   status              Status                @default(ACTIVE)
   createdAt           DateTime              @default(now())
   updatedAt           DateTime?             @updatedAt
@@ -2558,6 +2528,7 @@ model AdminRole {
 // Fields: adminRoleId (FK to AdminRole), adminPermissionId (FK to AdminPermission).
 // Relations: adminPermissionDetail -> AdminPermission, adminRoleDetail -> AdminRole.
 // Each row grants a specific admin permission to a specific admin role.
+
 model AdminRolePermission {
   id                    Int              @id @default(autoincrement())
   adminRoleId           Int?
@@ -2577,11 +2548,12 @@ model AdminRolePermission {
 // Fields: userId (FK to User), adminRoleId (FK to AdminRole), addedBy (the admin who added them).
 // Relations: adminRolDetail -> AdminRole, userDetail -> User.
 // Platform-level team management: super admins add sub-admins and assign them admin roles.
+
 model AdminMember {
   id             Int        @id @default(autoincrement())
-  userId         Int?
+  userId         String?
   adminRoleId    Int?
-  addedBy        Int?
+  addedBy        String?
   status         Status     @default(ACTIVE)
   deletedAt      DateTime?
   createdAt      DateTime   @default(now())
@@ -2597,9 +2569,10 @@ model AdminMember {
 // Fields: userId (FK to submitting User), userEmail, query (question/issue text), response (admin reply).
 // Relations: userDetail -> User.
 // Simple support ticket system for buyer/seller inquiries to platform admins.
+
 model HelpCenter {
   id         Int       @id @default(autoincrement())
-  userId     Int?
+  userId     String?
   userEmail  String?
   query      String?
   response   String?
@@ -2618,9 +2591,10 @@ model HelpCenter {
 //   transactionType (e.g., payment, refund), type (additional classification).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Audit trail for all Paymob payment interactions; used for reconciliation and dispute resolution.
+
 model TransactionPaymob {
   id                  Int       @id @default(autoincrement())
-  userId              Int?
+  userId              String?
   orderId             Int?
   transactionStatus   String?
   paymobTransactionId String?
@@ -2647,54 +2621,54 @@ model TransactionPaymob {
 //   countryId/stateId (FK to Countries/States for service area).
 // Relations: Cart, OrderProducts, OrderShipping, Category, User (seller), Cities (from/to/range),
 //   Countries, States, ServiceFeature[], ServiceImage[], ServiceTag[],
-//   CartProductService[], OrderProductService[].
+//   CartProductService[].
 // Services support both appointment booking (BOOKING) and logistics/moving (MOVING) use cases.
+
 model Service {
-  id                   Int                   @id @default(autoincrement())
-  workingDays          String
-  offDays              String?
-  renewEveryWeek       Boolean               @default(false)
-  oneTime              Boolean               @default(false)
-  openTime             DateTime?             @db.Timestamp(6)
-  closeTime            DateTime?             @db.Timestamp(6)
-  breakTimeFrom        DateTime?             @db.Timestamp(6)
-  breakTimeTo          DateTime?             @db.Timestamp(6)
-  shippingType         ShippingType?
-  fromCityId           Int?
-  toCityId             Int?
-  rangeCityId          Int?
-  serviceName          String
-  serviceType          ServiceType
-  description          String?
-  serviceConfirmType   ServiceConfirmType?
-  serviceFor           ServiceFor?
-  categoryId           Int
-  categoryLocation     String?
-  status               Status                @default(INACTIVE)
-  deletedAt            DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  customerPerPeiod     Int?
-  eachCustomerTime     Int?
-  sellerId             Int
-  countryId            Int?
-  stateId              Int?
-  carts                Cart[]
-  cartProductServices  CartProductService[]
-  orderProductServices OrderProductService[]
-  orderProducts        OrderProducts[]
-  ordershippingDetail  OrderShipping[]
-  category             Category              @relation(fields: [categoryId], references: [id])
-  country              Countries?            @relation(fields: [countryId], references: [id])
-  fromCity             Cities?               @relation("Service_fromCity", fields: [fromCityId], references: [id])
-  rangeCity            Cities?               @relation("Service_rangeCity", fields: [rangeCityId], references: [id])
-  seller               User                  @relation(fields: [sellerId], references: [id])
-  state                States?               @relation(fields: [stateId], references: [id])
-  toCity               Cities?               @relation("Service_toCity", fields: [toCityId], references: [id])
-  serviceFeatures      ServiceFeature[]
-  images               ServiceImage[]
-  serviceTags          ServiceTag[]
-  serviceCategories    ServiceCategoryMap[]
+  id                  Int                  @id @default(autoincrement())
+  workingDays         String
+  offDays             String?
+  renewEveryWeek      Boolean              @default(false)
+  oneTime             Boolean              @default(false)
+  openTime            DateTime?            @db.Timestamp(6)
+  closeTime           DateTime?            @db.Timestamp(6)
+  breakTimeFrom       DateTime?            @db.Timestamp(6)
+  breakTimeTo         DateTime?            @db.Timestamp(6)
+  shippingType        ShippingType?
+  fromCityId          Int?
+  toCityId            Int?
+  rangeCityId         Int?
+  serviceName         String
+  serviceType         ServiceType
+  description         String?
+  serviceConfirmType  ServiceConfirmType?
+  serviceFor          ServiceFor?
+  categoryId          Int
+  categoryLocation    String?
+  status              Status               @default(INACTIVE)
+  deletedAt           DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  customerPerPeiod    Int?
+  eachCustomerTime    Int?
+  sellerId            String
+  countryId           Int?
+  stateId             Int?
+  carts               Cart[]
+  cartProductServices CartProductService[]
+  orderProducts       OrderProducts[]
+  ordershippingDetail OrderShipping[]
+  category            Category             @relation(fields: [categoryId], references: [id])
+  country             Countries?           @relation(fields: [countryId], references: [id])
+  fromCity            Cities?              @relation("Service_fromCity", fields: [fromCityId], references: [id])
+  rangeCity           Cities?              @relation("Service_rangeCity", fields: [rangeCityId], references: [id])
+  seller              User                 @relation(fields: [sellerId], references: [id])
+  state               States?              @relation(fields: [stateId], references: [id])
+  toCity              Cities?              @relation("Service_toCity", fields: [toCityId], references: [id])
+  serviceFeatures     ServiceFeature[]
+  images              ServiceImage[]
+  serviceTags         ServiceTag[]
+  serviceCategories   ServiceCategoryMap[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -2706,6 +2680,7 @@ model Service {
 // Fields: serviceId (FK to Service), tagId (FK to Tags).
 // Relations: service -> Service, tag -> Tags.
 // Tags improve service discoverability via search and filtering.
+
 model ServiceTag {
   id        Int       @id @default(autoincrement())
   serviceId Int
@@ -2724,6 +2699,7 @@ model ServiceTag {
 // Fields: serviceId (FK to Service), name (feature label), serviceCost (price), serviceCostType (FLAT/HOURLY).
 // Relations: service -> Service, cartServiceFeatures -> CartServiceFeature[].
 // Buyers select features when adding a service to cart; each feature has its own cost and pricing model.
+
 model ServiceFeature {
   id                  Int                  @id @default(autoincrement())
   serviceId           Int
@@ -2740,6 +2716,7 @@ model ServiceFeature {
 // Fields: url (file path), serviceId (FK to Service), fileName, fileType (IMAGE/VIDEO).
 // Relations: service -> Service.
 // Sellers upload images and videos to showcase their services.
+
 model ServiceImage {
   id        Int      @id @default(autoincrement())
   url       String
@@ -2755,6 +2732,7 @@ model ServiceImage {
 // Fields: slug (unique page identifier, e.g., "homepage", "about"), setting (JSON configuration blob).
 // Relations: None.
 // Admin-managed page configurations for dynamic frontend content without code deployment.
+
 model PageSetting {
   id        Int       @id @default(autoincrement())
   slug      String    @unique
@@ -2765,26 +2743,9 @@ model PageSetting {
   updatedAt DateTime  @updatedAt
 }
 
-// AccountSession — Tracks active login sessions for users via access tokens.
-// Fields: userId (FK to User), accessToken (unique JWT/token string), isActive (session validity flag), expiresAt (expiry timestamp).
-// Relations: user -> User.
-// Enables session management: multiple devices, token-based auth, and session invalidation.
-model AccountSession {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  accessToken String   @unique
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
-  user        User     @relation("UserSessions", fields: [userId], references: [id])
-
-  @@index([userId])
-}
-
 model Wallet {
   id            Int                 @id @default(autoincrement())
-  userId        Int
-  userAccountId Int?
+  userId        String
   currencyCode  String              @default("USD")
   balance       Decimal             @default(0.00) @db.Decimal(15, 2)
   frozenBalance Decimal             @default(0.00) @db.Decimal(15, 2)
@@ -2793,12 +2754,11 @@ model Wallet {
   updatedAt     DateTime            @updatedAt
   deletedAt     DateTime?
   user          User                @relation(fields: [userId], references: [id])
-  userAccount   User?               @relation("WalletUserAccount", fields: [userAccountId], references: [id])
   transactions  WalletTransaction[]
   transfersFrom WalletTransfer[]    @relation("FromWallet")
   transfersTo   WalletTransfer[]    @relation("ToWallet")
 
-  @@unique([userId, userAccountId, currencyCode])
+  @@unique([userId, currencyCode])
 }
 
 model WalletTransaction {
@@ -2842,7 +2802,7 @@ model WalletTransfer {
 
 model WalletSettings {
   id                      Int       @id @default(autoincrement())
-  userId                  Int       @unique
+  userId                  String    @unique
   autoWithdraw            Boolean   @default(false)
   withdrawLimit           Decimal   @default(0.00) @db.Decimal(15, 2)
   dailyLimit              Decimal   @default(0.00) @db.Decimal(15, 2)
@@ -2862,37 +2822,38 @@ model WalletSettings {
 // Relations: User (admin and adopting user), Brand, Category, CountryList,
 //   ExistingProductImages[], ExistingProductTags[].
 // Admin creates ExistingProducts as a catalog; sellers can then list them in their own store via ProductPrice.
+
 model ExistingProduct {
-  id                                 Int                     @id @default(autoincrement())
-  productName                        String
-  categoryId                         Int?
-  brandId                            Int?
-  description                        String?
-  specification                      String?
-  shortDescription                   String?
-  productType                        ProductType?
-  typeOfProduct                      TypeOfProduct?
-  typeProduct                        TypeProduct?
-  placeOfOriginId                    Int?
-  barcode                            String?
-  status                             Status                  @default(ACTIVE)
-  deletedAt                          DateTime?
-  createdAt                          DateTime                @default(now())
-  updatedAt                          DateTime                @updatedAt
-  adminId                            Int?
-  categoryLocation                   String?
-  offerPrice                         Decimal                 @default(0.00) @db.Decimal(8, 2)
-  productPrice                       Decimal                 @default(0.00) @db.Decimal(8, 2)
-  productViewCount                   Int?                    @default(0)
-  skuNo                              String                  @unique @default(dbgenerated("('SKU_'::text || (EXTRACT(epoch FROM now()))::text)"))
-  userId                             Int?
-  User_ExistingProduct_adminIdToUser User?                   @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
-  brand                              Brand?                  @relation(fields: [brandId], references: [id])
-  category                           Category?               @relation(fields: [categoryId], references: [id])
-  placeOfOrigin                      CountryList?            @relation(fields: [placeOfOriginId], references: [id])
-  User_ExistingProduct_userIdToUser  User?                   @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
-  existingProductImages              ExistingProductImages[]
-  existingProductTags                ExistingProductTags[]
+  id                    Int                     @id @default(autoincrement())
+  productName           String
+  categoryId            Int?
+  brandId               Int?
+  description           String?
+  specification         String?
+  shortDescription      String?
+  productType           ProductType?
+  typeOfProduct         TypeOfProduct?
+  typeProduct           TypeProduct?
+  placeOfOriginId       Int?
+  barcode               String?
+  status                Status                  @default(ACTIVE)
+  deletedAt             DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  adminId               String?
+  categoryLocation      String?
+  offerPrice            Decimal                 @default(0.00) @db.Decimal(8, 2)
+  productPrice          Decimal                 @default(0.00) @db.Decimal(8, 2)
+  productViewCount      Int?                    @default(0)
+  skuNo                 String                  @unique @default(dbgenerated("('SKU_'::text || (EXTRACT(epoch FROM now()))::text)"))
+  userId                String?
+  adminBy               User?                   @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
+  brand                 Brand?                  @relation(fields: [brandId], references: [id])
+  category              Category?               @relation(fields: [categoryId], references: [id])
+  placeOfOrigin         CountryList?            @relation(fields: [placeOfOriginId], references: [id])
+  userBy                User?                   @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
+  existingProductImages ExistingProductImages[]
+  existingProductTags   ExistingProductTags[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -2904,6 +2865,7 @@ model ExistingProduct {
 // Fields: existingProductId (FK to ExistingProduct), tagId (FK to Tags).
 // Relations: existingProduct -> ExistingProduct, existingProductTag -> Tags.
 // Tags for admin-curated catalog products, improving search and categorization.
+
 model ExistingProductTags {
   id                 Int             @id @default(autoincrement())
   existingProductId  Int
@@ -2921,7 +2883,7 @@ model ExistingProductTags {
 
 model Notification {
   id        Int       @id @default(autoincrement())
-  userId    Int
+  userId    String
   type      String // ORDER, MESSAGE, RFQ, REVIEW, SYSTEM, PAYMENT, SHIPMENT, ACCOUNT
   title     String
   message   String    @db.Text
@@ -2947,6 +2909,7 @@ model Notification {
 //   variant (JSON mapping images to specific variant combos).
 // Relations: existingProduct -> ExistingProduct.
 // Canonical images for the admin catalog; similar structure to ProductImages.
+
 model ExistingProductImages {
   id                Int             @id @default(autoincrement())
   existingProductId Int
@@ -2967,6 +2930,7 @@ model ExistingProductImages {
 // OrderProductType — Distinguishes whether an order line item is a physical product or a service.
 // Values: PRODUCT (tangible goods), SERVICE (bookable/moving service).
 // Used by OrderProducts.orderProductType to determine fulfillment logic.
+
 enum OrderProductType {
   PRODUCT
   SERVICE
@@ -2975,6 +2939,7 @@ enum OrderProductType {
 // FileType — Classifies media file types for service images.
 // Values: IMAGE, VIDEO.
 // Used by ServiceImage.fileType.
+
 enum FileType {
   IMAGE
   VIDEO
@@ -2983,6 +2948,7 @@ enum FileType {
 // ShippingType — Defines how a moving service operates geographically.
 // Values: DIRECTION (point-to-point from city A to city B), RANG (within a range/radius of a city).
 // Used by Service.shippingType for MOVING-type services.
+
 enum ShippingType {
   DIRECTION
   RANG
@@ -2991,6 +2957,7 @@ enum ShippingType {
 // ServiceType — The two supported service categories on the platform.
 // Values: BOOKING (appointment/reservation-based, e.g., cleaning, repair), MOVING (logistics/transport services).
 // Used by Service.serviceType to drive different UI and scheduling logic.
+
 enum ServiceType {
   BOOKING
   MOVING
@@ -2999,6 +2966,7 @@ enum ServiceType {
 // ServiceConfirmType — How a service booking is confirmed after a buyer requests it.
 // Values: AUTO (immediately confirmed), MANUAL (seller must manually approve the booking).
 // Used by Service.serviceConfirmType.
+
 enum ServiceConfirmType {
   AUTO
   MANUAL
@@ -3007,6 +2975,7 @@ enum ServiceConfirmType {
 // ServiceCostType — Pricing model for a service feature.
 // Values: FLAT (fixed price regardless of duration), HOURLY (price per hour of service).
 // Used by ServiceFeature.serviceCostType.
+
 enum ServiceCostType {
   FLAT
   HOURLY
@@ -3015,6 +2984,7 @@ enum ServiceCostType {
 // ServiceFor — Controls who can use a service.
 // Values: OWNER (only the seller/owner can use it, internal service), EVERYONE (publicly available to all buyers).
 // Used by Service.serviceFor to restrict service visibility and booking.
+
 enum ServiceFor {
   OWNER
   EVERYONE
@@ -3025,6 +2995,7 @@ enum ServiceFor {
 //   HIDDEN (not publicly visible but not deleted), WAITING (pending approval/verification),
 //   WAITING_FOR_SUPER_ADMIN (escalated approval needed), REJECT (denied by admin).
 // The platform uses soft delete: records are never physically removed, just marked DELETE with a deletedAt timestamp.
+
 enum Status {
   ACTIVE
   INACTIVE
@@ -3038,6 +3009,7 @@ enum Status {
 // AttachmentStatus — Upload lifecycle status for chat file attachments.
 // Values: UPLOADING (in progress), UPLOADED (complete and available), FAILED (upload error), DELETED (removed).
 // Used by ChatAttachments.status to track upload state for async file uploads.
+
 enum AttachmentStatus {
   UPLOADED
   UPLOADING
@@ -3048,6 +3020,7 @@ enum AttachmentStatus {
 // MessageStatus — Read status of a chat message.
 // Values: UNREAD (not yet seen by recipient), READ (seen), DELETED (removed from conversation).
 // Used by Message.status for read receipts and message deletion.
+
 enum MessageStatus {
   UNREAD
   READ
@@ -3057,6 +3030,7 @@ enum MessageStatus {
 // RfqProductPriceRequestStatus — Approval status of an RFQ price proposal.
 // Values: PENDING (awaiting response), APPROVED (accepted by counterparty), REJECTED (declined).
 // Used by RfqQuoteProductPriceRequest.status in the RFQ negotiation flow.
+
 enum RfqProductPriceRequestStatus {
   PENDING
   APPROVED
@@ -3065,7 +3039,8 @@ enum RfqProductPriceRequestStatus {
 
 // Gender — User gender classification.
 // Values: MALE, FEMALE.
-// Used by User.gender and MasterAccount.gender for profile information.
+// Used by User.gender for profile information.
+
 enum Gender {
   MALE
   FEMALE
@@ -3075,6 +3050,7 @@ enum Gender {
 // Values: BUYER (purchases products/services), FREELANCER (individual seller), COMPANY (business seller),
 //   MEMBER (team member of a seller/company), ADMINMEMBER (platform admin team member).
 // Used by User.tradeRole; defaults to BUYER on registration. Determines dashboard, permissions, and features.
+
 enum TypeTrader {
   BUYER
   FREELANCER
@@ -3086,6 +3062,7 @@ enum TypeTrader {
 // UserType — Classifies user privilege level for platform access.
 // Values: ADMIN (super admin), USER (regular user), SUBADMIN (admin team member with limited permissions).
 // Used by User.userType to distinguish admin-panel access rights from regular marketplace users.
+
 enum UserType {
   ADMIN
   USER
@@ -3095,6 +3072,7 @@ enum UserType {
 // LoginType — Authentication method used by the user to register/login.
 // Values: MANUAL (email/password), SOCIAL (generic social login), FACEBOOK, GOOGLE.
 // Used by User.loginType to determine authentication flow and password requirements.
+
 enum LoginType {
   MANUAL
   SOCIAL
@@ -3105,6 +3083,7 @@ enum LoginType {
 // StatusYesNO — Simple boolean-like enum for yes/no flags stored as strings.
 // Values: YES, NO.
 // Used by Category.blackList and Category.whiteList for category access control flags.
+
 enum StatusYesNO {
   YES
   NO
@@ -3113,6 +3092,7 @@ enum StatusYesNO {
 // ProductType — High-level product classification.
 // Values: P (standard Product), R (RFQ-only product, not directly purchasable), F (Factory/customizable product).
 // Used by Product.productType and ExistingProduct.productType to determine listing and purchase flow.
+
 enum ProductType {
   P
   R
@@ -3123,6 +3103,7 @@ enum ProductType {
 // TypeOfProduct — Describes the nature/origin of a product.
 // Values: BRAND (official brand product), SPAREPART (replacement/accessory part), OWNBRAND (seller's own brand/white-label).
 // Used by Product.typeOfProduct and ExistingProduct.typeOfProduct for product classification.
+
 enum TypeOfProduct {
   BRAND
   SPAREPART
@@ -3132,6 +3113,7 @@ enum TypeOfProduct {
 // TypeProduct — Distinguishes between vendor-local and brand-authorized products.
 // Values: VENDORLOCAL (sourced/sold locally by the vendor), BRAND (authorized brand channel product).
 // Used by Product.typeProduct and ExistingProduct.typeProduct for supply chain classification.
+
 enum TypeProduct {
   VENDORLOCAL
   BRAND
@@ -3140,6 +3122,7 @@ enum TypeProduct {
 // ConsumerType — Defines the target audience for a product price listing.
 // Values: CONSUMER (B2C end consumers only), VENDORS (B2B sellers/resellers only), EVERYONE (both).
 // Used by ProductPrice.consumerType to control visibility and pricing tiers.
+
 enum ConsumerType {
   CONSUMER
   VENDORS
@@ -3151,6 +3134,7 @@ enum ConsumerType {
 //   OTHERS (miscellaneous), EVERYONE (all sell types apply), TRIAL_PRODUCT (free/discounted trial),
 //   WHOLESALE_PRODUCT (bulk/wholesale pricing).
 // Used by ProductPrice.sellType to determine checkout behavior and pricing rules.
+
 enum SellType {
   NORMALSELL
   BUYGROUP
@@ -3163,6 +3147,7 @@ enum SellType {
 // rFqType — Classifies RFQ products by their origin type.
 // Values: P (existing platform product), R (buyer-described RFQ-only product not in catalog).
 // Used by RFQProduct.type to distinguish between catalog-referenced and custom RFQ items.
+
 enum rFqType {
   P
   R
@@ -3171,6 +3156,7 @@ enum rFqType {
 // CartType — Distinguishes the type of item in the shopping cart.
 // Values: DEFAULT (standard product), SERVICE (bookable/moving service).
 // Used by Cart.cartType to route checkout logic for products vs. services.
+
 enum CartType {
   DEFAULT
   SERVICE
@@ -3179,6 +3165,7 @@ enum CartType {
 // RFQCartType — Classifies items in the RFQ shopping cart.
 // Values: DEFAULT (general), P (existing product from catalog), R (buyer-described RFQ-only item).
 // Used by RFQCart.rfqCartType to determine handling during RFQ quote submission.
+
 enum RFQCartType {
   DEFAULT
   P
@@ -3188,6 +3175,7 @@ enum RFQCartType {
 // OrderType — Distinguishes between product orders and service orders at the Order level.
 // Values: DEFAULT (product purchase), SERVICE (service booking/moving order).
 // Used by Order.orderType to route post-purchase fulfillment logic.
+
 enum OrderType {
   DEFAULT
   SERVICE
@@ -3196,6 +3184,7 @@ enum OrderType {
 // OrderStatus — Payment/completion status of an order.
 // Values: PENDING (awaiting payment), PAID (payment received), COMPLETE (fully fulfilled and closed).
 // Used by Order.orderStatus. Transitions: PENDING -> PAID (on payment confirmation) -> COMPLETE (on delivery).
+
 enum OrderStatus {
   PENDING
   PAID
@@ -3206,6 +3195,7 @@ enum OrderStatus {
 // Values: PLACED (order submitted), CONFIRMED (seller accepted), SHIPPED (in transit),
 //   OFD (Out For Delivery), DELIVERED (reached buyer), RECEIVED (buyer confirmed receipt), CANCELLED.
 // Used by OrderProducts.orderProductStatus. Each product in a multi-seller order progresses independently.
+
 enum OrderProductStatus {
   CANCELLED
   CONFIRMED
@@ -3219,6 +3209,7 @@ enum OrderProductStatus {
 // AddressType — Distinguishes between billing and shipping addresses on an order.
 // Values: BILLING (invoice/payment address), SHIPPING (delivery destination).
 // Used by OrderAddress.addressType; each order typically has one of each.
+
 enum AddressType {
   BILLING
   SHIPPING
@@ -3227,6 +3218,7 @@ enum AddressType {
 // EmiStatus — Status of an EMI (installment payment) plan.
 // Values: STOPPED (paused/defaulted), ONGOING (active with remaining installments), COMPLETED (fully paid).
 // Used by OrderEMI.emiStatus to track installment payment progress.
+
 enum EmiStatus {
   STOPPED
   ONGOING
@@ -3237,6 +3229,7 @@ enum EmiStatus {
 // Values: PICKUP (buyer collects from seller), SELLERDROP (seller delivers directly),
 //   THIRDPARTY (external logistics provider), PLATFORM (platform's own moving/delivery service).
 // Used by OrderShipping.orderShippingType to determine fulfillment workflow.
+
 enum OrderShippingType {
   PICKUP
   SELLERDROP
@@ -3247,6 +3240,7 @@ enum OrderShippingType {
 // QuestionType — Distinguishes whether a Q&A entry is about a product or a service.
 // Values: PRODUCT, SERVICE.
 // Used by ProductQuestion.questionType and ProductQuestionAnswer.questionType.
+
 enum QuestionType {
   PRODUCT
   SERVICE
@@ -3319,7 +3313,6 @@ model Banner {
   @@index([priority])
   @@index([startDate, endDate])
   @@index([isActive, position])
-  @@map("banner")
 }
 
 model SystemLog {
@@ -3327,7 +3320,7 @@ model SystemLog {
   level      String // ERROR, WARN, INFO, DEBUG
   message    String   @db.Text
   context    String? // Module/Controller name
-  userId     Int? // User who triggered the action
+  userId     String? // User who triggered the action
   requestId  String? // Request correlation ID
   method     String? // HTTP method
   path       String? // API endpoint
@@ -3345,7 +3338,6 @@ model SystemLog {
   @@index([userId])
   @@index([requestId])
   @@index([context])
-  @@map("system_log")
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3357,6 +3349,7 @@ model SystemLog {
 // Fields: productId/categoryId (composite unique), isPrimary (one primary for breadcrumbs),
 //   source ("manual"|"keyword"|"tag"|"ai" — how the mapping was created).
 // Replaces the single Product.categoryId FK for multi-category discovery.
+
 model ProductCategoryMap {
   id         Int       @id @default(autoincrement())
   productId  String
@@ -3374,12 +3367,12 @@ model ProductCategoryMap {
   @@unique([productId, categoryId])
   @@index([productId])
   @@index([categoryId])
-  @@map("product_category_map")
 }
 
 // CategoryKeyword — Keywords/synonyms that link products to categories automatically.
 // When a product's name/tags/description contains a keyword, it auto-maps to the category.
 // Example: categoryId=5 (Smartphones), keyword="mobile phone" or "cell phone".
+
 model CategoryKeyword {
   id         Int       @id @default(autoincrement())
   categoryId Int
@@ -3394,12 +3387,12 @@ model CategoryKeyword {
   @@unique([categoryId, keyword])
   @@index([keyword])
   @@index([categoryId])
-  @@map("category_keyword")
 }
 
 // CategoryTag — Links Tags to Categories, replacing the keyword-based auto-mapping system.
 // Tags become the universal connector: shared tags link products, services, and business types to categories.
 // When a product/service has tags that match a category's tags, it auto-maps to that category.
+
 model CategoryTag {
   id         Int       @id @default(autoincrement())
   categoryId Int
@@ -3415,11 +3408,11 @@ model CategoryTag {
   @@unique([categoryId, tagId])
   @@index([categoryId])
   @@index([tagId])
-  @@map("category_tag")
 }
 
 // ServiceCategoryMap — Multi-category mapping for services (mirrors ProductCategoryMap for products).
 // Allows services to belong to multiple categories with a primary designation and source tracking.
+
 model ServiceCategoryMap {
   id         Int       @id @default(autoincrement())
   serviceId  Int
@@ -3437,7 +3430,6 @@ model ServiceCategoryMap {
   @@unique([serviceId, categoryId])
   @@index([serviceId])
   @@index([categoryId])
-  @@map("service_category_map")
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3447,6 +3439,7 @@ model ServiceCategoryMap {
 
 // SpecDataType — Enum for specification field data types.
 // Determines how the spec renders in forms and how filters work.
+
 enum SpecDataType {
   TEXT
   NUMBER
@@ -3461,6 +3454,7 @@ enum SpecDataType {
 //   unit (optional: "GB", "inches"), options (JSON array for SELECT/MULTI_SELECT),
 //   isRequired (must fill), isFilterable (appears in filter sidebar),
 //   sortOrder (display order), groupName (visual grouping: "Display", "Performance").
+
 model SpecTemplate {
   id           Int          @id @default(autoincrement())
   categoryId   Int
@@ -3484,12 +3478,12 @@ model SpecTemplate {
   @@unique([categoryId, key])
   @@index([categoryId, isFilterable])
   @@index([categoryId, sortOrder])
-  @@map("spec_template")
 }
 
 // ProductSpecValue — Actual spec values for a product, linked to a SpecTemplate.
 // Fields: value (string representation), numericValue (parsed decimal for range filters).
 // Join between Product and SpecTemplate: each product fills the template's fields.
+
 model ProductSpecValue {
   id             Int       @id @default(autoincrement())
   productId      String
@@ -3508,165 +3502,6 @@ model ProductSpecValue {
   @@index([specTemplateId, value])
   @@index([specTemplateId, numericValue])
   @@index([productId])
-  @@map("product_spec_value")
-}
-
-// ══════════════════════════════════════════════════════════════
-// Health Check Logging
-// ══════════════════════════════════════════════════════════════
-
-// SystemHealthLog — Records health check results for system components.
-// Used by the HealthModule to track database, Redis, S3, and API health over time.
-model SystemHealthLog {
-  id         Int      @id @default(autoincrement())
-  component  String // "database", "redis", "s3", "openrouter", "sendgrid"
-  status     String // "healthy", "degraded", "down"
-  responseMs Int? // response time in ms
-  details    Json? // extra diagnostic info
-  checkedAt  DateTime @default(now())
-
-  @@index([component, checkedAt])
-  @@map("system_health_log")
-}
-
-// ══════════════════════════════════════════════════════════════
-// Strategy Lab — Multi-asset, multi-TF, multi-strategy testing
-// ══════════════════════════════════════════════════════════════
-
-// StrategyLabRun — One test run (solo or combined). Tracks config, status, and aggregate results.
-// Created when admin clicks "Run Test". Updated as the test progresses.
-// Relations: StrategyLabCombo (combos in this run), StrategyLabTrade (trades in this run).
-model StrategyLabRun {
-  id         Int     @id @default(autoincrement())
-  name       String? // Optional name for the run (e.g. "XAUUSD solo M15+H1")
-  mode       String // "solo" or "combined"
-  configJson Json // Full config: assets, timeframes, strategies, equity, stages, min_grade
-  statusRun  String  @default("pending") // "pending", "running", "done", "failed"
-  progress   Int     @default(0) // 0-100 percentage
-
-  // Aggregate results (filled when done)
-  totalCombos     Int   @default(0)
-  qualifiedCombos Int   @default(0)
-  totalTrades     Int   @default(0)
-  totalPnl        Float @default(0)
-  finalEquity     Float @default(0)
-  startingEquity  Float @default(10000)
-  returnPct       Float @default(0)
-  elapsedSeconds  Float @default(0)
-
-  // Solo-specific summaries
-  gradesJson      Json? // {"A": 5, "B": 12, "C": 8, ...}
-  assetSummary    Json? // Per-asset aggregates
-  strategySummary Json? // Per-strategy aggregates
-  tfSummary       Json? // Per-TF aggregates
-
-  // Combined-specific
-  equityCurve  Json? // [{stage, equity, time}, ...]
-  stageReports Json? // [{stage, trades, pnl, equity, active, paused}, ...]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  combos StrategyLabCombo[]
-  trades StrategyLabTrade[]
-
-  @@index([mode, statusRun])
-  @@index([createdAt])
-  @@map("strategy_lab_run")
-}
-
-// StrategyLabCombo — Results for one asset×TF×strategy combo within a run.
-// In solo mode: independent metrics. In combined mode: includes stage history and risk multiplier.
-model StrategyLabCombo {
-  id    Int            @id @default(autoincrement())
-  runId Int
-  run   StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  asset     String // e.g. "XAUUSD"
-  timeframe String // e.g. "H1"
-  strategy  String // e.g. "Momentum"
-  comboKey  String // e.g. "XAUUSD_Momentum_H1"
-  tier      Int    @default(1) // Asset risk tier 1/2/3
-
-  // Metrics
-  totalTrades  Int   @default(0)
-  wins         Int   @default(0)
-  losses       Int   @default(0)
-  winRate      Float @default(0)
-  profitFactor Float @default(0)
-  totalPnl     Float @default(0)
-  maxDrawdown  Float @default(0)
-  avgPnl       Float @default(0)
-  bestTrade    Float @default(0)
-  worstTrade   Float @default(0)
-
-  // Hit counts
-  tp1Hits    Int @default(0)
-  tp2Hits    Int @default(0)
-  tp3Hits    Int @default(0)
-  slHits     Int @default(0)
-  expireHits Int @default(0)
-
-  // Solo grading
-  grade String? // "A", "B", "C", "D", "F"
-
-  // Combined staging
-  paused        Boolean @default(false)
-  finalRiskMult Float   @default(1.0)
-  stageHistory  Json? // [{stage, pf, trades, pnl, action, risk_mult}, ...]
-
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  trades StrategyLabTrade[]
-
-  @@index([runId])
-  @@index([asset, timeframe, strategy])
-  @@index([grade])
-  @@index([profitFactor])
-  @@map("strategy_lab_combo")
-}
-
-// StrategyLabTrade — Individual trade record within a lab test.
-// Full detail: entry, exit, P&L, level hits, timing, stage number.
-model StrategyLabTrade {
-  id      Int              @id @default(autoincrement())
-  runId   Int
-  run     StrategyLabRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  comboId Int
-  combo   StrategyLabCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
-
-  asset      String
-  timeframe  String
-  strategy   String
-  direction  String // "buy" or "sell"
-  entryPrice Float
-  exitPrice  Float?
-  pnl        Float  @default(0)
-  barsHeld   Int    @default(0)
-
-  entryTime String? // ISO timestamp string
-  exitTime  String?
-  day       String? // Date string (YYYY-MM-DD)
-
-  // Level hits as JSON: [["TP1", 45.20], ["SL", -30.10]]
-  hitsJson Json?
-
-  // Combined mode extras
-  stageNumber Int?
-  riskMult    Float?
-
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  @@index([runId])
-  @@index([comboId])
-  @@index([asset, strategy, timeframe])
-  @@map("strategy_lab_trade")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3674,6 +3509,7 @@ model StrategyLabTrade {
 // ═══════════════════════════════════════════════════════════════
 
 // ScrapingJob — Tracks each scraping task (one per platform+category+region combo).
+
 model ScrapingJob {
   id             Int               @id @default(autoincrement())
   platform       String // amazon | alibaba | aliexpress | taobao
@@ -3721,10 +3557,10 @@ model ScrapingJob {
   @@index([platform, status])
   @@index([status, priority])
   @@index([batchId])
-  @@map("scraping_job")
 }
 
 // ScrapedProductRaw — Raw scraped data staging table before processing.
+
 model ScrapedProductRaw {
   id    Int @id @default(autoincrement())
   jobId Int
@@ -3762,10 +3598,10 @@ model ScrapedProductRaw {
   @@index([jobId, status])
   @@index([sourcePlatform, status])
   @@index([productId])
-  @@map("scraped_product_raw")
 }
 
 // CategoryMapping — Maps source platform categories to Ultrasooq categories.
+
 model CategoryMapping {
   id             Int     @id @default(autoincrement())
   sourcePlatform String // amazon | alibaba | aliexpress | taobao
@@ -3789,7 +3625,6 @@ model CategoryMapping {
 
   @@unique([sourcePlatform, sourcePath])
   @@index([ultrasooqCategoryId])
-  @@map("category_mapping")
 }
 
 enum ScrapingJobStatus {
@@ -3883,40 +3718,6 @@ model ScrapedAutoPart {
   @@index([category, subcategory])
   @@index([jobId])
   @@index([productId])
-  @@map("scraped_auto_part")
-}
-
-model PartsDiagram {
-  id        Int     @id @default(autoincrement())
-  diagramId String  @unique
-  name      String
-  imageUrl  String
-  svgUrl    String?
-
-  // Vehicle
-  vehicleMake   String
-  vehicleModel  String
-  vehicleYear   Int?
-  vehicleEngine String?
-
-  // Categorization
-  category    String
-  subcategory String?
-
-  // Parts in this diagram (JSON array of DiagramPart)
-  parts Json @default("[]")
-
-  // Source
-  sourceUrl      String
-  sourcePlatform String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([vehicleMake, vehicleModel])
-  @@index([sourcePlatform])
-  @@index([category])
-  @@map("parts_diagram")
 }
 
 model ContentFilterRule {
@@ -3937,7 +3738,7 @@ model ContentFilterRule {
 
 model ContentFilterLog {
   id           Int      @id @default(autoincrement())
-  userId       Int
+  userId       String
   context      String
   field        String
   inputText    String
@@ -3972,16 +3773,14 @@ model RecommendationMetric {
   @@unique([date, algorithm, placement, segment, experiment])
   @@index([date])
   @@index([algorithm])
-  @@map("recommendation_metrics")
 }
 
-// NOTE: RecommendationFeedback uses UUID (String) as its own PK but references
-// Product.id (Int) and User.id (Int) as FKs. When joining with RecommendationMetric
-// (also UUID PK), aggregate by productId (Int) — don't join on the UUID PKs directly.
+// RecommendationFeedback — Tracks recommendation impressions/clicks/cart-adds/purchases per user.
+
 model RecommendationFeedback {
   id         String   @id @default(uuid())
   recId      String   @db.VarChar(100)
-  userId     Int?
+  userId     String?
   deviceId   String?  @db.VarChar(100)
   productId  String
   algorithm  String   @db.VarChar(50)
@@ -3999,7 +3798,6 @@ model RecommendationFeedback {
   @@index([recId])
   @@index([userId])
   @@index([algorithm, placement, createdAt])
-  @@map("recommendation_feedback")
 }
 
 model CrossSellRule {
@@ -4008,7 +3806,7 @@ model CrossSellRule {
   targetCategoryId Int
   priority         Int      @default(0)
   isActive         Boolean  @default(true)
-  createdBy        Int
+  createdBy        String
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -4017,79 +3815,14 @@ model CrossSellRule {
 
   @@unique([sourceCategoryId, targetCategoryId])
   @@index([sourceCategoryId])
-  @@map("cross_sell_rules")
 }
 
 model RecommendationConfig {
   id        String   @id @default(uuid())
   key       String   @unique @db.VarChar(100)
   value     Json
-  updatedBy Int
+  updatedBy String
   updatedAt DateTime @updatedAt
-
-  @@map("recommendation_config")
-}
-
-// ── Search Intelligence: Knowledge Graph Models ──────────────────────────────
-
-model UseCaseMapping {
-  id           Int       @id @default(autoincrement())
-  categoryId   Int
-  useCase      String    @db.VarChar(100)
-  impliedSpecs Json
-  impliedTags  Json?
-  weight       Decimal   @default(0.8) @db.Decimal(3, 2)
-  source       String    @default("manual") @db.VarChar(20)
-  status       Status    @default(ACTIVE)
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  category     Category  @relation("CategoryUseCases", fields: [categoryId], references: [id])
-
-  @@unique([categoryId, useCase])
-  @@index([categoryId])
-  @@index([useCase])
-  @@map("use_case_mappings")
-}
-
-model CompatibilityRule {
-  id           Int       @id @default(autoincrement())
-  productId    String
-  vehicleMake  String?   @db.VarChar(100)
-  vehicleModel String?   @db.VarChar(100)
-  yearFrom     Int?
-  yearTo       Int?
-  deviceBrand  String?   @db.VarChar(100)
-  deviceModel  String?   @db.VarChar(100)
-  compatType   String    @db.VarChar(20)
-  status       Status    @default(ACTIVE)
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  product      Product   @relation("ProductCompatibility", fields: [productId], references: [id])
-
-  @@index([productId])
-  @@index([vehicleMake, vehicleModel])
-  @@index([deviceBrand, deviceModel])
-  @@map("compatibility_rules")
-}
-
-model AccessoryLink {
-  id                  Int       @id @default(autoincrement())
-  sourceCategoryId    Int
-  accessoryCategoryId Int
-  strength            Decimal   @default(0.8) @db.Decimal(3, 2)
-  bidirectional       Boolean   @default(false)
-  status              Status    @default(ACTIVE)
-  deletedAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  sourceCategory      Category  @relation("AccessorySource", fields: [sourceCategoryId], references: [id])
-  accessoryCategory   Category  @relation("AccessoryTarget", fields: [accessoryCategoryId], references: [id])
-
-  @@unique([sourceCategoryId, accessoryCategoryId])
-  @@index([sourceCategoryId])
-  @@map("accessory_links")
 }
 
 model TermDisambiguation {
@@ -4106,7 +3839,6 @@ model TermDisambiguation {
 
   @@index([term])
   @@index([categoryId])
-  @@map("term_disambiguations")
 }
 
 // ─── Complaint & Refund ─────────────────────────────────────────
@@ -4114,8 +3846,8 @@ model TermDisambiguation {
 model Complaint {
   id             Int           @id @default(autoincrement())
   orderProductId Int
-  buyerId        Int
-  sellerId       Int?
+  buyerId        String
+  sellerId       String?
   reason         String // damaged, wrong_item, missing, not_described, late, quality, seller, other
   description    String        @db.Text
   status         String        @default("OPEN") // OPEN, IN_REVIEW, RESOLVED, REJECTED
@@ -4134,7 +3866,7 @@ model Complaint {
 model RefundRequest {
   id             Int           @id @default(autoincrement())
   orderProductId Int
-  buyerId        Int
+  buyerId        String
   amount         Decimal?      @db.Decimal(10, 2)
   reason         String
   notes          String?       @db.Text
@@ -4195,13 +3927,13 @@ model SubscriptionPlan {
 
 model SupportConversation {
   id         Int              @id @default(autoincrement())
-  userId     Int?
+  userId     String?
   userEmail  String?
   topic      String?
   subject    String?
   priority   String           @default("normal")
   status     String           @default("open")
-  assigneeId Int?
+  assigneeId String?
   isRead     Boolean          @default(false)
   deletedAt  DateTime?
   createdAt  DateTime         @default(now())
@@ -4220,7 +3952,7 @@ model SupportConversation {
 model SupportMessage {
   id             Int                 @id @default(autoincrement())
   conversationId Int
-  senderId       Int?
+  senderId       String?
   senderType     String              @default("user")
   content        String              @db.Text
   createdAt      DateTime            @default(now())
@@ -4240,4 +3972,132 @@ model KnowledgeBase {
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+// ══════════════════════════════════════════════════════════════
+// Better Auth core models — managed by the better-auth library via
+// prismaAdapter. The `User` model itself lives at the top of this file
+// (the canonical platform user). See MIGRATION_TODO.mdx for the full
+// JWT→Better Auth migration history.
+// ══════════════════════════════════════════════════════════════
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activeOrganizationId String?
+  impersonatedBy       String?
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String? // bcrypt for credential provider
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  members     Member[]
+  invitations Invitation[]
+
+  @@unique([slug])
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model TwoFactor {
+  id          String   @id
+  secret      String
+  backupCodes String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified    Boolean? @default(true)
+
+  @@index([secret])
+  @@index([userId])
+}
+
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime?
+  aaguid       String?
+
+  @@index([userId])
+  @@index([credentialID])
 }
