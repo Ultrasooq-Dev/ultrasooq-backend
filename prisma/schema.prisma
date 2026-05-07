@@ -11,6 +11,7 @@ datasource db {
 // Fields: name (permission label), addedBy (ID of the user who created the permission).
 // Relations: UserRolePermission (M:N join to UserRole via UserRolePermission).
 // Used by the RBAC system for seller-side team member access control.
+
 model Permission {
   id                 Int                  @id @default(autoincrement())
   name               String?
@@ -33,6 +34,7 @@ model Permission {
 // src/auth-better/auth.ts) are duplicated as plain Prisma columns here so the rest of the app
 // can query them directly. Adding a column here requires adding the matching `additionalFields`
 // entry over there if the frontend needs to read it through `auth.api.getSession()`.
+
 model User {
   id                                   String                        @id
   email                                String                        @unique
@@ -144,6 +146,7 @@ model User {
 // Fields: userRoleName (role label), addedBy (the seller who created this role).
 // Relations: UserRolePermission (M:N join to Permission), TeamMember (members assigned this role), User (direct link).
 // Part of the seller-side RBAC system: sellers create roles, attach permissions, then assign roles to team members.
+
 model UserRole {
   id                 Int                  @id @default(autoincrement())
   userRoleName       String?
@@ -161,6 +164,7 @@ model UserRole {
 // Fields: userRoleId (FK to UserRole), permissionId (FK to Permission).
 // Relations: permissionDetail -> Permission, userRoleDetail -> UserRole.
 // Each row grants a specific permission to a specific seller team role.
+
 model UserRolePermission {
   id               Int         @id @default(autoincrement())
   userRoleId       Int?
@@ -181,6 +185,7 @@ model UserRolePermission {
 //   cityId/countryId/stateId (FK to geographic lookup tables), town (sub-city level).
 // Relations: userDetail -> User, cityDetail -> Cities, countryDetail -> Countries, stateDetail -> States.
 // Users can have multiple saved addresses for checkout convenience.
+
 model UserAddress {
   id            Int        @id @default(autoincrement())
   status        Status     @default(ACTIVE)
@@ -216,6 +221,7 @@ model UserAddress {
 // Fields: phoneNumber (the number), cc (country code), userId (FK to owning User).
 // Relations: user -> User.
 // Allows users to store multiple contact phone numbers beyond the primary one on User.
+
 model UserPhone {
   id          Int       @id @default(autoincrement())
   phoneNumber String
@@ -234,6 +240,7 @@ model UserPhone {
 // Fields: linkType (e.g., "facebook", "linkedin"), link (the URL), userId (FK to User).
 // Relations: user -> User.
 // Displayed on seller/company public profiles.
+
 model UserSocialLink {
   id        Int       @id @default(autoincrement())
   linkType  String?
@@ -254,6 +261,7 @@ model UserSocialLink {
 //   annualPurchasingVolume (buyer-specific metric), phoneNumber/cc (profile-level contact).
 // Relations: user -> User, userProfileBusinessType (M:N to Tags via UserProfileBusinessType).
 // A user may have multiple profiles (one per trade role or business entity).
+
 model UserProfile {
   id                      Int                       @id @default(autoincrement())
   profileType             String
@@ -285,6 +293,7 @@ model UserProfile {
 // Fields: userId (FK to User), userProfileId (FK to UserProfile), businessTypeId (FK to Tags).
 // Relations: userProfileBusinessTypeTag -> Tags, userDetail -> User, userProfileBusinessType -> UserProfile.
 // Categorizes what type of business the user profile represents (e.g., manufacturer, distributor).
+
 model UserProfileBusinessType {
   id                         Int         @id @default(autoincrement())
   status                     Status      @default(ACTIVE)
@@ -310,6 +319,7 @@ model UserProfileBusinessType {
 // Relations: user -> User, userBranchBusinessType (business types), userBranchCategory (categories),
 //   userBranchTags (tags for search/filter).
 // Sellers with multiple locations list each branch separately.
+
 model UserBranch {
   id                            Int                      @id @default(autoincrement())
   userProfileId                 Int
@@ -353,6 +363,7 @@ model UserBranch {
 // Fields: userId, businessTypeId (FK to Tags), userBranchId (FK to UserBranch).
 // Relations: userBranch_BusinessType_Tag -> Tags, userBranch -> UserBranch.
 // Describes the business type of a specific branch (e.g., warehouse, retail showroom).
+
 model UserBranchBusinessType {
   id                          Int        @id @default(autoincrement())
   userId                      String
@@ -373,6 +384,7 @@ model UserBranchBusinessType {
 // Fields: userId, userBranchId (FK to UserBranch), tagId (FK to Tags).
 // Relations: userBranchTagsTag -> Tags, userBranch -> UserBranch.
 // Enables tagging branches with keywords for discovery (e.g., "wholesale", "electronics").
+
 model UserBranchTags {
   id                Int        @id @default(autoincrement())
   userId            String
@@ -393,6 +405,7 @@ model UserBranchTags {
 // Fields: userId, userBranchId (FK to UserBranch), categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: userBranchCategory_category -> Category, userBranch -> UserBranch.
 // Specifies which product categories a particular branch handles.
+
 model UserBranchCategory {
   id                          Int         @id @default(autoincrement())
   userId                      String?
@@ -414,6 +427,7 @@ model UserBranchCategory {
 // Fields: userId, categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: categoryDetail -> Category.
 // Unlike UserBranchCategory, this applies at the user/company level rather than a specific branch.
+
 model UserBusinessCategory {
   id               Int       @id @default(autoincrement())
   userId           String?
@@ -433,6 +447,7 @@ model UserBusinessCategory {
 // Fields: userId (FK to the member User), userRoleId (FK to UserRole), addedBy (the seller who added them).
 // Relations: userDetail -> User, userRolDetail -> UserRole.
 // When a seller invites a team member (MEMBER tradeRole), a TeamMember row links them to the seller's UserRole.
+
 model TeamMember {
   id            Int       @id @default(autoincrement())
   userId        String?
@@ -454,6 +469,7 @@ model TeamMember {
 // Relations: ProductTags, ExistingProductTags, ServiceTag (tag products/services for search),
 //   UserBranchBusinessType, UserBranchTags, UserProfileBusinessType (tag user profiles/branches).
 // Provides a unified tagging taxonomy for search, filtering, and categorization across the platform.
+
 model Tags {
   id                       Int                       @id @default(autoincrement())
   tagName                  String
@@ -479,6 +495,7 @@ model Tags {
 //   Products, Services, ExistingProducts, DynamicFormCategory, UserBranchCategory, UserBusinessCategory,
 //   Fees (linked fee schedules for store, RFQ, and customer contexts), policy (linked policy rules).
 // Central taxonomy model; categories drive navigation menus, fee calculations, and product organization.
+
 model Category {
   id                               Int                     @id @default(autoincrement())
   name                             String
@@ -544,6 +561,7 @@ model Category {
 //   connectToType (type of connection).
 // Relations: categoryConnectTo_category -> Category (source), connectToDetail -> Category (target).
 // Used to link categories from different hierarchies (e.g., linking a menu category to a product category).
+
 model CategoryConnectTo {
   id                         Int       @id @default(autoincrement())
   categoryId                 Int?
@@ -569,6 +587,7 @@ model CategoryConnectTo {
 //   FeesCountry (country-level applicability), FeesCategoryConnectTo (category-level scoping),
 //   FeesToFeesDetail (vendor-consumer detail pairing), policy.
 // Fees are hierarchical: a fee can be scoped globally or narrowed to country -> state -> city -> town via child models.
+
 model Fees {
   id                         Int                     @id @default(autoincrement())
   feeName                    String?
@@ -600,6 +619,7 @@ model Fees {
 // Relations: feesDetail_fees -> Fees, vendorLocation/consumerLocation -> FeesLocation,
 //   FeesToFeesDetail (pairing of vendor/consumer details).
 // Contains the actual numeric rates/caps used in platform fee calculations at checkout.
+
 model FeesDetail {
   id                     Int                @id @default(autoincrement())
   feeId                  Int?
@@ -635,6 +655,7 @@ model FeesDetail {
 // Fields: feeId (FK to parent Fees), vendorDetailId (FK to FeesDetail for vendor), consumerDetailId (FK to FeesDetail for consumer).
 // Relations: fees_feesToFeesDetail -> Fees, vendorDetail -> FeesDetail, consumerDetail -> FeesDetail.
 // Allows the system to look up the matching vendor and consumer fee schedules together for a transaction.
+
 model FeesToFeesDetail {
   id                    Int         @id @default(autoincrement())
   feeId                 Int?
@@ -654,6 +675,7 @@ model FeesToFeesDetail {
 //   feeId (associated Fees), feeLocationType (vendor/consumer identifier).
 // Relations: Cities, Countries, States (geographic lookups), consumerFeesDetails/vendorFeesDetails -> FeesDetail.
 // Enables location-specific fee overrides: a fee can have different rates per country/state/city/town.
+
 model FeesLocation {
   id                   Int          @id @default(autoincrement())
   countryId            Int?
@@ -677,6 +699,7 @@ model FeesLocation {
 // Fields: feeId (FK to Fees), countryId (FK to Countries).
 // Relations: feesCountry_country -> Countries, feesCountry_fees -> Fees, feesCountry_feesState -> FeesState (children).
 // First level of the fee geography hierarchy: Fees -> FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesCountry {
   id                    Int         @id @default(autoincrement())
   feeId                 Int?
@@ -694,6 +717,7 @@ model FeesCountry {
 // Fields: feeId, feesCountryId (FK to FeesCountry parent), stateId (FK to States), countryId.
 // Relations: feesState_feesCountry -> FeesCountry (parent), feesState_state -> States, feesState_feesCity -> FeesCity (children).
 // Second level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesState {
   id                    Int          @id @default(autoincrement())
   feeId                 Int?
@@ -713,6 +737,7 @@ model FeesState {
 // Fields: feeId, feesCountryId, feesStateId (FK to FeesState parent), cityId (FK to Cities), countryId, stateId.
 // Relations: feesCity_city -> Cities, feesCity_feesState -> FeesState (parent), feesCity_feesTown -> FeesTown (children).
 // Third level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesCity {
   id                 Int        @id @default(autoincrement())
   feeId              Int?
@@ -735,6 +760,7 @@ model FeesCity {
 //   cityId, countryId, stateId (denormalized geographic IDs).
 // Relations: feesTown_feesCity -> FeesCity (parent).
 // Fourth/final level: FeesCountry -> FeesState -> FeesCity -> FeesTown.
+
 model FeesTown {
   id                Int       @id @default(autoincrement())
   feeId             Int?
@@ -756,6 +782,7 @@ model FeesTown {
 // Fields: feeId (FK to Fees), categoryId (FK to Category), categoryLocation (breadcrumb path), feesCountryId.
 // Relations: categoryDetail -> Category, feesCategoryConnectTo_fees -> Fees.
 // Scopes a fee schedule to particular product/service categories beyond geographic filtering.
+
 model FeesCategoryConnectTo {
   id                         Int       @id @default(autoincrement())
   feeId                      Int?
@@ -775,6 +802,7 @@ model FeesCategoryConnectTo {
 //   parentId (self-referencing for hierarchical policy trees).
 // Relations: policy_category -> Category[], policy_fees -> Fees[], parent/children (self-join for nesting).
 // Governs business rules such as return policies, listing requirements, or fee terms per category.
+
 model Policy {
   id              Int        @id @default(autoincrement())
   ruleName        String?
@@ -802,6 +830,7 @@ model Policy {
 //   Cart, OrderProducts, RFQProduct/RfqQuotesProducts (RFQ flow), CustomizeProduct (factory customization),
 //   SellerReward/SharedLink (referral rewards), Wishlist.
 // Products default to INACTIVE status and require activation/approval before being visible.
+
 model Product {
   id                              String                    @id @default(cuid())
   productName                     String
@@ -912,6 +941,7 @@ model Product {
 // Relations: Product, User (seller), Cart, OrderProducts, ProductPriceReview, ProductSellerImage,
 //   Cities/Countries/States (product location), Category (menu).
 // This is the key join table enabling the multi-seller marketplace: many sellers can offer different prices for one product.
+
 model ProductPrice {
   id                              Int                  @id @default(autoincrement())
   productId                       String?
@@ -980,6 +1010,7 @@ model ProductPrice {
 // Fields: productId, productPriceId (links to both product and seller price), object (JSON blob of variant attributes).
 // Relations: None defined (uses raw IDs without Prisma-level FK relations).
 // Variant data is stored as flexible JSON to accommodate varying attribute schemas per category.
+
 model ProductVariant {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1001,6 +1032,7 @@ model ProductVariant {
 // Fields: productId (FK to Product), productPriceId, countryId (FK to Countries), countryName.
 // Relations: countryDetail -> Countries, productDetail -> Product.
 // Part of geographic sell restrictions: sellers specify which countries they will serve for a given product.
+
 model ProductSellCountry {
   id             Int        @id @default(autoincrement())
   productId      String?
@@ -1022,6 +1054,7 @@ model ProductSellCountry {
 // Fields: productId (FK to Product), productPriceId, stateId (FK to States), stateName.
 // Relations: productDetail -> Product, stateDetail -> States.
 // State-level geographic sell restriction, used alongside ProductSellCountry and ProductSellCity.
+
 model ProductSellState {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1043,6 +1076,7 @@ model ProductSellState {
 // Fields: productId (FK to Product), productPriceId, cityId (FK to Cities), cityName.
 // Relations: cityDetail -> Cities, productDetail -> Product.
 // City-level geographic sell restriction, the most granular sell-region control for products.
+
 model ProductSellCity {
   id             Int       @id @default(autoincrement())
   productId      String?
@@ -1064,6 +1098,7 @@ model ProductSellCity {
 // Fields: productPriceId (FK to ProductPrice), imageName/image (image data), videoName/video (video data).
 // Relations: productSellerImage_productPrice -> ProductPrice.
 // Allows each seller to upload their own product photos/videos independent of the base product images.
+
 model ProductSellerImage {
   id                              Int           @id @default(autoincrement())
   productPriceId                  Int?
@@ -1084,6 +1119,7 @@ model ProductSellerImage {
 // Fields: productId (FK to Product), adminId, specification (value text), label (specification name).
 // Relations: productSpecification_product -> Product.
 // Multiple rows per product allow structured spec display (e.g., "Weight: 1.5kg", "Material: Steel").
+
 model ProductSpecification {
   id                           Int       @id @default(autoincrement())
   productId                    String?
@@ -1103,6 +1139,7 @@ model ProductSpecification {
 // Fields: productId (FK to Product), adminId, shortDescription (text content).
 // Relations: productShortDescription_product -> Product.
 // Allows structured short descriptions, potentially per-seller or per-admin.
+
 model ProductShortDescription {
   id                              Int       @id @default(autoincrement())
   productId                       String?
@@ -1121,6 +1158,7 @@ model ProductShortDescription {
 // Fields: productId (FK to Product), tagId (FK to Tags).
 // Relations: productTags_product -> Product, productTagsTag -> Tags.
 // Tags improve product discoverability via search and filtering.
+
 model ProductTags {
   id                  Int       @id @default(autoincrement())
   productId           String
@@ -1141,6 +1179,7 @@ model ProductTags {
 //   variant (JSON linking this image to specific product variant combos).
 // Relations: productImages_product -> Product.
 // These are the canonical product images shared across all sellers, unlike ProductSellerImage which is per-seller.
+
 model ProductImages {
   id                    Int       @id @default(autoincrement())
   productId             String
@@ -1163,6 +1202,7 @@ model ProductImages {
 //   minimumOrder (minimum order count to qualify), startTime/endTime (reward period), stock (available reward slots).
 // Relations: productDetail -> Product.
 // Sellers create reward programs; affiliates share links and earn rewards per sale via SharedLink.
+
 model SellerReward {
   id               Int       @id @default(autoincrement())
   productId        String?
@@ -1188,6 +1228,7 @@ model SellerReward {
 //   totalReward (accumulated reward amount).
 // Relations: linkGeneratedByDetail -> User, productDetail -> Product.
 // When a buyer purchases through a shared link, the link generator earns the seller reward.
+
 model SharedLink {
   id                    Int       @id @default(autoincrement())
   sellerRewardId        Int?
@@ -1213,6 +1254,7 @@ model SharedLink {
 // Fields: userId (FK to reviewing User), productId (FK to Product), title/description (review text), rating (numeric score).
 // Relations: productReview_product -> Product, reviewByUserDetail -> User.
 // Aggregated ratings are used for product ranking and display on product detail pages.
+
 model ProductReview {
   id                    Int       @id @default(autoincrement())
   userId                String?
@@ -1236,6 +1278,7 @@ model ProductReview {
 //   title/description (review text), rating (numeric score).
 // Relations: productPriceReview_productPrice -> ProductPrice, productPriceReview_user -> User.
 // Enables per-seller rating: buyers can rate the same product differently depending on which seller they purchased from.
+
 model ProductPriceReview {
   id                              Int           @id @default(autoincrement())
   userId                          String?
@@ -1327,6 +1370,7 @@ model ProductClick {
 //   questionType (PRODUCT or SERVICE), serviceId, userAccountId.
 // Relations: answerByuserIdDetail/questionByuserIdDetail -> User, productQuestionAnswerDetail -> ProductQuestionAnswer[].
 // Supports a public Q&A section where buyers ask and sellers/other buyers answer questions.
+
 model ProductQuestion {
   id                          Int                     @id @default(autoincrement())
   productId                   String?
@@ -1353,6 +1397,7 @@ model ProductQuestion {
 //   answerByuserId (FK to answering User), questionType (PRODUCT/SERVICE), serviceId.
 // Relations: answerByUserDetail -> User, productQuestion -> ProductQuestion.
 // Enables threaded answers: multiple users can answer the same product/service question.
+
 model ProductQuestionAnswer {
   id                 Int              @id @default(autoincrement())
   productId          String?
@@ -1375,6 +1420,7 @@ model ProductQuestionAnswer {
 // Fields: adminId (seller), userId (buyer), productId (source product).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Prevents duplicate RFQ product entries and tracks which products were cloned for quote requests.
+
 model ProductDuplicateRfq {
   id        Int       @id @default(autoincrement())
   adminId   String?
@@ -1390,6 +1436,7 @@ model ProductDuplicateRfq {
 // Fields: adminId (seller), userId (buyer), productId (source product).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Prevents duplicate factory product entries and tracks which products were cloned for customization requests.
+
 model ProductDuplicateFactories {
   id        Int       @id @default(autoincrement())
   adminId   String?
@@ -1407,6 +1454,7 @@ model ProductDuplicateFactories {
 // Relations: productDetails -> Product, customizeProductImageDetail -> CustomizeProductImage[],
 //   factoriesCartDetail -> FactoriesCart[], factoriesRequest -> FactoriesRequest[].
 // Part of the factory flow: buyer requests a customized version of a product from a seller.
+
 model CustomizeProduct {
   id                          Int                     @id @default(autoincrement())
   sellerId                    String?
@@ -1433,6 +1481,7 @@ model CustomizeProduct {
 // Fields: productId, customizeProductId (FK to CustomizeProduct), link (file URL), linkType (image/document type).
 // Relations: customizeProductDetail -> CustomizeProduct.
 // Buyers attach reference images or design files to illustrate their customization requirements.
+
 model CustomizeProductImage {
   id                     Int               @id @default(autoincrement())
   productId              String?
@@ -1453,6 +1502,7 @@ model CustomizeProductImage {
 //   productId (FK to Product), quantity.
 // Relations: customizeProductDetail -> CustomizeProduct, productDetails -> Product.
 // Holds items before a buyer submits a formal FactoriesRequest.
+
 model FactoriesCart {
   id                     Int               @id @default(autoincrement())
   userId                 String?
@@ -1478,6 +1528,7 @@ model FactoriesCart {
 //   firstName/lastName/phoneNumber/cc/address/city/province/country/postCode (shipping info).
 // Relations: customizeProductDetail -> CustomizeProduct.
 // Represents the formal request after a buyer finalizes their factory cart.
+
 model FactoriesRequest {
   id                     Int               @id @default(autoincrement())
   buyerId                String?
@@ -1514,6 +1565,7 @@ model FactoriesRequest {
 //   adminId/userId (seller/buyer), productNote (buyer's notes), rfqProductName (name if no existing product).
 // Relations: rfqProduct_product -> Product, rfqProduct_rfqCart -> RFQCart[], rfqProductImage -> RFQProductImages[].
 // Buyers create RFQ products to request quotes; these can reference catalog products or be custom-described items.
+
 model RFQProduct {
   id                 Int                @id @default(autoincrement())
   productId          String?
@@ -1538,6 +1590,7 @@ model RFQProduct {
 // Fields: rfqProductId (FK to RFQProduct), imageName/image (file name/path).
 // Relations: rfqProductImage_rfqProduct -> RFQProduct.
 // Buyers upload reference images when creating RFQ product requests.
+
 model RFQProductImages {
   id                         Int         @id @default(autoincrement())
   rfqProductId               Int?
@@ -1556,6 +1609,7 @@ model RFQProductImages {
 // Fields: locationName (display name).
 // Relations: None.
 // General-purpose location reference; distinct from the Countries/States/Cities geographic hierarchy.
+
 model LocationList {
   id           Int       @id @default(autoincrement())
   locationName String?
@@ -1569,6 +1623,7 @@ model LocationList {
 // Fields: brandName, addedBy (creator user ID), brandType (classification string).
 // Relations: brandProducts -> Product[], brandExistingProducts -> ExistingProduct[].
 // Products reference a Brand to enable brand-based filtering and search.
+
 model Brand {
   id                    Int               @id @default(autoincrement())
   brandName             String?
@@ -1587,6 +1642,7 @@ model Brand {
 // Fields: countryName.
 // Relations: countryListProducts -> Product[], countryListExistingProducts -> ExistingProduct[].
 // Distinct from the Countries model (which is used for geographic addresses/fees); this is for product origin labeling.
+
 model CountryList {
   id                          Int               @id @default(autoincrement())
   countryName                 String?
@@ -1605,6 +1661,7 @@ model CountryList {
 //   sharedLinkId (referral link tracking), object (JSON for variant/extra data).
 // Relations: Product, ProductPrice, Service, User, CartProductService[], CartServiceFeature[].
 // Supports both logged-in users (userId) and guests (deviceId) with product and service cart items.
+
 model Cart {
   id                  Int                  @id @default(autoincrement())
   userId              String?
@@ -1638,6 +1695,7 @@ model Cart {
 // Fields: cartId (FK to Cart), serviceFeatureId (FK to ServiceFeature), quantity, bookingDateTime (scheduled time).
 // Relations: cart -> Cart, serviceFeature -> ServiceFeature.
 // When a buyer adds a service to their cart, they select features (e.g., hours, add-ons) and a booking slot.
+
 model CartServiceFeature {
   id               Int            @id @default(autoincrement())
   cartId           Int
@@ -1656,6 +1714,7 @@ model CartServiceFeature {
 //   cartType, relatedCartId/relatedCartType (cross-reference to the paired cart entry).
 // Relations: cart -> Cart, product -> Product, service -> Service.
 // Supports bundled purchases where a product and service are bought together (e.g., product + installation).
+
 model CartProductService {
   id              Int     @id @default(autoincrement())
   productId       String
@@ -1676,6 +1735,7 @@ model CartProductService {
 //   quantity, rfqCartType (DEFAULT/P/R), offerPrice/offerPriceFrom/offerPriceTo (buyer's price expectations), note.
 // Relations: rfqCart_productDetails -> Product, rfqProductDetails -> RFQProduct.
 // Buyers assemble their RFQ cart with products and desired quantities/prices before submitting quotes.
+
 model RFQCart {
   id                     Int          @id @default(autoincrement())
   userId                 String?
@@ -1709,6 +1769,7 @@ model RFQCart {
 //   advanceAmount/dueAmount (for partial/installment payments).
 // Relations: order_orderProducts -> OrderProducts[], order_orderAddress -> OrderAddress[].
 // The parent order entity; individual line items are in OrderProducts with per-seller breakdown.
+
 model Order {
   id                      Int             @id @default(autoincrement())
   userId                  String?
@@ -1746,6 +1807,7 @@ model Order {
 // Fields: paymobOrderId (gateway order reference), saveCardObject (JSON of card details), token (reusable payment token), orderId.
 // Relations: None defined at Prisma level.
 // Enables "save card for future purchases" functionality via tokenized card storage from Paymob.
+
 model OrderSaveCardToken {
   id             Int       @id @default(autoincrement())
   paymobOrderId  Int?
@@ -1764,6 +1826,7 @@ model OrderSaveCardToken {
 //   status (shipping status string), receipt (proof of shipment), fromTime/toTime (delivery window).
 // Relations: orderProductDetail -> OrderProducts[], serviceDetail -> Service.
 // Each seller in a multi-seller order can have a separate shipping record and method.
+
 model OrderShipping {
   id                 Int               @id @default(autoincrement())
   orderId            Int?
@@ -1798,6 +1861,7 @@ model OrderShipping {
 //   purchasedAmount (what the seller receives after platform fees).
 // Relations: None defined at Prisma level (uses raw IDs).
 // When an order contains products from multiple sellers, each seller gets their own OrderSeller with amounts.
+
 model OrderSeller {
   id              Int       @id @default(autoincrement())
   orderId         Int?
@@ -1825,6 +1889,7 @@ model OrderSeller {
 //   orderProductType (PRODUCT/SERVICE), serviceId (FK to Service), serviceFeatures (JSON).
 // Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service.
 // The core order line item; tracks per-product status and financials independently.
+
 model OrderProducts {
   id                        Int                @id @default(autoincrement())
   userId                    String?
@@ -1881,6 +1946,7 @@ model OrderProducts {
 // DeliveryEvent — Status history timeline for order delivery tracking.
 // Records every status change with actor (SELLER/BUYER/SYSTEM), timestamp, and optional metadata.
 // Enables delivery timeline visualization and audit trail for dispute resolution.
+
 model DeliveryEvent {
   id              Int            @id @default(autoincrement())
   orderProductId  Int
@@ -1901,6 +1967,7 @@ model DeliveryEvent {
 // PickupCode — Verification code for in-store pickup orders.
 // Generated when PICKUP order reaches CONFIRMED status. Buyer shows QR/code at store,
 // seller verifies to complete the order. Auto-expires after configurable days.
+
 model PickupCode {
   id                Int           @id @default(autoincrement())
   orderProductId    Int           @unique
@@ -1927,6 +1994,7 @@ model PickupCode {
 //   cityId/countryId/stateId (geographic FK references).
 // Relations: orderAddress_order -> Order.
 // Address is copied at checkout so later changes to UserAddress do not affect historical orders.
+
 model OrderAddress {
   id                 Int         @id @default(autoincrement())
   orderId            Int?
@@ -1959,6 +2027,7 @@ model OrderAddress {
 //   emiStartDate, emiInstallmentsPaid (paid so far), emiStatus (ONGOING/COMPLETED/STOPPED), nextEmiDueDate.
 // Relations: None defined at Prisma level (uses raw orderId).
 // Supports buy-now-pay-later: buyers can split order payment into monthly installments.
+
 model OrderEMI {
   id                        Int       @id @default(autoincrement())
   orderId                   Int?
@@ -1978,6 +2047,7 @@ model OrderEMI {
 // Fields: formData (serialized form structure), formName, productId (optional FK to a specific product).
 // Relations: dynamicForm_dynamicFormCategory -> DynamicFormCategory[], elements -> DynamicFormElement[].
 // Enables category-specific custom attributes: admins define form schemas; sellers fill them when listing products.
+
 model DynamicForm {
   id                              Int                   @id @default(autoincrement())
   formData                        String?
@@ -1996,6 +2066,7 @@ model DynamicForm {
 //   formId (FK to DynamicForm), parentId (self-referencing for nested/grouped elements).
 // Relations: form -> DynamicForm, parent/children (self-join for element nesting).
 // Represents a single form input; supports hierarchical element structures (e.g., fieldsets containing fields).
+
 model DynamicFormElement {
   id        Int                  @id @default(autoincrement())
   keyName   String?
@@ -2018,6 +2089,7 @@ model DynamicFormElement {
 // Fields: formId (FK to DynamicForm), categoryId (FK to Category), categoryLocation (breadcrumb path).
 // Relations: categoryIdDetail -> Category, formIdDetail -> DynamicForm.
 // When a product is listed under a category, the linked dynamic forms determine which extra fields appear.
+
 model DynamicFormCategory {
   id               Int          @id @default(autoincrement())
   formId           Int?
@@ -2039,6 +2111,7 @@ model DynamicFormCategory {
 //   rfqDate (requested delivery date).
 // Relations: rfqQuoteAddress_rfqQuotes -> RfqQuotes[].
 // Each RFQ quote submission includes a delivery address where the buyer wants goods shipped.
+
 model RfqQuoteAddress {
   id                        Int         @id @default(autoincrement())
   userId                    String?
@@ -2074,6 +2147,7 @@ model RfqQuoteAddress {
 // Relations: rfqQuotes_rfqQuoteAddress -> RfqQuoteAddress, rfqQuotesProducts -> RfqQuotesProducts[],
 //   rfqQuotes_rfqQuotesUsers -> RfqQuotesUsers[], rfqQuoteProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Flow: buyer creates RfqQuotes -> adds RfqQuotesProducts -> sellers are assigned via RfqQuotesUsers -> negotiate prices.
+
 model RfqQuotes {
   id                           Int                           @id @default(autoincrement())
   buyerID                      String?
@@ -2096,6 +2170,7 @@ model RfqQuotes {
 //   quantity, offerPrice/offerPriceFrom/offerPriceTo (buyer's expected price/range), note.
 // Relations: rfqQuotesDetail -> RfqQuotes, rfqProductDetails -> Product, rfqProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Each RFQ can contain multiple products with individual quantity and price expectations.
+
 model RfqQuotesProducts {
   id                      Int                           @id @default(autoincrement())
   rfqQuotesId             Int?
@@ -2124,6 +2199,7 @@ model RfqQuotesProducts {
 // Relations: buyerIDDetail/sellerIDDetail -> User, rfqQuotesUser_rfqQuotes -> RfqQuotes,
 //   messagaes -> Message[] (chat messages in this negotiation), rfqProductPriceRequests -> RfqQuoteProductPriceRequest[].
 // Each seller invited to an RFQ gets a row here; price negotiation happens via linked Messages.
+
 model RfqQuotesUsers {
   id                      Int                           @id @default(autoincrement())
   status                  Status                        @default(ACTIVE)
@@ -2151,6 +2227,7 @@ model RfqQuotesUsers {
 // Fields: userId (buyer), productId (FK to Product).
 // Relations: wishlist_productDetail -> Product.
 // Simple save-for-later functionality; one row per user-product pair.
+
 model Wishlist {
   id                     Int       @id @default(autoincrement())
   status                 Status    @default(ACTIVE)
@@ -2169,6 +2246,7 @@ model Wishlist {
 // Fields: creatorId (FK to User who initiated the room), rfqId (optional RFQ context), orderProductId (optional order context).
 // Relations: creator -> User, messages -> Message[] (room messages), participants -> RoomParticipants[].
 // Rooms can be general chat, RFQ negotiation, or order-related discussion contexts.
+
 model Room {
   id             Int                @id @default(autoincrement())
   createdAt      DateTime           @default(now())
@@ -2190,6 +2268,7 @@ model Room {
 // Relations: user -> User, room -> Room, rfqQuotesUser -> RfqQuotesUsers,
 //   attachments -> ChatAttachments[], rfqProductPriceRequest -> RfqQuoteProductPriceRequest (1:1 for price proposals).
 // Messages support text, file attachments, and embedded RFQ price requests.
+
 model Message {
   id                     Int                          @id @default(autoincrement())
   content                String
@@ -2219,6 +2298,7 @@ model Message {
 //   uniqueId (unique identifier for deduplication), presignedUrl (temporary download URL).
 // Relations: message -> Message.
 // Supports file sharing in chat; uses presigned URLs for secure, time-limited file access.
+
 model ChatAttachments {
   id            Int              @id @default(autoincrement())
   fileName      String
@@ -2245,6 +2325,7 @@ model ChatAttachments {
 // Relations: approvedBy/rejectedBy/requestedBy/requestedBuyer/requestedSeller -> User,
 //   message -> Message, rfqQuotes -> RfqQuotes, rfqQuoteProduct -> RfqQuotesProducts, rfqQuotesUser -> RfqQuotesUsers.
 // Central to the RFQ negotiation workflow: buyer/seller exchange price proposals as structured chat messages.
+
 model RfqQuoteProductPriceRequest {
   id                Int                          @id @default(autoincrement())
   rfqQuoteId        Int
@@ -2305,6 +2386,7 @@ model RfqSuggestedProduct {
 // Fields: userId (FK to User), roomId (FK to Room).
 // Relations: room -> Room, user -> User.
 // A room typically has two participants (buyer + seller) but the model supports multi-party rooms.
+
 model RoomParticipants {
   id         Int      @id @default(autoincrement())
   userId     String
@@ -2325,6 +2407,7 @@ model RoomParticipants {
 // Fields: sortname (ISO code), name (country name), phoneCode (international dialing code).
 // Relations: FeesCountry, FeesLocation, ProductPrice, ProductSellCountry, Service, UserAddress.
 // Referenced throughout the platform for geographic filtering, fee calculation, and address management.
+
 model Countries {
   id                           Int                  @id @default(autoincrement())
   sortname                     String?
@@ -2348,6 +2431,7 @@ model Countries {
 // Fields: name (state name), countryId (FK to Countries).
 // Relations: FeesLocation, FeesState, ProductPrice, ProductSellState, Service, UserAddress.
 // Second level of geographic hierarchy: Countries -> States -> Cities.
+
 model States {
   id                     Int                @id @default(autoincrement())
   name                   String?
@@ -2370,6 +2454,7 @@ model States {
 // Fields: name (city name), stateId (FK to States).
 // Relations: FeesCity, FeesLocation, ProductPrice, ProductSellCity, Service (from/to/range cities), UserAddress.
 // Third level of geographic hierarchy: Countries -> States -> Cities. Services use cities for route definitions.
+
 model Cities {
   id                   Int               @id @default(autoincrement())
   name                 String?
@@ -2394,6 +2479,7 @@ model Cities {
 // Fields: name (permission label), addedBy (creator).
 // Relations: adminRolePermission -> AdminRolePermission[] (M:N join to AdminRole).
 // Separate from seller-side Permission; this controls what platform admin members can do.
+
 model AdminPermission {
   id                  Int                   @id @default(autoincrement())
   name                String?
@@ -2409,6 +2495,7 @@ model AdminPermission {
 // Fields: adminRoleName (role label), addedBy (creator).
 // Relations: adminMemberDetail -> AdminMember[], adminRolePermission -> AdminRolePermission[], user -> User[].
 // Part of platform-level RBAC: admin roles are assigned to admin members with specific permissions.
+
 model AdminRole {
   id                  Int                   @id @default(autoincrement())
   adminRoleName       String?
@@ -2426,6 +2513,7 @@ model AdminRole {
 // Fields: adminRoleId (FK to AdminRole), adminPermissionId (FK to AdminPermission).
 // Relations: adminPermissionDetail -> AdminPermission, adminRoleDetail -> AdminRole.
 // Each row grants a specific admin permission to a specific admin role.
+
 model AdminRolePermission {
   id                    Int              @id @default(autoincrement())
   adminRoleId           Int?
@@ -2445,6 +2533,7 @@ model AdminRolePermission {
 // Fields: userId (FK to User), adminRoleId (FK to AdminRole), addedBy (the admin who added them).
 // Relations: adminRolDetail -> AdminRole, userDetail -> User.
 // Platform-level team management: super admins add sub-admins and assign them admin roles.
+
 model AdminMember {
   id             Int        @id @default(autoincrement())
   userId         String?
@@ -2465,6 +2554,7 @@ model AdminMember {
 // Fields: userId (FK to submitting User), userEmail, query (question/issue text), response (admin reply).
 // Relations: userDetail -> User.
 // Simple support ticket system for buyer/seller inquiries to platform admins.
+
 model HelpCenter {
   id         Int       @id @default(autoincrement())
   userId     String?
@@ -2486,6 +2576,7 @@ model HelpCenter {
 //   transactionType (e.g., payment, refund), type (additional classification).
 // Relations: None defined at Prisma level (uses raw IDs).
 // Audit trail for all Paymob payment interactions; used for reconciliation and dispute resolution.
+
 model TransactionPaymob {
   id                  Int       @id @default(autoincrement())
   userId              String?
@@ -2517,6 +2608,7 @@ model TransactionPaymob {
 //   Countries, States, ServiceFeature[], ServiceImage[], ServiceTag[],
 //   CartProductService[].
 // Services support both appointment booking (BOOKING) and logistics/moving (MOVING) use cases.
+
 model Service {
   id                  Int                  @id @default(autoincrement())
   workingDays         String
@@ -2573,6 +2665,7 @@ model Service {
 // Fields: serviceId (FK to Service), tagId (FK to Tags).
 // Relations: service -> Service, tag -> Tags.
 // Tags improve service discoverability via search and filtering.
+
 model ServiceTag {
   id        Int       @id @default(autoincrement())
   serviceId Int
@@ -2591,6 +2684,7 @@ model ServiceTag {
 // Fields: serviceId (FK to Service), name (feature label), serviceCost (price), serviceCostType (FLAT/HOURLY).
 // Relations: service -> Service, cartServiceFeatures -> CartServiceFeature[].
 // Buyers select features when adding a service to cart; each feature has its own cost and pricing model.
+
 model ServiceFeature {
   id                  Int                  @id @default(autoincrement())
   serviceId           Int
@@ -2607,6 +2701,7 @@ model ServiceFeature {
 // Fields: url (file path), serviceId (FK to Service), fileName, fileType (IMAGE/VIDEO).
 // Relations: service -> Service.
 // Sellers upload images and videos to showcase their services.
+
 model ServiceImage {
   id        Int      @id @default(autoincrement())
   url       String
@@ -2622,6 +2717,7 @@ model ServiceImage {
 // Fields: slug (unique page identifier, e.g., "homepage", "about"), setting (JSON configuration blob).
 // Relations: None.
 // Admin-managed page configurations for dynamic frontend content without code deployment.
+
 model PageSetting {
   id        Int       @id @default(autoincrement())
   slug      String    @unique
@@ -2711,6 +2807,7 @@ model WalletSettings {
 // Relations: User (admin and adopting user), Brand, Category, CountryList,
 //   ExistingProductImages[], ExistingProductTags[].
 // Admin creates ExistingProducts as a catalog; sellers can then list them in their own store via ProductPrice.
+
 model ExistingProduct {
   id                    Int                     @id @default(autoincrement())
   productName           String
@@ -2753,6 +2850,7 @@ model ExistingProduct {
 // Fields: existingProductId (FK to ExistingProduct), tagId (FK to Tags).
 // Relations: existingProduct -> ExistingProduct, existingProductTag -> Tags.
 // Tags for admin-curated catalog products, improving search and categorization.
+
 model ExistingProductTags {
   id                 Int             @id @default(autoincrement())
   existingProductId  Int
@@ -2796,6 +2894,7 @@ model Notification {
 //   variant (JSON mapping images to specific variant combos).
 // Relations: existingProduct -> ExistingProduct.
 // Canonical images for the admin catalog; similar structure to ProductImages.
+
 model ExistingProductImages {
   id                Int             @id @default(autoincrement())
   existingProductId Int
@@ -2816,6 +2915,7 @@ model ExistingProductImages {
 // OrderProductType — Distinguishes whether an order line item is a physical product or a service.
 // Values: PRODUCT (tangible goods), SERVICE (bookable/moving service).
 // Used by OrderProducts.orderProductType to determine fulfillment logic.
+
 enum OrderProductType {
   PRODUCT
   SERVICE
@@ -2824,6 +2924,7 @@ enum OrderProductType {
 // FileType — Classifies media file types for service images.
 // Values: IMAGE, VIDEO.
 // Used by ServiceImage.fileType.
+
 enum FileType {
   IMAGE
   VIDEO
@@ -2832,6 +2933,7 @@ enum FileType {
 // ShippingType — Defines how a moving service operates geographically.
 // Values: DIRECTION (point-to-point from city A to city B), RANG (within a range/radius of a city).
 // Used by Service.shippingType for MOVING-type services.
+
 enum ShippingType {
   DIRECTION
   RANG
@@ -2840,6 +2942,7 @@ enum ShippingType {
 // ServiceType — The two supported service categories on the platform.
 // Values: BOOKING (appointment/reservation-based, e.g., cleaning, repair), MOVING (logistics/transport services).
 // Used by Service.serviceType to drive different UI and scheduling logic.
+
 enum ServiceType {
   BOOKING
   MOVING
@@ -2848,6 +2951,7 @@ enum ServiceType {
 // ServiceConfirmType — How a service booking is confirmed after a buyer requests it.
 // Values: AUTO (immediately confirmed), MANUAL (seller must manually approve the booking).
 // Used by Service.serviceConfirmType.
+
 enum ServiceConfirmType {
   AUTO
   MANUAL
@@ -2856,6 +2960,7 @@ enum ServiceConfirmType {
 // ServiceCostType — Pricing model for a service feature.
 // Values: FLAT (fixed price regardless of duration), HOURLY (price per hour of service).
 // Used by ServiceFeature.serviceCostType.
+
 enum ServiceCostType {
   FLAT
   HOURLY
@@ -2864,6 +2969,7 @@ enum ServiceCostType {
 // ServiceFor — Controls who can use a service.
 // Values: OWNER (only the seller/owner can use it, internal service), EVERYONE (publicly available to all buyers).
 // Used by Service.serviceFor to restrict service visibility and booking.
+
 enum ServiceFor {
   OWNER
   EVERYONE
@@ -2874,6 +2980,7 @@ enum ServiceFor {
 //   HIDDEN (not publicly visible but not deleted), WAITING (pending approval/verification),
 //   WAITING_FOR_SUPER_ADMIN (escalated approval needed), REJECT (denied by admin).
 // The platform uses soft delete: records are never physically removed, just marked DELETE with a deletedAt timestamp.
+
 enum Status {
   ACTIVE
   INACTIVE
@@ -2887,6 +2994,7 @@ enum Status {
 // AttachmentStatus — Upload lifecycle status for chat file attachments.
 // Values: UPLOADING (in progress), UPLOADED (complete and available), FAILED (upload error), DELETED (removed).
 // Used by ChatAttachments.status to track upload state for async file uploads.
+
 enum AttachmentStatus {
   UPLOADED
   UPLOADING
@@ -2897,6 +3005,7 @@ enum AttachmentStatus {
 // MessageStatus — Read status of a chat message.
 // Values: UNREAD (not yet seen by recipient), READ (seen), DELETED (removed from conversation).
 // Used by Message.status for read receipts and message deletion.
+
 enum MessageStatus {
   UNREAD
   READ
@@ -2906,6 +3015,7 @@ enum MessageStatus {
 // RfqProductPriceRequestStatus — Approval status of an RFQ price proposal.
 // Values: PENDING (awaiting response), APPROVED (accepted by counterparty), REJECTED (declined).
 // Used by RfqQuoteProductPriceRequest.status in the RFQ negotiation flow.
+
 enum RfqProductPriceRequestStatus {
   PENDING
   APPROVED
@@ -2915,6 +3025,7 @@ enum RfqProductPriceRequestStatus {
 // Gender — User gender classification.
 // Values: MALE, FEMALE.
 // Used by User.gender for profile information.
+
 enum Gender {
   MALE
   FEMALE
@@ -2924,6 +3035,7 @@ enum Gender {
 // Values: BUYER (purchases products/services), FREELANCER (individual seller), COMPANY (business seller),
 //   MEMBER (team member of a seller/company), ADMINMEMBER (platform admin team member).
 // Used by User.tradeRole; defaults to BUYER on registration. Determines dashboard, permissions, and features.
+
 enum TypeTrader {
   BUYER
   FREELANCER
@@ -2935,6 +3047,7 @@ enum TypeTrader {
 // UserType — Classifies user privilege level for platform access.
 // Values: ADMIN (super admin), USER (regular user), SUBADMIN (admin team member with limited permissions).
 // Used by User.userType to distinguish admin-panel access rights from regular marketplace users.
+
 enum UserType {
   ADMIN
   USER
@@ -2944,6 +3057,7 @@ enum UserType {
 // LoginType — Authentication method used by the user to register/login.
 // Values: MANUAL (email/password), SOCIAL (generic social login), FACEBOOK, GOOGLE.
 // Used by User.loginType to determine authentication flow and password requirements.
+
 enum LoginType {
   MANUAL
   SOCIAL
@@ -2954,6 +3068,7 @@ enum LoginType {
 // StatusYesNO — Simple boolean-like enum for yes/no flags stored as strings.
 // Values: YES, NO.
 // Used by Category.blackList and Category.whiteList for category access control flags.
+
 enum StatusYesNO {
   YES
   NO
@@ -2962,6 +3077,7 @@ enum StatusYesNO {
 // ProductType — High-level product classification.
 // Values: P (standard Product), R (RFQ-only product, not directly purchasable), F (Factory/customizable product).
 // Used by Product.productType and ExistingProduct.productType to determine listing and purchase flow.
+
 enum ProductType {
   P
   R
@@ -2972,6 +3088,7 @@ enum ProductType {
 // TypeOfProduct — Describes the nature/origin of a product.
 // Values: BRAND (official brand product), SPAREPART (replacement/accessory part), OWNBRAND (seller's own brand/white-label).
 // Used by Product.typeOfProduct and ExistingProduct.typeOfProduct for product classification.
+
 enum TypeOfProduct {
   BRAND
   SPAREPART
@@ -2981,6 +3098,7 @@ enum TypeOfProduct {
 // TypeProduct — Distinguishes between vendor-local and brand-authorized products.
 // Values: VENDORLOCAL (sourced/sold locally by the vendor), BRAND (authorized brand channel product).
 // Used by Product.typeProduct and ExistingProduct.typeProduct for supply chain classification.
+
 enum TypeProduct {
   VENDORLOCAL
   BRAND
@@ -2989,6 +3107,7 @@ enum TypeProduct {
 // ConsumerType — Defines the target audience for a product price listing.
 // Values: CONSUMER (B2C end consumers only), VENDORS (B2B sellers/resellers only), EVERYONE (both).
 // Used by ProductPrice.consumerType to control visibility and pricing tiers.
+
 enum ConsumerType {
   CONSUMER
   VENDORS
@@ -3000,6 +3119,7 @@ enum ConsumerType {
 //   OTHERS (miscellaneous), EVERYONE (all sell types apply), TRIAL_PRODUCT (free/discounted trial),
 //   WHOLESALE_PRODUCT (bulk/wholesale pricing).
 // Used by ProductPrice.sellType to determine checkout behavior and pricing rules.
+
 enum SellType {
   NORMALSELL
   BUYGROUP
@@ -3012,6 +3132,7 @@ enum SellType {
 // rFqType — Classifies RFQ products by their origin type.
 // Values: P (existing platform product), R (buyer-described RFQ-only product not in catalog).
 // Used by RFQProduct.type to distinguish between catalog-referenced and custom RFQ items.
+
 enum rFqType {
   P
   R
@@ -3020,6 +3141,7 @@ enum rFqType {
 // CartType — Distinguishes the type of item in the shopping cart.
 // Values: DEFAULT (standard product), SERVICE (bookable/moving service).
 // Used by Cart.cartType to route checkout logic for products vs. services.
+
 enum CartType {
   DEFAULT
   SERVICE
@@ -3028,6 +3150,7 @@ enum CartType {
 // RFQCartType — Classifies items in the RFQ shopping cart.
 // Values: DEFAULT (general), P (existing product from catalog), R (buyer-described RFQ-only item).
 // Used by RFQCart.rfqCartType to determine handling during RFQ quote submission.
+
 enum RFQCartType {
   DEFAULT
   P
@@ -3037,6 +3160,7 @@ enum RFQCartType {
 // OrderType — Distinguishes between product orders and service orders at the Order level.
 // Values: DEFAULT (product purchase), SERVICE (service booking/moving order).
 // Used by Order.orderType to route post-purchase fulfillment logic.
+
 enum OrderType {
   DEFAULT
   SERVICE
@@ -3045,6 +3169,7 @@ enum OrderType {
 // OrderStatus — Payment/completion status of an order.
 // Values: PENDING (awaiting payment), PAID (payment received), COMPLETE (fully fulfilled and closed).
 // Used by Order.orderStatus. Transitions: PENDING -> PAID (on payment confirmation) -> COMPLETE (on delivery).
+
 enum OrderStatus {
   PENDING
   PAID
@@ -3055,6 +3180,7 @@ enum OrderStatus {
 // Values: PLACED (order submitted), CONFIRMED (seller accepted), SHIPPED (in transit),
 //   OFD (Out For Delivery), DELIVERED (reached buyer), RECEIVED (buyer confirmed receipt), CANCELLED.
 // Used by OrderProducts.orderProductStatus. Each product in a multi-seller order progresses independently.
+
 enum OrderProductStatus {
   CANCELLED
   CONFIRMED
@@ -3068,6 +3194,7 @@ enum OrderProductStatus {
 // AddressType — Distinguishes between billing and shipping addresses on an order.
 // Values: BILLING (invoice/payment address), SHIPPING (delivery destination).
 // Used by OrderAddress.addressType; each order typically has one of each.
+
 enum AddressType {
   BILLING
   SHIPPING
@@ -3076,6 +3203,7 @@ enum AddressType {
 // EmiStatus — Status of an EMI (installment payment) plan.
 // Values: STOPPED (paused/defaulted), ONGOING (active with remaining installments), COMPLETED (fully paid).
 // Used by OrderEMI.emiStatus to track installment payment progress.
+
 enum EmiStatus {
   STOPPED
   ONGOING
@@ -3086,6 +3214,7 @@ enum EmiStatus {
 // Values: PICKUP (buyer collects from seller), SELLERDROP (seller delivers directly),
 //   THIRDPARTY (external logistics provider), PLATFORM (platform's own moving/delivery service).
 // Used by OrderShipping.orderShippingType to determine fulfillment workflow.
+
 enum OrderShippingType {
   PICKUP
   SELLERDROP
@@ -3096,6 +3225,7 @@ enum OrderShippingType {
 // QuestionType — Distinguishes whether a Q&A entry is about a product or a service.
 // Values: PRODUCT, SERVICE.
 // Used by ProductQuestion.questionType and ProductQuestionAnswer.questionType.
+
 enum QuestionType {
   PRODUCT
   SERVICE
@@ -3204,6 +3334,7 @@ model SystemLog {
 // Fields: productId/categoryId (composite unique), isPrimary (one primary for breadcrumbs),
 //   source ("manual"|"keyword"|"tag"|"ai" — how the mapping was created).
 // Replaces the single Product.categoryId FK for multi-category discovery.
+
 model ProductCategoryMap {
   id         Int       @id @default(autoincrement())
   productId  String
@@ -3226,6 +3357,7 @@ model ProductCategoryMap {
 // CategoryKeyword — Keywords/synonyms that link products to categories automatically.
 // When a product's name/tags/description contains a keyword, it auto-maps to the category.
 // Example: categoryId=5 (Smartphones), keyword="mobile phone" or "cell phone".
+
 model CategoryKeyword {
   id         Int       @id @default(autoincrement())
   categoryId Int
@@ -3245,6 +3377,7 @@ model CategoryKeyword {
 // CategoryTag — Links Tags to Categories, replacing the keyword-based auto-mapping system.
 // Tags become the universal connector: shared tags link products, services, and business types to categories.
 // When a product/service has tags that match a category's tags, it auto-maps to that category.
+
 model CategoryTag {
   id         Int       @id @default(autoincrement())
   categoryId Int
@@ -3264,6 +3397,7 @@ model CategoryTag {
 
 // ServiceCategoryMap — Multi-category mapping for services (mirrors ProductCategoryMap for products).
 // Allows services to belong to multiple categories with a primary designation and source tracking.
+
 model ServiceCategoryMap {
   id         Int       @id @default(autoincrement())
   serviceId  Int
@@ -3290,6 +3424,7 @@ model ServiceCategoryMap {
 
 // SpecDataType — Enum for specification field data types.
 // Determines how the spec renders in forms and how filters work.
+
 enum SpecDataType {
   TEXT
   NUMBER
@@ -3304,6 +3439,7 @@ enum SpecDataType {
 //   unit (optional: "GB", "inches"), options (JSON array for SELECT/MULTI_SELECT),
 //   isRequired (must fill), isFilterable (appears in filter sidebar),
 //   sortOrder (display order), groupName (visual grouping: "Display", "Performance").
+
 model SpecTemplate {
   id           Int          @id @default(autoincrement())
   categoryId   Int
@@ -3332,6 +3468,7 @@ model SpecTemplate {
 // ProductSpecValue — Actual spec values for a product, linked to a SpecTemplate.
 // Fields: value (string representation), numericValue (parsed decimal for range filters).
 // Join between Product and SpecTemplate: each product fills the template's fields.
+
 model ProductSpecValue {
   id             Int       @id @default(autoincrement())
   productId      String
@@ -3357,6 +3494,7 @@ model ProductSpecValue {
 // ═══════════════════════════════════════════════════════════════
 
 // ScrapingJob — Tracks each scraping task (one per platform+category+region combo).
+
 model ScrapingJob {
   id             Int               @id @default(autoincrement())
   platform       String // amazon | alibaba | aliexpress | taobao
@@ -3407,6 +3545,7 @@ model ScrapingJob {
 }
 
 // ScrapedProductRaw — Raw scraped data staging table before processing.
+
 model ScrapedProductRaw {
   id    Int @id @default(autoincrement())
   jobId Int
@@ -3447,6 +3586,7 @@ model ScrapedProductRaw {
 }
 
 // CategoryMapping — Maps source platform categories to Ultrasooq categories.
+
 model CategoryMapping {
   id             Int     @id @default(autoincrement())
   sourcePlatform String // amazon | alibaba | aliexpress | taobao
@@ -3621,6 +3761,7 @@ model RecommendationMetric {
 }
 
 // RecommendationFeedback — Tracks recommendation impressions/clicks/cart-adds/purchases per user.
+
 model RecommendationFeedback {
   id         String   @id @default(uuid())
   recId      String   @db.VarChar(100)
@@ -3668,7 +3809,6 @@ model RecommendationConfig {
   updatedBy String
   updatedAt DateTime @updatedAt
 }
-
 
 model TermDisambiguation {
   id              Int       @id @default(autoincrement())
