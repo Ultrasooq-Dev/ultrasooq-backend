@@ -47,6 +47,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { compare, hash, genSalt } from 'bcrypt';
 import { compareSync } from 'bcrypt';
 import { AuthService } from 'src/auth/auth.service';
@@ -64,20 +65,16 @@ import { getErrorMessage } from 'src/common/utils/get-error-message';
 
 
 /**
- * In-memory pending email-change OTPs, keyed by user id.
+ * Identifier prefix used in `better_auth_verification` rows that hold a
+ * pending email-change OTP. Namespaced so it doesn't collide with rows
+ * Better Auth itself writes (email-verify links, password-reset, etc.).
  *
- * Phase 4 of the Better Auth migration dropped the `User.otp` /
- * `User.otpValidTime` columns that previously backed `changeEmail` /
- * `verifyEmail`. Until those flows are ported to Better Auth's
- * verification table (follow-up PR), keep them working with a process-
- * local map. Restarts wipe pending changes; clusters need to re-issue
- * the OTP if the request hits a different node — both acceptable for
- * the short transitional window.
+ * Phase 4 dropped the `User.otp` / `User.otpValidTime` columns that used
+ * to back `changeEmail` / `verifyEmail`. The follow-up was to move the
+ * OTP onto Better Auth's `verification` table so it survives restarts /
+ * works across cluster nodes — see `changeEmail`/`verifyEmail` below.
  */
-const pendingEmailChangeOtps = new Map<
-  number,
-  { otp: number; pendingEmail: string; expiresAt: number }
->();
+const CHANGE_EMAIL_VERIFICATION_PREFIX = 'change-email:';
 
 @Injectable()
 export class UserService {
@@ -1695,11 +1692,35 @@ export class UserService {
       const otp = Math.floor(1000 + Math.random() * 9000);
       const otpExpiryMs =
         parseInt(process.env.OTP_EXPIRY_MINUTES || '5', 10) * 60000;
-      pendingEmailChangeOtps.set(userId, {
-        otp,
-        pendingEmail: payload.email,
-        expiresAt: Date.now() + otpExpiryMs,
+      const identifier = `${CHANGE_EMAIL_VERIFICATION_PREFIX}${userId}`;
+      const expiresAt = new Date(Date.now() + otpExpiryMs);
+
+      // Opportunistically prune expired verification rows (any
+      // `change-email:*` rows whose `expiresAt` is already in the past)
+      // and any prior pending row for THIS user — only one outstanding
+      // OTP per user at a time.
+      const now = new Date();
+      await this.prisma.betterAuthVerification.deleteMany({
+        where: {
+          OR: [
+            { identifier, expiresAt: { lt: now } },
+            { identifier },
+            {
+              identifier: { startsWith: CHANGE_EMAIL_VERIFICATION_PREFIX },
+              expiresAt: { lt: now },
+            },
+          ],
+        },
       });
+      await this.prisma.betterAuthVerification.create({
+        data: {
+          id: randomUUID(),
+          identifier,
+          value: JSON.stringify({ otp, pendingEmail: payload.email }),
+          expiresAt,
+        },
+      });
+
       const data = {
         email: payload.email,
         name: userDetail.firstName,
@@ -1745,8 +1766,25 @@ export class UserService {
           data: [],
         };
       }
-      const pending = pendingEmailChangeOtps.get(userId);
-      if (!pending) {
+      const identifier = `${CHANGE_EMAIL_VERIFICATION_PREFIX}${userId}`;
+      const pendingRow = await this.prisma.betterAuthVerification.findFirst({
+        where: { identifier },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!pendingRow) {
+        return {
+          status: false,
+          message: 'Invalid OTP',
+          data: [],
+        };
+      }
+      let pending: { otp: number; pendingEmail: string };
+      try {
+        pending = JSON.parse(pendingRow.value);
+      } catch {
+        await this.prisma.betterAuthVerification.delete({
+          where: { id: pendingRow.id },
+        });
         return {
           status: false,
           message: 'Invalid OTP',
@@ -1760,8 +1798,10 @@ export class UserService {
           data: [],
         };
       }
-      if (Date.now() > pending.expiresAt) {
-        pendingEmailChangeOtps.delete(userId);
+      if (Date.now() > pendingRow.expiresAt.getTime()) {
+        await this.prisma.betterAuthVerification.delete({
+          where: { id: pendingRow.id },
+        });
         return {
           status: false,
           message: 'Otp Expires',
@@ -1776,7 +1816,9 @@ export class UserService {
         where: { id: userId },
         data: { email: newEmail },
       });
-      pendingEmailChangeOtps.delete(userId);
+      await this.prisma.betterAuthVerification.delete({
+        where: { id: pendingRow.id },
+      });
 
       return {
         status: true,
