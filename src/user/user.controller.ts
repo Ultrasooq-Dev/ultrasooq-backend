@@ -3,9 +3,9 @@
  *
  * @intent
  *   Defines all HTTP endpoints under the /user/* route prefix. Handles user
- *   registration, authentication, profile management, file uploads, address
- *   management, role/permission management, help center, business categories,
- *   multi-account operations, and email/password changes.
+ *   profile management, file uploads, address management, role/permission
+ *   management, help center, business categories, multi-account operations,
+ *   and email/password changes.
  *
  * @idea
  *   Follows the NestJS controller pattern: thin route handlers that delegate
@@ -30,15 +30,18 @@
  *   - UserService               (business logic for all operations)
  *   - S3service                 (direct file upload for presignedUrlUpload endpoints)
  *   - AuthGuard                 (JWT authentication guard)
- *   - DTOs: CreateUserDto, RegisterValidateOtp, CreateSubAccountDto, SwitchAccountDto
+ *   - DTOs: CreateSubAccountDto, SwitchAccountDto
  *
  * @notes
+ *   - Sign-up / sign-in / forgot-password / OTP / social-login / refresh /
+ *     logout endpoints have all moved to Better Auth at /api/auth/* — see
+ *     `src/auth-better/` and Phase 4 in `MIGRATION_TODO.mdx`. The legacy
+ *     `register`, `registerValidateOtp`, `resendOtp`, `login`, `socialLogin`,
+ *     `forgetPassword`, `verifyOtp`, `resetPassword` handlers have been
+ *     deleted from this controller.
  *   - Most endpoints use @UseGuards(AuthGuard) for authentication. Public
- *     endpoints (no guard): register, registerValidateOtp, resendOtp, login,
- *     socialLogin, findUnique, viewOneUserPhone, forgetPassword, verifyOtp,
- *     viewTags, sendEmailFrombackend, userDelete, createHelpCenter.
- *   - userDelete (POST /userDelete) has NO auth guard — any caller can
- *     potentially delete a user. This is a security concern.
+ *     endpoints (no guard): findUnique, viewOneUserPhone, viewTags,
+ *     sendEmailFrombackend, createHelpCenter.
  *   - userProfileFile endpoint is a stub (returns true) — incomplete implementation.
  *   - CreateUserAccountDto is imported but not used — CreateSubAccountDto is
  *     used instead for the createAccount endpoint.
@@ -62,9 +65,7 @@ import {
   Param,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { CreateUserDto } from './dto/create-user.dto';
 import { AuthGuard } from 'src/guards/AuthGuard';
-import { RegisterValidateOtp } from './dto/registerValidateOtp.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { S3service } from './s3.service';
 import { Throttle } from '@nestjs/throttler';
@@ -83,40 +84,11 @@ export class UserController {
   ) {}
 
   /* ═══════════════════════════════════════════════════════════════════════
-   * AUTHENTICATION & REGISTRATION ENDPOINTS
+   * AUTHENTICATION & REGISTRATION
+   *   Moved to Better Auth at /api/auth/* — see src/auth-better/. The
+   *   register / login / socialLogin / OTP handlers used to live here
+   *   and have been intentionally removed.
    * ═══════════════════════════════════════════════════════════════════════ */
-
-  /** POST /user/register — Create a new user account (public, no auth).
-   *  Sends OTP email for verification. User is inactive until OTP is validated. */
-  @Post('/register')
-  register(@Body() createUserDto: CreateUserDto) {
-    return this.userService.create(createUserDto);
-  }
-
-  /** POST /user/registerValidateOtp — Validate OTP sent during registration (public). */
-  @Post('/registerValidateOtp')
-  registerValidateOtp(@Body() payload: RegisterValidateOtp) {
-    return this.userService.registerValidateOtp(payload);
-  }
-
-  /** POST /user/resendOtp — Resend OTP email for registration verification (public). */
-  @Post('/resendOtp')
-  resendOtp(@Body() payload: any) {
-    return this.userService.resendOtp(payload);
-  }
-
-  /** POST /user/login — Authenticate via email/password, returns JWT (public). */
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @Post('/login')
-  login(@Body() payload: any) {
-    return this.userService.login(payload);
-  }
-
-  /** POST /user/socialLogin — Authenticate via Google OAuth, returns JWT (public). */
-  @Post('/socialLogin')
-  socialLogin(@Body() payload: any) {
-    return this.userService.socialLogin(payload);
-  }
 
   /* ═══════════════════════════════════════════════════════════════════════
    * PROFILE & USER DATA ENDPOINTS (Authenticated)
@@ -293,27 +265,11 @@ export class UserController {
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
-   * PASSWORD RESET FLOW (Public)
+   * PASSWORD RESET FLOW
+   *   Moved to Better Auth: POST /api/auth/request-password-reset and
+   *   POST /api/auth/reset-password. The legacy forgetPassword /
+   *   verifyOtp / resetPassword endpoints have been removed.
    * ═══════════════════════════════════════════════════════════════════════ */
-
-  /** POST /user/forgetPassword — Initiate password reset, sends OTP email (public). */
-  @Post('/forgetPassword')
-  forgetPassword(@Body() payload: any) {
-    return this.userService.forgetPassword(payload);
-  }
-
-  /** POST /user/verifyOtp — Verify OTP for password reset (public). */
-  @Post('/verifyOtp')
-  verifyOtp(@Body() payload: any) {
-    return this.userService.verifyOtp(payload);
-  }
-
-  /** POST /user/resetPassword — Set new password after OTP verification (protected). */
-  @UseGuards(AuthGuard)
-  @Post('/resetPassword')
-  resetPassword(@Request() req, @Body() payload: any) {
-    return this.userService.resetPassword(payload, req);
-  }
 
   /* ═══════════════════════════════════════════════════════════════════════
    * TAG & BRANCH ENDPOINTS

@@ -39,8 +39,19 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
 
+/**
+ * AuthModule (legacy) — keeps the JwtModule wiring and AuthService export so
+ * the legacy `JwtAuthGuard` (in `src/guards/AuthGuard.ts`) can validate
+ * existing JWTs and the helper login()/getToken() entry points still work
+ * for `admin.service` and `user.service.switchAccount`.
+ *
+ * The legacy /auth/refresh and /auth/logout endpoints have been removed —
+ * Better Auth (mounted at /api/auth/* in src/main.ts) owns session refresh
+ * and sign-out now. See Phase 4 in MIGRATION_TODO.mdx for the full
+ * deprecation plan; the JwtAuthGuard rewrite that retargets every controller
+ * onto BetterAuthGuard is deliberately deferred to a follow-up PR.
+ */
 @Module({
   imports: [
     JwtModule.registerAsync({
@@ -53,7 +64,6 @@ import { AuthController } from './auth.controller';
       }),
     }),
   ],
-  controllers: [AuthController],
   providers: [AuthService],
   exports: [AuthService],
 })

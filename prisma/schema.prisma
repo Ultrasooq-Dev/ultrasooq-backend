@@ -43,12 +43,9 @@ model User {
   cc                                            String?
   dateOfBirth                                   DateTime?
   gender                                        Gender?                       @default(MALE)
-  otp                                           Int?
-  otpValidTime                                  DateTime?
   password                                      String?
   phoneNumber                                   String?
   profilePicture                                String?
-  resetPassword                                 Int                           @default(0)
   status                                        Status                        @default(WAITING)
   tradeRole                                     TypeTrader                    @default(BUYER)
   uniqueId                                      String?
@@ -132,7 +129,6 @@ model User {
   productViews                                  ProductView[]                 @relation("UserProductViews")
   productSearches                               ProductSearch[]               @relation("UserProductSearches")
   productClicks                                 ProductClick[]                @relation("UserProductClicks")
-  refreshTokens                                 RefreshToken[]
   contentFilterLogs                             ContentFilterLog[]
   recommendationFeedback                        RecommendationFeedback[]      @relation("UserRecommendationFeedback")
   complaints                                    Complaint[]                   @relation("ComplaintBuyer")
@@ -146,23 +142,6 @@ model User {
   @@index([adminRoleId])
   @@index([status])
   @@index([tradeRole])
-}
-
-// RefreshToken — Stores opaque refresh tokens for JWT token rotation.
-// Each token is tied to a user, has an expiry, and can be revoked.
-// replacedBy tracks token rotation chains for security auditing.
-model RefreshToken {
-  id         Int      @id @default(autoincrement())
-  token      String   @unique
-  userId     Int
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  revoked    Boolean  @default(false)
-  replacedBy String?
-
-  @@index([userId])
-  @@index([token])
 }
 
 // MasterAccount — Represents a top-level account that owns multiple User sub-accounts.
@@ -186,8 +165,6 @@ model MasterAccount {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
-  otp              Int?
-  otpValidTime     DateTime?
   lastActiveUser   User?     @relation("LastActiveUser", fields: [lastActiveUserId], references: [id])
   users            User[]    @relation("MasterAccountUsers")
 }
