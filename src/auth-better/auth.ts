@@ -15,6 +15,7 @@ import 'dotenv/config';
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { bearer } from 'better-auth/plugins';
+import * as bcrypt from 'bcrypt';
 import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { sendVerificationMail, sendResetPasswordMail } from './mailer';
@@ -61,8 +62,19 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false, // flip to true once verification UX is wired
+    password: {
+      hash: async (password: string) => bcrypt.hash(password, 10),
+      verify: async ({ hash, password }: { hash: string; password: string }) =>
+        bcrypt.compare(password, hash),
+    },
     sendResetPassword: async ({ user, url }) => {
       await sendResetPasswordMail({ to: user.email, name: user.name || '', url });
+    },
+  },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
   },
   emailVerification: {
