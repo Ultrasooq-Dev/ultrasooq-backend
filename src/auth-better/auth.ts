@@ -152,6 +152,7 @@ export const auth = betterAuth({
         defaultValue: 'BUYER',
       },
       cc: { type: 'string', required: false },
+      phoneNumber: { type: 'string', required: false },
       firstName: { type: 'string', required: false },
       lastName: { type: 'string', required: false },
       // Populated by PATCH /api/v1/user/me/trade-role at register Step 3.
