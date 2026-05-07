@@ -25,6 +25,7 @@
     "seed:prod-trending": "ts-node --project prisma/tsconfig.seed.json prisma/seed-prod-trending.ts"
   },
   "dependencies": {
+    "@better-auth/passkey": "^1.6.9",
     "@browserbasehq/sdk": "^2.6.0",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/cache-manager": "^3.1.0",

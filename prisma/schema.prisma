@@ -135,6 +135,20 @@ model User {
   supportConversations                 SupportConversation[]         @relation("SupportUser")
   assignedSupportConversations         SupportConversation[]         @relation("SupportAssignee")
 
+  twoFactorEnabled    Boolean?     @default(false)
+  phoneNumberVerified Boolean?
+  role                String?
+  banned              Boolean?     @default(false)
+  banReason           String?
+  banExpires          DateTime?
+  username            String?
+  displayUsername     String?
+  members             Member[]
+  invitations         Invitation[]
+  twofactors          TwoFactor[]
+  passkeys            Passkey[]
+
+  @@unique([username])
   @@index([email])
   @@index([userRoleId])
   @@index([adminRoleId])
@@ -3978,6 +3992,9 @@ model Session {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  activeOrganizationId String?
+  impersonatedBy       String?
+
   @@index([userId])
 }
 
@@ -4010,4 +4027,76 @@ model Verification {
   updatedAt  DateTime @updatedAt
 
   @@index([identifier])
+}
+
+model Organization {
+  id          String       @id
+  name        String
+  slug        String
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  members     Member[]
+  invitations Invitation[]
+
+  @@unique([slug])
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model TwoFactor {
+  id          String   @id
+  secret      String
+  backupCodes String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified    Boolean? @default(true)
+
+  @@index([secret])
+  @@index([userId])
+}
+
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime?
+  aaguid       String?
+
+  @@index([userId])
+  @@index([credentialID])
 }
