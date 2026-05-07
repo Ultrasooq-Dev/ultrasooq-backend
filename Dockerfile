@@ -6,12 +6,15 @@ WORKDIR /app
 # System deps for native modules (bcrypt, etc.) and Chromium
 RUN apk add --no-cache libc6-compat python3 make g++
 
-# Copy package files and .npmrc (shamefully-hoist=true for flat node_modules)
-COPY package.json pnpm-lock.yaml .npmrc ./
+# Copy package files and .npmrc (legacy-peer-deps=true for npm)
+COPY package.json package-lock.json .npmrc ./
 
-# Install pnpm and ALL dependencies (including devDependencies for building)
-RUN npm install -g pnpm && \
-    NODE_ENV=development pnpm install --no-frozen-lockfile
+# Install ALL dependencies (including devDependencies for building).
+# We use npm rather than pnpm — pnpm 10's strict-builds policy blocks
+# build scripts on prisma/bcrypt/puppeteer/etc. and silently fails
+# native compilation. .npmrc has legacy-peer-deps=true so npm ci
+# tolerates the same peer-dep tree pnpm hoisted.
+RUN NODE_ENV=development npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -21,21 +24,21 @@ ARG DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
 ENV DATABASE_URL=$DATABASE_URL
 
 # Generate Prisma client and build
-RUN pnpm exec prisma generate && pnpm exec nest build
+RUN npx prisma generate && npx nest build
 
 # Verify build output exists
 RUN test -f dist/src/main.js && echo "BUILD OK: dist/src/main.js exists" || \
     (echo "BUILD FAILED: dist/src/main.js not found" && find dist -name "*.js" 2>/dev/null | head -10 && exit 1)
 
 # Copy prisma CLI binary before pruning (it's a devDep but needed for migrate deploy)
-RUN cp -r node_modules/.pnpm/prisma@7.4.1*/node_modules/prisma /tmp/prisma-cli
+RUN mkdir -p /tmp/prisma-cli && cp -r node_modules/prisma /tmp/prisma-cli/
 
 # Prune dev dependencies — keep only production deps
-RUN pnpm prune --prod
+RUN npm prune --omit=dev
 
 # Restore prisma CLI for runtime migrations
-RUN mkdir -p node_modules/.bin node_modules/prisma && \
-    cp -r /tmp/prisma-cli/* node_modules/prisma/ && \
+RUN cp -r /tmp/prisma-cli/prisma node_modules/ && \
+    mkdir -p node_modules/.bin && \
     ln -sf ../prisma/build/index.js node_modules/.bin/prisma
 
 # ── Runner stage ──────────────────────────────────────────────
