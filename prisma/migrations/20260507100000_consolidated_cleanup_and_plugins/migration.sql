@@ -1,3 +1,50 @@
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  ⚠ PRODUCTION DATA LOSS WARNING — READ BEFORE APPLYING TO PROD ⚠         ║
+-- ╠═══════════════════════════════════════════════════════════════════════════╣
+-- ║  This migration was auto-generated as DROP+CREATE for tables that were    ║
+-- ║  actually RENAMED (snake_case → PascalCase). On a populated prod DB this  ║
+-- ║  WIPES every row in 22 tables — including `user`, `account`, `session`.   ║
+-- ║                                                                           ║
+-- ║  Before running on prod, REPLACE each `DROP TABLE "old"; ... CREATE       ║
+-- ║  TABLE "New" (...)` pair below with `ALTER TABLE "old" RENAME TO          ║
+-- ║  "New";` plus targeted `ALTER TABLE "New" ADD COLUMN ...` for any new     ║
+-- ║  plugin columns. Renames to convert (DROP "lower" → New "Pascal"):       ║
+-- ║                                                                           ║
+-- ║    user                  → User      (+ plugin cols: twoFactorEnabled,    ║
+-- ║                                       phoneNumberVerified, role, banned,  ║
+-- ║                                       banReason, banExpires, username,    ║
+-- ║                                       displayUsername)                    ║
+-- ║    account               → Account   (Better Auth core)                   ║
+-- ║    session               → Session   (Better Auth core)                   ║
+-- ║    verification          → Verification (Better Auth core)                ║
+-- ║    policy                → Policy                                         ║
+-- ║    banner                → Banner                                         ║
+-- ║    system_log            → SystemLog                                      ║
+-- ║    category_keyword      → CategoryKeyword                                ║
+-- ║    category_tag          → CategoryTag                                    ║
+-- ║    category_mapping      → CategoryMapping                                ║
+-- ║    service_category_map  → ServiceCategoryMap                             ║
+-- ║    product_category_map  → ProductCategoryMap                             ║
+-- ║    product_spec_value    → ProductSpecValue                               ║
+-- ║    spec_template         → SpecTemplate                                   ║
+-- ║    scraping_job          → ScrapingJob                                    ║
+-- ║    scraped_product_raw   → ScrapedProductRaw                              ║
+-- ║    scraped_auto_part     → ScrapedAutoPart                                ║
+-- ║    recommendation_metrics → RecommendationMetric                          ║
+-- ║    recommendation_feedback → RecommendationFeedback                       ║
+-- ║    recommendation_config → RecommendationConfig                           ║
+-- ║    cross_sell_rules      → CrossSellRule                                  ║
+-- ║    term_disambiguations  → TermDisambiguation                             ║
+-- ║                                                                           ║
+-- ║  These DROPs ARE intended (data really should be deleted):                ║
+-- ║    PaymentErrorLog, system_health_log, parts_diagram, CustomField,        ║
+-- ║    CustomFieldValue, OrderProductService, strategy_lab_*,                 ║
+-- ║    accessory_links, compatibility_rules, use_case_mappings.               ║
+-- ║                                                                           ║
+-- ║  These CREATEs are new (no rename, just add):                             ║
+-- ║    Organization, Member, Invitation, TwoFactor, Passkey.                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
 /*
   Warnings:
 
