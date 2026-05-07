@@ -59,7 +59,13 @@ COPY --from=builder /app/.npmrc ./.npmrc
 
 EXPOSE 3000
 
-# Run migrations then start the server. Use `npx prisma` instead of a
-# hardcoded ./node_modules/.bin path — Prisma's bin layout differs by
-# package manager and `npx` resolves it correctly either way.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+# Run migrations then start the server.
+#
+# `npx prisma` is used so we don't depend on a specific bin layout
+# (npm vs. pnpm differ).
+#
+# RESET_DB env trigger: when set to "true", run `migrate reset --force`
+# which DROPS ALL TABLES and reapplies migrations from scratch. Used
+# exactly once to recover from migration drift after the consolidated
+# migration was deleted. MUST be unset (or false) on subsequent deploys.
+CMD ["sh", "-c", "if [ \"$RESET_DB\" = \"true\" ]; then echo '[boot] RESET_DB=true — wiping DB and reapplying migrations'; npx prisma migrate reset --force --skip-seed; else echo '[boot] migrate deploy'; npx prisma migrate deploy; fi && exec node dist/src/main.js"]
