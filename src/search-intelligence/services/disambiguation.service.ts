@@ -27,7 +27,7 @@ export class DisambiguationService {
    * @param userId - Optional logged-in user ID for personalization
    * @returns Ranked meanings with a bestGuess categoryId
    */
-  async disambiguate(term: string, userId?: number): Promise<DisambiguationOutput> {
+  async disambiguate(term: string, userId?: string): Promise<DisambiguationOutput> {
     if (!term || term.trim().length === 0) {
       return { meanings: [], bestGuess: null };
     }
@@ -49,7 +49,7 @@ export class DisambiguationService {
       try {
         const recent = await this.prisma.productView.findMany({
           where: { userId },
-          select: { product: { select: { categoryId: true } } },
+          include: { product: { select: { categoryId: true } } },
           orderBy: { lastViewedAt: 'desc' },
           take: 20,
         });

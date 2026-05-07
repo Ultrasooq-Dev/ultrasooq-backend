@@ -1,60 +1,20 @@
 /**
- * @file AuthGuard.ts — Better-Auth-aware authentication guard (formerly JWT)
+ * @file AuthGuard.ts — Better Auth session guard for protected business routes
  *
  * @intent
  *   Protects ~60 business controllers (orders, cart, products, RFQ, wallet,
  *   vendor dashboard, etc.) by validating a Better Auth session cookie OR
- *   bearer token, then resolving the linked LEGACY `User` row so downstream
- *   handlers see the same `req.user.id` integer they always have.
+ *   bearer token. The resolved user is exposed on `req.user` with the same
+ *   shape every controller has always read (`{ id, email, tradeRole, ... }`),
+ *   except `req.user.id` is now a Better Auth string id (User.id is String).
  *
  * @history
- *   This guard previously called `AuthService.validateToken()` against a
- *   custom JWT (`Authorization: Bearer <jwt>`). Since Phase 4 of the Better
- *   Auth migration dropped `/api/v1/user/login`, no new JWTs are minted —
- *   existing client tokens expire in 7 days and any controller still using
- *   this guard would 401 thereafter. Rather than retarget every controller,
- *   we keep the class name + import path and rewrite the internals to read
- *   a Better Auth session via `auth.api.getSession({ headers })`.
- *
- * @bridge
- *   Every BetterAuthUser row carries `legacyUserId` (an FK to `User.id`),
- *   populated either by:
- *     - the Phase 5 migration script (existing MasterAccount → BetterAuthUser)
- *     - `databaseHooks.user.create.after` in `src/auth-better/auth.ts` (new
- *       signups going forward)
- *     - `scripts/backfill-legacy-shadow.ts` (one-shot orphan healer)
- *   The guard resolves that link on every request and sets `req.user` to the
- *   full legacy `User` row. The downstream controllers don't change.
+ *   The legacy LegacyUser/LegacyMasterAccount bridge that used to live here
+ *   is gone — the schema now points every FK directly at the new `User`.
+ *   See MIGRATION_TODO.mdx (final cleanup pass) for the full history.
  *
  * @usage
  *   Applied via `@UseGuards(AuthGuard)` on controllers or individual routes.
- *   Used across most feature modules: user, product, cart, order, chat,
- *   wishlist, team-member, payment, rfq-product, service, etc.
- *
- * @dataflow
- *   1. `auth.api.getSession({ headers: fromNodeHeaders(req.headers) })`
- *      reads the `ultrasooq.session_token` cookie OR `Authorization: Bearer`
- *      via the `bearer()` plugin.
- *   2. If no session → 401 UnauthorizedException.
- *   3. Lookup `User` row via `BetterAuthUser.legacyUserId`.
- *   4. If no link → 401 (the bridge invariant — every BA user must have one;
- *      enforced by the database hook + backfill script).
- *   5. Optional sub-account / multi-account resolution preserved from the
- *      legacy guard for the currently-active sub-account semantics.
- *   6. `req.user` = legacy User shape (integer `id`, `tradeRole`, etc.).
- *      `req.betterAuthUser` = Better Auth user (UUID `id`).
- *      `req.betterAuthSession` = Better Auth session.
- *
- * @notes
- *   - `AuthService` is no longer required at runtime, but kept as a
- *     constructor parameter so the existing DI graph (every module that
- *     imports `AuthModule` to get `AuthService` for THIS guard) continues
- *     to compile + resolve without churn. The dependency is a no-op now —
- *     a follow-up cleanup PR can drop both the parameter and the
- *     module-level `AuthService` requirements together.
- *   - The dev-only test-bypass header (`x-test-user-id` with
- *     ENABLE_TEST_AUTH_BYPASS=true) is preserved unchanged, so test
- *     fixtures and CI helpers keep working.
  */
 
 import {
@@ -78,7 +38,7 @@ export class AuthGuard implements CanActivate {
     // AuthModule expressly to provide AuthService to this guard. The new
     // implementation no longer calls into it, but removing the parameter
     // would force changes across ~36 module files. A separate cleanup PR
-    // can drop `AuthService` once the legacy auth surface is gone.
+    // can drop both the parameter and the module-level wiring together.
     private readonly _authService: AuthService,
     private readonly prisma: PrismaService,
   ) {}
@@ -97,30 +57,24 @@ export class AuthGuard implements CanActivate {
     ) {
       const testUserId = req.headers['x-test-user-id'];
       if (testUserId) {
-        const parsedId = parseInt(testUserId as string, 10);
-        if (isNaN(parsedId) || parsedId <= 0) {
-          throw new UnauthorizedException(
-            'Invalid test user ID: must be a positive integer',
-          );
-        }
-
-        const user = await this.prisma.legacyUser.findUnique({
-          where: { id: parsedId },
+        const user = await this.prisma.user.findUnique({
+          where: { id: String(testUserId) },
         });
         if (!user) {
           throw new UnauthorizedException(
-            `Test auth bypass rejected: user with ID ${parsedId} does not exist`,
+            `Test auth bypass rejected: user with ID ${String(testUserId)} does not exist`,
           );
         }
 
-        this.logger.warn(`Auth bypass used for user ID: ${parsedId}`);
+        this.logger.warn(`Auth bypass used for user ID: ${user.id}`);
         req.user = {
-          id: parsedId,
+          id: user.id,
           email: user.email,
           userType: user.userType,
+          tradeRole: user.tradeRole,
           isTestBypass: true,
         };
-        return { error: false, user: req.user, message: 'Test bypass active' };
+        return true;
       }
     }
     // ─── End Test Auth Bypass ───────────────────────────────────────────
@@ -140,134 +94,22 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('No active session');
     }
 
-    const baUser = session.user as any;
-
-    // The bridge invariant: every BA user must have a paired legacy User row.
-    // Created by `databaseHooks.user.create.after` (auth.ts) for new signups,
-    // by `scripts/backfill-legacy-shadow.ts` for pre-hook orphans.
-    if (!baUser.legacyUserId) {
-      this.logger.warn(
-        `BetterAuthUser ${baUser.id} (${baUser.email}) is missing legacyUserId — backfill needed`,
-      );
-      throw new UnauthorizedException('Legacy user link missing');
+    // Better Auth's session.user has the core columns + every additionalFields
+    // entry from src/auth-better/auth.ts. The remaining business columns we
+    // store directly on User aren't in the session — fetch them once here so
+    // controllers reading `req.user.userType` / `req.user.tradeRole` etc. keep
+    // working with no churn.
+    const u = session.user as any;
+    const fullUser = await this.prisma.user.findUnique({
+      where: { id: u.id },
+    });
+    if (!fullUser) {
+      throw new UnauthorizedException('Session user not found');
     }
 
-    const legacyUser = await this.prisma.legacyUser.findUnique({
-      where: { id: baUser.legacyUserId },
-    });
-    if (!legacyUser) {
-      this.logger.warn(
-        `BetterAuthUser ${baUser.id} legacyUserId=${baUser.legacyUserId} points to missing User row`,
-      );
-      throw new UnauthorizedException('Legacy user link missing');
-    }
-
-    // Preserve the legacy guard's "currently-active sub-account" resolution
-    // semantics so multi-account flows keep working: if this user (or any
-    // sibling) has `isCurrent=true` under the same parent, hand that one
-    // back as `req.user`. Same shape every downstream controller expects.
-    const enhancedUser = await this.getActiveUserAccount({
-      id: legacyUser.id,
-      email: legacyUser.email,
-      tradeRole: legacyUser.tradeRole,
-    });
-
-    req.user = enhancedUser;
-    req.betterAuthUser = baUser;
+    req.user = fullUser;
+    req.betterAuthUser = u;
     req.betterAuthSession = session.session;
     return true;
-  }
-
-  /**
-   * getActiveUserAccount — Resolves to the currently-active sub-account
-   * under the same parent (if any). Mirrors the legacy guard's behavior so
-   * controllers that depend on `req.user.isSubAccount`, `parentUserId`, or
-   * `masterAccountId` keep seeing the same data.
-   */
-  private async getActiveUserAccount(tokenUser: any): Promise<any> {
-    if (!tokenUser?.id) return tokenUser;
-
-    try {
-      const user = await this.prisma.legacyUser.findUnique({
-        where: { id: tokenUser.id },
-      });
-      if (!user) return tokenUser;
-
-      // Sub-account path: if THIS row is a sub-account, either return it
-      // (when it's the active one) or hand back its currently-active sibling.
-      if (user.parentUserId) {
-        if (user.isCurrent) {
-          return {
-            ...tokenUser,
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            tradeRole: user.tradeRole,
-            isSubAccount: true,
-            masterAccountId: user.masterAccountId,
-            parentUserId: user.parentUserId,
-          };
-        }
-        const activeSubAccount = await this.prisma.legacyUser.findFirst({
-          where: {
-            parentUserId: user.parentUserId,
-            isCurrent: true,
-            deletedAt: null,
-          },
-        });
-        if (activeSubAccount) {
-          return {
-            ...tokenUser,
-            id: activeSubAccount.id,
-            email: activeSubAccount.email,
-            firstName: activeSubAccount.firstName,
-            lastName: activeSubAccount.lastName,
-            tradeRole: activeSubAccount.tradeRole,
-            isSubAccount: true,
-            masterAccountId: activeSubAccount.masterAccountId,
-            parentUserId: activeSubAccount.parentUserId,
-          };
-        }
-      }
-
-      // Master-account path: if THIS row has children, hand back the active
-      // child if there is one, otherwise THIS row.
-      const activeSubAccount = await this.prisma.legacyUser.findFirst({
-        where: {
-          parentUserId: user.id,
-          isCurrent: true,
-          deletedAt: null,
-        },
-      });
-      if (activeSubAccount) {
-        return {
-          ...tokenUser,
-          id: activeSubAccount.id,
-          email: activeSubAccount.email,
-          firstName: activeSubAccount.firstName,
-          lastName: activeSubAccount.lastName,
-          tradeRole: activeSubAccount.tradeRole,
-          isSubAccount: true,
-          masterAccountId: activeSubAccount.masterAccountId,
-          parentUserId: activeSubAccount.parentUserId,
-        };
-      }
-
-      return {
-        ...tokenUser,
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        tradeRole: user.tradeRole,
-        isSubAccount: false,
-        masterAccountId: user.masterAccountId,
-        parentUserId: user.parentUserId,
-      };
-    } catch {
-      // DB lookup failure → return token user as-is (fallback).
-      return tokenUser;
-    }
   }
 }

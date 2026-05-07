@@ -23,8 +23,8 @@ async function main() {
   console.log('🌱 Seeding test products for all sell types...\n');
 
   // Find a seller (admin user) to assign products to
-  const seller = await prisma.legacyUser.findFirst({
-    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] }, status: 'ACTIVE', deletedAt: null },
+  const seller = await prisma.user.findFirst({
+    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] }, status: 'ACTIVE' },
     select: { id: true, email: true, firstName: true },
   });
 

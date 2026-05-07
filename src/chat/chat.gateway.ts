@@ -61,7 +61,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * Used to locate a user's socket when they need to be pulled into a newly created room.
    * @type {Map<number, string>}
    */
-  private userSocketMap: Map<number, string> = new Map();
+  private userSocketMap: Map<string, string> = new Map();
 
   /**
    * @constructor
@@ -200,7 +200,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
           userId: newMessage.userId,
           roomId: newMessage.roomId,
           rfqId: newMessage.rfqId,
-          user: newMessage.user,
+          user: (newMessage as any).user,
           participants: newMessage.participants,
           rfqProductPriceRequest: newMessage.rfqPPRequest,
           rfqSuggestedProducts: newMessage.rfqSuggestedProducts || [],
@@ -270,7 +270,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         userId: newMessage.userId,
         roomId: newMessage.roomId,
         rfqId: newMessage.rfqId,
-        user: newMessage.user,
+        user: (newMessage as any).user,
         participants: newMessage.participants,
         rfqProductPriceRequest: newMessage.rfqPPRequest,
         rfqSuggestedProducts: newMessage.rfqSuggestedProducts || [],
@@ -418,7 +418,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
           content: newMessage.content,
           userId: newMessage.userId,
           roomId: newMessage.roomId,
-          user: newMessage.user,
+          user: (newMessage as any).user,
           participants: newMessage.participants,
           orderProductId: newMessage.orderProductId,
           createdAt: new Date(),
@@ -482,7 +482,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         content: newMessage.content,
         userId: newMessage.userId,
         roomId: newMessage.roomId,
-        user: newMessage.user,
+        user: (newMessage as any).user,
         participants: newMessage.participants,
         orderProductId: newMessage.orderProductId,
         createdAt: new Date(),
@@ -531,9 +531,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * @returns {Promise<void>}
    */
   async handleConnection(@ConnectedSocket() client: Socket) {
-    const userId = parseInt(client.handshake.query.userId as string, 10);
+    const userId = (client.handshake.query.userId as string) || '';
 
-    if (userId && !isNaN(userId)) {
+    if (userId) {
       this.userSocketMap.set(userId, client.id);
       const rooms = await this.chatService.getRoomsForUser(userId);
       rooms.forEach((room: number) => {

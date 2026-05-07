@@ -43,8 +43,8 @@ export class SendMessageForOrderDto {
 
   /** @description ID of the user sending the message. */
   @IsNotEmpty()
-  @IsInt()
-  readonly userId: number;
+  @IsString()
+  readonly userId: string;
 
   /** @description ID of the chat room the message belongs to. */
   @IsNotEmpty()

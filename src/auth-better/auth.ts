@@ -1,11 +1,11 @@
 /**
- * @file auth.ts — Better Auth instance for the new auth stack.
+ * @file auth.ts — Better Auth instance for the Ultrasooq auth stack.
  *
  * Lives at /api/auth/* on the NestJS backend. Mounted in main.ts BEFORE
  * the global JSON body parser so Better Auth can read raw bodies.
  *
- * Coexists with the legacy custom JWT/OTP auth at /api/v1/user/* during
- * the migration. See MIGRATION_TODO.mdx at repo root.
+ * Better Auth's `User` model is the only user model in this codebase — see
+ * prisma/schema.prisma. All FK relations across the schema point at it.
  */
 // Load .env early — this module runs at import time, BEFORE Nest's
 // ConfigModule has had a chance to populate process.env. Without this,
@@ -38,6 +38,10 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   user: {
     additionalFields: {
+      // Profile / business fields that the frontend reads through
+      // `auth.api.getSession()`. The rest (userType, status, dateOfBirth,
+      // etc.) live on User as plain Prisma columns — backend code reads
+      // them via `prisma.user.findUnique`, not through Better Auth.
       tradeRole: {
         type: 'string',
         required: false,
@@ -45,8 +49,9 @@ export const auth = betterAuth({
       },
       phoneNumber: { type: 'string', required: false },
       cc: { type: 'string', required: false },
-      legacyUserId: { type: 'number', required: false },
-      legacyMasterAccountId: { type: 'number', required: false },
+      firstName: { type: 'string', required: false },
+      lastName: { type: 'string', required: false },
+      userName: { type: 'string', required: false },
       // Populated by PATCH /api/v1/user/me/trade-role at register Step 3.
       companyName: { type: 'string', required: false },
       companyAddress: { type: 'string', required: false },
@@ -87,116 +92,6 @@ export const auth = betterAuth({
   plugins: [bearer()],
   advanced: {
     cookiePrefix: 'ultrasooq',
-  },
-  // ──────────────────────────────────────────────────────────────────────────
-  // databaseHooks — keeps a paired LegacyUser + LegacyMasterAccount in sync
-  // with every NEW Better Auth User. The bridge is critical because the
-  // existing ~60 business controllers all use `AuthGuard` which expects an
-  // integer `req.user.id` corresponding to `LegacyUser.id`. Without this
-  // hook, a fresh Better Auth signup would have no legacy User row, and the
-  // bridge guard would 401 on every protected endpoint.
-  //
-  // For ALREADY-MIGRATED orphan rows (created by the Phase 5 script before
-  // this hook existed), a one-shot backfill script at
-  // `scripts/backfill-legacy-shadow.ts` runs the same logic.
-  // ──────────────────────────────────────────────────────────────────────────
-  databaseHooks: {
-    user: {
-      create: {
-        after: async (baUser: any) => {
-          // Skip if this row already has both links populated — the migration
-          // script handled it, or a previous run of this hook did.
-          if (baUser.legacyUserId) return;
-
-          try {
-            const emailLc = (baUser.email as string).toLowerCase();
-            const [firstName = '', ...rest] = ((baUser.name as string) || '')
-              .trim()
-              .split(/\s+/);
-            const lastName = rest.join(' ');
-
-            const ALLOWED = new Set(['BUYER', 'FREELANCER', 'COMPANY']);
-            const rawTradeRole = String(baUser.tradeRole ?? 'BUYER').toUpperCase();
-            const tradeRole: any = ALLOWED.has(rawTradeRole)
-              ? rawTradeRole
-              : 'BUYER';
-
-            // Either reuse an existing LegacyMasterAccount (legacy email
-            // match) or create one. LegacyMasterAccount.email is UNIQUE.
-            let ma = await prisma.legacyMasterAccount.findUnique({
-              where: { email: emailLc },
-            });
-            if (!ma) {
-              ma = await prisma.legacyMasterAccount.create({
-                data: {
-                  email: emailLc,
-                  // LegacyMasterAccount has NOT-NULL String columns for these.
-                  // Phase 4 dropped its `password` is still kept (per schema check).
-                  password: '',
-                  firstName: firstName || emailLc.split('@')[0],
-                  lastName: lastName || '',
-                  phoneNumber: (baUser.phoneNumber as string) ?? '',
-                  cc: (baUser.cc as string) ?? '',
-                },
-              });
-            }
-
-            // Default-active BUYER LegacyUser row. LegacyUser.email is UNIQUE
-            // — if there happens to be an existing one we re-use it.
-            let legacy = await prisma.legacyUser.findUnique({
-              where: { email: emailLc },
-            });
-            if (!legacy) {
-              legacy = await prisma.legacyUser.create({
-                data: {
-                  masterAccountId: ma.id,
-                  email: emailLc,
-                  firstName: firstName || null,
-                  lastName: lastName || null,
-                  phoneNumber: (baUser.phoneNumber as string) ?? null,
-                  cc: (baUser.cc as string) ?? null,
-                  tradeRole,
-                  isActive: true,
-                  isCurrent: true,
-                  status: 'ACTIVE',
-                  loginType: 'MANUAL',
-                },
-              });
-            }
-
-            // Patch the back-link on the Better Auth User row.
-            await prisma.user.update({
-              where: { id: baUser.id },
-              data: { legacyUserId: legacy.id, legacyMasterAccountId: ma.id },
-            });
-
-            // Update LegacyMasterAccount.lastActiveUserId so flows that
-            // depend on it (e.g. legacy login resolution) see the correct
-            // primary. lastActiveUserId is @unique — only set if not already
-            // pointing to another LegacyUser from the same master.
-            if (ma.lastActiveUserId !== legacy.id) {
-              try {
-                await prisma.legacyMasterAccount.update({
-                  where: { id: ma.id },
-                  data: { lastActiveUserId: legacy.id },
-                });
-              } catch {
-                // Unique constraint conflict — another LegacyUser from this
-                // master is already the lastActive. Leave it alone.
-              }
-            }
-          } catch (err) {
-            // We don't want a hook failure to block the signup; log instead.
-            // The backfill script can heal any rows that slip through.
-            // eslint-disable-next-line no-console
-            console.error(
-              '[better-auth] databaseHooks.user.create.after failed:',
-              err,
-            );
-          }
-        },
-      },
-    },
   },
 });
 

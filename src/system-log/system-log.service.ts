@@ -9,7 +9,7 @@ export interface CreateLogDto {
   level: 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
   message: string;
   context?: string;
-  userId?: number;
+  userId?: string;
   requestId?: string;
   method?: string;
   path?: string;

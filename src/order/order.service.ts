@@ -190,7 +190,7 @@ export class OrderService {
       //   data: cartProductServiceRelation
       // };
 
-      let userDetail = await this.prisma.legacyUser.findUnique({
+      let userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
@@ -917,7 +917,7 @@ export class OrderService {
       }
 
       // Get user details
-      const userDetail = await this.prisma.legacyUser.findUnique({
+      const userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
@@ -1199,7 +1199,7 @@ export class OrderService {
           payload.guestUser.email = payload.guestUser.email.toLowerCase();
         }
   
-        const userExist = await this.prisma.legacyUser.findUnique({
+        const userExist = await this.prisma.user.findUnique({
           where: { email: payload.guestUser.email }
         });
         if (userExist) {
@@ -1217,7 +1217,7 @@ export class OrderService {
           const salt = await genSalt(10);
           const password = await hash(rawPassword, salt);
 
-          guestUserId = await this.prisma.legacyUser.create({
+          guestUserId = await this.prisma.user.create({
             data: { 
               firstName, 
               lastName, 
@@ -1239,7 +1239,7 @@ export class OrderService {
           } else {
             requestId = "0".repeat(7 - idString.length) + idString;
           }
-          let updatedUser = await this.prisma.legacyUser.update({
+          let updatedUser = await this.prisma.user.update({
             where: { id: guestUserId.id },
             data: {
               uniqueId: requestId,
@@ -1941,7 +1941,7 @@ export class OrderService {
       // if (req?.query?.selectedAdminId) {
       //   sellerId = parseInt(req.query.selectedAdminId);
       // }
-      let adminDetail = await this.prisma.legacyUser.findUnique({
+      let adminDetail = await this.prisma.user.findUnique({
         where: { id: sellerId },
         select: {
           id: true,
@@ -2662,7 +2662,7 @@ export class OrderService {
         }
       });
 
-      let userDetail = await this.prisma.legacyUser.findUnique({
+      let userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
@@ -4244,7 +4244,7 @@ export class OrderService {
       const userIds = [...new Set(orders.map(order => order.userId).filter(Boolean))] as number[];
       
       // Fetch user data for all unique user IDs
-      const users = await this.prisma.legacyUser.findMany({
+      const users = await this.prisma.user.findMany({
         where: {
           id: { in: userIds }
         },

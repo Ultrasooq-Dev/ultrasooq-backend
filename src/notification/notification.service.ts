@@ -414,7 +414,7 @@ export class NotificationService {
    * Create a new notification
    */
   async createNotification(data: {
-    userId: number;
+    userId: string;
     type: string;
     title: string;
     message: string;

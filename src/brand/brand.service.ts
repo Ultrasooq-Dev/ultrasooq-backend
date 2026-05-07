@@ -84,7 +84,7 @@ export class BrandService {
     try {
       // Handle both user object structures (from User model or custom object)
       const userId = req.user.id || req.user.userId;
-      let userDetail = await this.prisma.legacyUser.findUnique({
+      let userDetail = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { id: true, userType: true },
       });

@@ -175,7 +175,7 @@ export class LoggingInterceptor implements NestInterceptor {
       delay: number;
       method: string;
       url: string;
-      userId: number | null;
+      userId: string | null;
       requestId: string;
       ip: string;
       userAgent: string;

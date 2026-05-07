@@ -444,7 +444,7 @@ export class ChatService {
      * @param {number} userId - The authenticated user's ID.
      * @returns {Promise<number[]>} Array of room IDs the user belongs to.
      */
-    async getRoomsForUser(userId: number) {
+    async getRoomsForUser(userId: string) {
         try {
             const roomParticipants = await this.prisma.roomParticipants.findMany({
                 where: { userId },
@@ -1015,7 +1015,7 @@ export class ChatService {
      */
     async markMessagesAsRead(payload: UpdateMessageStatus) {
         try {
-            const user = await this.prisma.legacyUser.findUnique({
+            const user = await this.prisma.user.findUnique({
                 where: { id: payload.userId },
             });
 

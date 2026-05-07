@@ -7,7 +7,15 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) } as any);
 
 async function main() {
-  const sellerId = 6; // seller@ultrasooq.com
+  // Resolve a seller from the seeded test users (seed-admin.ts creates these)
+  const seller = await prisma.user.findFirst({
+    where: { email: 'seller@ultrasooq.com' },
+    select: { id: true },
+  });
+  if (!seller) {
+    throw new Error('seller@ultrasooq.com not found — run `npm run seed:admin` first');
+  }
+  const sellerId = seller.id;
 
   console.log('═══ Seeding Categories ═══');
 

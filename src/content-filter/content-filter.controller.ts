@@ -316,7 +316,7 @@ export class ContentFilterController {
   @Get('users/:userId/violations')
   @ApiOperation({ summary: 'Get all violations for a specific user' })
   async userViolations(
-    @Param('userId', ParseIntPipe) userId: number,
+    @Param('userId') userId: string,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
   ) {

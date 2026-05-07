@@ -21,8 +21,28 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) } as any);
 
 const SKU_PREFIX = 'PROD-TREND-';
 
-const SELLERS = [13, 14, 15, 16, 17];
-const BUYERS = [18, 19, 20, 21, 22, 23];
+// Sellers + buyers — populated from DB at the start of main(). The hard-coded
+// integer ids became invalid when User.id became a Better Auth string.
+let SELLERS: string[] = [];
+let BUYERS: string[] = [];
+
+async function loadSellersAndBuyers() {
+  const sellers = await prisma.user.findMany({
+    where: { tradeRole: { in: ['COMPANY', 'FREELANCER'] } },
+    select: { id: true },
+    take: 5,
+  });
+  const buyers = await prisma.user.findMany({
+    where: { tradeRole: 'BUYER' },
+    select: { id: true },
+    take: 6,
+  });
+  if (sellers.length === 0 || buyers.length === 0) {
+    throw new Error('No seeded sellers or buyers');
+  }
+  SELLERS = sellers.map((s) => s.id);
+  BUYERS = buyers.map((b) => b.id);
+}
 
 interface Spec { label: string; value: string }
 interface Trend {
@@ -302,6 +322,7 @@ async function seedAllBulk() {
 
 async function main() {
   console.log('Target host:', new URL(url!).host);
+  await loadSellersAndBuyers();
   await cleanup();
   await seedAllBulk();
   console.log(`\n═══ Done — ${TRENDING.length} products seeded ═══`);

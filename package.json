@@ -22,9 +22,7 @@
     "seed:categories:force": "ts-node --project prisma/tsconfig.seed.json prisma/seed-categories.ts --force",
     "seed:filter-rules": "ts-node --project prisma/tsconfig.seed.json prisma/seed-filter-rules.ts",
     "seed:homepage": "ts-node --project prisma/tsconfig.seed.json prisma/seed-homepage.ts",
-    "seed:prod-trending": "ts-node --project prisma/tsconfig.seed.json prisma/seed-prod-trending.ts",
-    "migrate:better-auth": "tsx scripts/migrate-to-better-auth.ts",
-    "backfill:better-auth-shadow": "tsx scripts/backfill-legacy-shadow.ts"
+    "seed:prod-trending": "ts-node --project prisma/tsconfig.seed.json prisma/seed-prod-trending.ts"
   },
   "dependencies": {
     "@browserbasehq/sdk": "^2.6.0",

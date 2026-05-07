@@ -593,7 +593,7 @@ export class ProductRfqService {
     try {
       const userId = req?.user?.id;
 
-      let allUserList = await this.prisma.legacyUser.findMany({
+      let allUserList = await this.prisma.user.findMany({
         where: {
           id: {
             not: userId,
@@ -660,7 +660,7 @@ export class ProductRfqService {
     try {
       // If no location is selected, return all active vendors
       if (!countryId) {
-        const allVendors = await this.prisma.legacyUser.findMany({
+        const allVendors = await this.prisma.user.findMany({
           where: {
             status: 'ACTIVE',
             tradeRole: { in: ['COMPANY', 'FREELANCER'] },
@@ -1264,7 +1264,7 @@ export class ProductRfqService {
 
       let buyerID = req?.user?.id;
 
-      let adminDetail = await this.prisma.legacyUser.findUnique({
+      let adminDetail = await this.prisma.user.findUnique({
         where: { id: buyerID },
 
         select: {
@@ -1664,7 +1664,7 @@ export class ProductRfqService {
 
       let sellerID = req?.user?.id;
 
-      let adminDetail = await this.prisma.legacyUser.findUnique({
+      let adminDetail = await this.prisma.user.findUnique({
         where: { id: sellerID },
 
         select: { id: true, tradeRole: true, addedBy: true },
@@ -1899,7 +1899,7 @@ export class ProductRfqService {
     try {
       let sellerID = req?.user?.id;
 
-      let adminDetail = await this.prisma.legacyUser.findUnique({
+      let adminDetail = await this.prisma.user.findUnique({
         where: { id: sellerID },
         select: { id: true, tradeRole: true, addedBy: true },
       });

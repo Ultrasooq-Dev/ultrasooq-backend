@@ -200,7 +200,7 @@ export class ProfileBuilderService {
             },
           },
         }),
-        this.prisma.legacyUser.findUnique({
+        this.prisma.user.findUnique({
           where: { id: userId },
           select: { tradeRole: true },
         }),

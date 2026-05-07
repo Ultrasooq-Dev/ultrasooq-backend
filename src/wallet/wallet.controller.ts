@@ -21,7 +21,7 @@ export class WalletController {
   @Get('balance')
   async getWalletBalance(@Req() req: any) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.getWalletBalance(userId, userAccountId);
   }
 
@@ -31,7 +31,7 @@ export class WalletController {
   @Post('deposit')
   async depositToWallet(@Req() req: any, @Body() depositDto: WalletDepositDto) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.depositToWallet(userId, depositDto, userAccountId);
   }
 
@@ -41,7 +41,7 @@ export class WalletController {
   @Post('withdraw')
   async withdrawFromWallet(@Req() req: any, @Body() withdrawDto: WalletWithdrawDto) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.withdrawFromWallet(userId, withdrawDto, userAccountId);
   }
 
@@ -51,7 +51,7 @@ export class WalletController {
   @Post('transfer')
   async transferToUser(@Req() req: any, @Body() transferDto: WalletTransferDto) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.transferToUser(userId, transferDto, userAccountId);
   }
 
@@ -61,7 +61,7 @@ export class WalletController {
   @Get('transactions')
   async getWalletTransactions(@Req() req: any, @Query() query: WalletTransactionsDto) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.getWalletTransactions(userId, query, userAccountId);
   }
 
@@ -102,7 +102,7 @@ export class WalletController {
   @Post('payment')
   async processWalletPayment(@Req() req: any, @Body() body: { amount: number; orderId: number }) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.processWalletPayment(userId, body.amount, body.orderId, userAccountId);
   }
 
@@ -112,7 +112,7 @@ export class WalletController {
   @Post('refund')
   async processWalletRefund(@Req() req: any, @Body() body: { amount: number; orderId: number }) {
     const userId = req.user.id;
-    const userAccountId = req.user.userAccountId;
+    const userAccountId = undefined; // multi-account hierarchy dropped
     return this.walletService.processWalletRefund(userId, body.amount, body.orderId, userAccountId);
   }
 }

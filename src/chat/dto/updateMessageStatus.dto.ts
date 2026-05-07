@@ -29,7 +29,7 @@ export class UpdateMessageStatus {
     /** @description ID of the user whose messages should be marked as read. */
     @IsNotEmpty()
     @IsNumber()
-    readonly userId?: number;
+    readonly userId?: string;
 
     /** @description ID of the chat room containing the messages to update. */
     @IsNotEmpty()

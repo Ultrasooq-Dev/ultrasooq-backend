@@ -48,7 +48,7 @@ export class UpdateRfqPriceRequest {
     /** @description ID of the user performing the approval or rejection action. */
     @IsNotEmpty()
     @IsNumber()
-    readonly userId?: number;
+    readonly userId?: string;
 
     /** @description ID of the chat room for broadcasting the update event. */
     @IsNotEmpty()

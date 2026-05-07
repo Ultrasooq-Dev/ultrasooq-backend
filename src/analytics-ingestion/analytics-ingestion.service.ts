@@ -21,7 +21,7 @@ import { SystemLogService } from '../system-log/system-log.service';
 
 export interface TrackingEvent {
   sessionId?: string;
-  userId?: number | null;
+  userId?: string | null;
   deviceId?: string;
   eventName?: string;
   eventType?: string;
@@ -36,7 +36,7 @@ export interface ErrorReport {
   source?: string;
   level?: string;
   sessionId?: string;
-  userId?: number | null;
+  userId?: string | null;
   pageUrl?: string;
   endpoint?: string;
   statusCode?: number;
@@ -60,7 +60,7 @@ export interface PerformanceMetricInput {
   pageUrl?: string;
   endpoint?: string;
   method?: string;
-  userId?: number | null;
+  userId?: string | null;
   sessionId?: string;
   requestId?: string;
 }
@@ -87,7 +87,7 @@ export class AnalyticsIngestionService {
           "id" SERIAL PRIMARY KEY,
           "sessionId" TEXT UNIQUE NOT NULL,
           "deviceId" TEXT,
-          "userId" INTEGER,
+          "userId" TEXT,
           "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "lastActiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "pageCount" INTEGER NOT NULL DEFAULT 0,
@@ -115,7 +115,7 @@ export class AnalyticsIngestionService {
           "firstSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "resolvedAt" TIMESTAMP(3),
-          "userId" INTEGER,
+          "userId" TEXT,
           "pageUrl" TEXT,
           "endpoint" TEXT,
           "statusCode" INTEGER,
@@ -133,7 +133,7 @@ export class AnalyticsIngestionService {
           "pageUrl" TEXT,
           "endpoint" TEXT,
           "method" TEXT,
-          "userId" INTEGER,
+          "userId" TEXT,
           "sessionId" TEXT,
           "requestId" TEXT,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -286,7 +286,7 @@ export class AnalyticsIngestionService {
     sessionId: string,
     opts: {
       deviceId?: string;
-      userId?: number;
+      userId?: string;
       ip?: string;
       userAgent?: string;
       incrementPage?: boolean;
@@ -323,7 +323,7 @@ export class AnalyticsIngestionService {
    */
   async processWebVitals(
     vitals: WebVitals,
-    opts: { pageUrl?: string; sessionId?: string; userId?: number },
+    opts: { pageUrl?: string; sessionId?: string; userId?: string },
   ): Promise<void> {
     await this.ensureTables();
 

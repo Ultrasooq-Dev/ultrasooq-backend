@@ -177,7 +177,7 @@ export class StripeService {
       }
 
       let stripeAccountId;
-      let userDetails = await this.prisma.legacyUser.findUnique({
+      let userDetails = await this.prisma.user.findUnique({
         where: { id: userId },
       });
 
@@ -196,7 +196,7 @@ export class StripeService {
 
         // Update user record with the new Stripe account ID
         if (userId) {
-          await this.prisma.legacyUser.update({
+          await this.prisma.user.update({
             where: { id: userId },
             data: { stripeAccountId: account.id },
           });
@@ -273,7 +273,7 @@ export class StripeService {
     try {
       // Handle both user object structures (from User model or custom object)
       const userId = req.user.id || req.user.userId; // Get userId from request
-      const authUser = await this.prisma.legacyUser.findUnique({
+      const authUser = await this.prisma.user.findUnique({
         where: { id: userId },
       });
 
@@ -375,7 +375,7 @@ export class StripeService {
         throw new BadRequestException('returnUrl is required');
       }
 
-      const user = await this.prisma.legacyUser.findUnique({
+      const user = await this.prisma.user.findUnique({
         where: { id: userId },
       });
 

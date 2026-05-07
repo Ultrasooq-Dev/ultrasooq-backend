@@ -93,8 +93,8 @@ export class TeamMemberService {
    *   -> validate email uniqueness
    *   -> fetch UserRole
    *   -> generate password & employeeId
-   *   -> this.prisma.legacyUser.create
-   *   -> this.prisma.legacyUser.update (uniqueId, userName)
+   *   -> this.prisma.user.create
+   *   -> this.prisma.user.update (uniqueId, userName)
    *   -> notificationService.addMemberMail (plaintext password)
    *   -> this.prisma.teamMember.create
    *   -> return newMember
@@ -127,7 +127,7 @@ export class TeamMemberService {
       const userRoleID = parseInt(payload.userRoleId);
 
       // -- Check for duplicate email in User table --
-      const userExist = await this.prisma.legacyUser.findUnique({
+      const userExist = await this.prisma.user.findUnique({
         where: { email: payload.email }
       });
 
@@ -167,14 +167,20 @@ export class TeamMemberService {
       let userRoleName = userRoleDetail.userRoleName;
       let userRoleId = userRoleID
 
-      // -- Create the User record with tradeRole 'MEMBER' --
-      let newUser = await this.prisma.legacyUser.create({
+      // -- Create the User record + Better Auth credential row --
+      // tradeRole MEMBER was dropped in the Better Auth migration; team
+      // membership is tracked via the TeamMember row created downstream.
+      const { randomUUID } = await import('crypto');
+      const newUserId = randomUUID();
+      let newUser = await this.prisma.user.create({
         data: {
+          id: newUserId,
+          name: `${firstName || ''} ${lastName || ''}`.trim(),
           firstName,
           lastName,
           email,
-          password: hashedPassword,
-          tradeRole: 'MEMBER',
+          emailVerified: true,
+          tradeRole: 'BUYER',
           cc,
           phoneNumber,
           userType: 'USER',
@@ -182,8 +188,17 @@ export class TeamMemberService {
           userRoleName,
           userRoleId,
           employeeId: employeeId,
-          addedBy: userId
-        }
+          addedBy: userId,
+        },
+      });
+      await this.prisma.account.create({
+        data: {
+          id: randomUUID(),
+          userId: newUserId,
+          accountId: newUserId,
+          providerId: 'credential',
+          password: hashedPassword,
+        },
       });
 
       // -- Build a zero-padded uniqueId (minimum 7 digits) --
@@ -205,7 +220,7 @@ export class TeamMemberService {
       });
 
       // -- Persist uniqueId and userName back to the User record --
-      let updatedUser = await this.prisma.legacyUser.update({
+      let updatedUser = await this.prisma.user.update({
         where: { id: newUser.id },
         data: {
           uniqueId: requestId,
@@ -424,8 +439,8 @@ export class TeamMemberService {
    * @dataflow
    * payload.memberId -> this.prisma.teamMember.findUnique (existence check)
    *   -> this.prisma.teamMember.update (role/status)
-   *   -> this.prisma.legacyUser.update (personal fields, if any changed)
-   *   -> this.prisma.userRole.findUnique + this.prisma.legacyUser.update (role sync, if changed)
+   *   -> this.prisma.user.update (personal fields, if any changed)
+   *   -> this.prisma.userRole.findUnique + this.prisma.user.update (role sync, if changed)
    *   -> return updatedTeamMember
    *
    * @depends PrismaClient
@@ -490,7 +505,7 @@ export class TeamMemberService {
       // -- Sync personal fields to the User table if any were provided --
       // if firstName, lastName etc is changed then update it in user
       if (payload.firstName || payload.lastName || payload.cc || payload.phoneNumber) {
-        await this.prisma.legacyUser.update({
+        await this.prisma.user.update({
           where: { id: existingTeamMember.userId },
           data: {
             firstName: payload.firstName,
@@ -507,7 +522,7 @@ export class TeamMemberService {
         let userRoleDetail = await this.prisma.userRole.findUnique({
           where: { id: parseInt(payload.userRoleId) }
         });
-        await this.prisma.legacyUser.update({
+        await this.prisma.user.update({
           where: { id: existingTeamMember.userId },
           data: {
             userRoleId: payload.userRoleId,

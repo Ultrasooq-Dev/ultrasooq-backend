@@ -23,7 +23,7 @@
  *   2. Validate JWT via AuthService.validateToken().
  *   3. If invalid → throw UnauthorizedException (401).
  *   4. Attach decoded user to req.user.
- *   5. Query the database (prisma.legacyUser.findUnique) to fetch the user's userType.
+ *   5. Query the database (prisma.user.findUnique) to fetch the user's userType.
  *   6. If userType !== 'ADMIN' → throw ForbiddenException (403) "Not An Admin".
  *   7. If admin → allow request through.
  *
@@ -91,14 +91,14 @@ export class SuperAdminAuthGuard implements CanActivate {
     ) {
       const testUserId = req.headers['x-test-user-id'];
       if (testUserId) {
-        const parsedId = parseInt(testUserId as string, 10);
-        if (isNaN(parsedId) || parsedId <= 0) {
+        const parsedId = String(testUserId);
+        if (!parsedId) {
           throw new UnauthorizedException(
-            'Invalid test user ID: must be a positive integer',
+            'Invalid test user ID',
           );
         }
 
-        const user = await this.prisma.legacyUser.findUnique({
+        const user = await this.prisma.user.findUnique({
           where: { id: parsedId },
           select: { id: true, email: true, userType: true },
         });
@@ -142,7 +142,7 @@ export class SuperAdminAuthGuard implements CanActivate {
       req.user = res['user'];
 
       /* Step 2: Database lookup to verify the user's userType is ADMIN */
-      const userDetail = await this.prisma.legacyUser.findUnique({
+      const userDetail = await this.prisma.user.findUnique({
         where: { id: req.user.id },
         select: {
           id: true,

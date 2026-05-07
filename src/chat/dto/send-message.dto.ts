@@ -55,8 +55,8 @@ export class SendMessageDto {
 
   /** @description ID of the user sending the message. */
   @IsNotEmpty()
-  @IsInt()
-  readonly userId: number;
+  @IsString()
+  readonly userId: string;
 
   /** @description ID of the chat room the message belongs to. */
   @IsNotEmpty()
@@ -85,13 +85,13 @@ export class SendMessageDto {
 
   /** @description Optional buyer user ID in the negotiation. */
   @IsOptional()
-  @IsNumber()
-  readonly buyerId?: number;
+  @IsString()
+  readonly buyerId?: string;
 
   /** @description Optional seller user ID in the negotiation. */
   @IsOptional()
-  @IsNumber()
-  readonly sellerId?: number;
+  @IsString()
+  readonly sellerId?: string;
 
   /** @description Client-generated unique identifier for idempotent / optimistic UI updates. */
   @IsOptional()

@@ -384,7 +384,7 @@ export class DealService {
 
       // Get buyer details
       const buyerIds = [...new Set(orders.map((o) => o.userId).filter(Boolean))] as number[];
-      const buyers = await this.prisma.legacyUser.findMany({
+      const buyers = await this.prisma.user.findMany({
         where: { id: { in: buyerIds } },
         select: {
           id: true,

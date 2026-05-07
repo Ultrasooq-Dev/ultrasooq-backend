@@ -14,11 +14,12 @@ export class WalletService {
   /**
    * Get or create wallet for user
    */
-  async getOrCreateWallet(userId: number, userAccountId?: number, currencyCode: string = 'USD') {
+  async getOrCreateWallet(userId: string, _userAccountId?: string, currencyCode: string = 'USD') {
+    // userAccountId was the multi-account hierarchy field — dropped in the
+    // Better Auth migration. Parameter kept for caller compatibility.
     let wallet = await this.prisma.wallet.findFirst({
       where: {
         userId,
-        userAccountId: userAccountId || null,
         currencyCode,
         deletedAt: null,
       },
@@ -28,7 +29,6 @@ export class WalletService {
       wallet = await this.prisma.wallet.create({
         data: {
           userId,
-          userAccountId: userAccountId || null,
           currencyCode,
           balance: 0,
           frozenBalance: 0,
@@ -55,7 +55,7 @@ export class WalletService {
   /**
    * Get wallet balance
    */
-  async getWalletBalance(userId: number, userAccountId?: number) {
+  async getWalletBalance(userId: string, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     return {
@@ -68,7 +68,7 @@ export class WalletService {
   /**
    * Deposit funds to wallet
    */
-  async depositToWallet(userId: number, depositDto: WalletDepositDto, userAccountId?: number) {
+  async depositToWallet(userId: string, depositDto: WalletDepositDto, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (wallet.status !== WalletStatus.ACTIVE) {
@@ -118,7 +118,7 @@ export class WalletService {
   /**
    * Withdraw funds from wallet
    */
-  async withdrawFromWallet(userId: number, withdrawDto: WalletWithdrawDto, userAccountId?: number) {
+  async withdrawFromWallet(userId: string, withdrawDto: WalletWithdrawDto, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (wallet.status !== WalletStatus.ACTIVE) {
@@ -174,7 +174,7 @@ export class WalletService {
   /**
    * Transfer funds to another user
    */
-  async transferToUser(userId: number, transferDto: WalletTransferDto, userAccountId?: number) {
+  async transferToUser(userId: string, transferDto: WalletTransferDto, userAccountId?: string) {
     const fromWallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (fromWallet.status !== WalletStatus.ACTIVE) {
@@ -278,7 +278,7 @@ export class WalletService {
   /**
    * Get wallet transactions
    */
-  async getWalletTransactions(userId: number, query: WalletTransactionsDto, userAccountId?: number) {
+  async getWalletTransactions(userId: string, query: WalletTransactionsDto, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     const where: any = {
@@ -322,7 +322,7 @@ export class WalletService {
   /**
    * Get wallet settings
    */
-  async getWalletSettings(userId: number) {
+  async getWalletSettings(userId: string) {
     let settings = await this.prisma.walletSettings.findFirst({
       where: {
         userId,
@@ -353,7 +353,7 @@ export class WalletService {
   /**
    * Update wallet settings
    */
-  async updateWalletSettings(userId: number, settingsDto: WalletSettingsDto) {
+  async updateWalletSettings(userId: string, settingsDto: WalletSettingsDto) {
     const settings = await this.prisma.walletSettings.upsert({
       where: { userId },
       update: settingsDto,
@@ -373,7 +373,7 @@ export class WalletService {
   /**
    * Process payment with wallet
    */
-  async processWalletPayment(userId: number, amount: number, orderId: number, userAccountId?: number) {
+  async processWalletPayment(userId: string, amount: number, orderId: number, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (wallet.status !== WalletStatus.ACTIVE) {
@@ -429,7 +429,7 @@ export class WalletService {
   /**
    * Process refund to wallet
    */
-  async processWalletRefund(userId: number, amount: number, orderId: number, userAccountId?: number) {
+  async processWalletRefund(userId: string, amount: number, orderId: number, userAccountId?: string) {
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (wallet.status !== WalletStatus.ACTIVE) {
@@ -480,7 +480,7 @@ export class WalletService {
   /**
    * Check withdrawal limits
    */
-  private async checkWithdrawalLimits(userId: number, amount: number) {
+  private async checkWithdrawalLimits(userId: string, amount: number) {
     const settings = await this.prisma.walletSettings.findFirst({
       where: { userId, deletedAt: null },
     });
@@ -540,7 +540,7 @@ export class WalletService {
     };
 
     if (query.userId) {
-      where.userId = parseInt(query.userId);
+      where.userId = String(query.userId);
     }
 
     if (query.status) {
@@ -612,7 +612,7 @@ export class WalletService {
     };
 
     if (query.userId) {
-      where.wallet = { userId: parseInt(query.userId) };
+      where.wallet = { userId: String(query.userId) };
     }
 
     if (query.transactionType) {
