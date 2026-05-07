@@ -4760,7 +4760,7 @@ export class AdminService {
       const user = await this.prisma.user.findUnique({
         where: { id },
         include: {
-          UserAddress: true,
+          userAddress: true,
           userPhone: true,
           userBranch: true,
           userProfile: true,

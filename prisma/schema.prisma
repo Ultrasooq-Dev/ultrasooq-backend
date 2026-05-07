@@ -34,111 +34,110 @@ model Permission {
 // can query them directly. Adding a column here requires adding the matching `additionalFields`
 // entry over there if the frontend needs to read it through `auth.api.getSession()`.
 model User {
-  id                                  String                        @id
-  email                               String                        @unique
-  emailVerified                       Boolean                       @default(false)
-  name                                String                        @default("")
-  image                               String?
-  createdAt                           DateTime                      @default(now())
-  updatedAt                           DateTime                      @updatedAt
+  id                                   String                        @id
+  email                                String                        @unique
+  emailVerified                        Boolean                       @default(false)
+  name                                 String                        @default("")
+  image                                String?
+  createdAt                            DateTime                      @default(now())
+  updatedAt                            DateTime                      @updatedAt
   // ── App-internal profile / business fields ─────────────────────────
-  firstName                           String?
-  lastName                            String?
-  cc                                  String?
-  phoneNumber                         String?
-  dateOfBirth                         DateTime?
-  gender                              Gender?
-  profilePicture                      String?
-  status                              Status                        @default(ACTIVE)
-  tradeRole                           TypeTrader                    @default(BUYER)
-  uniqueId                            String?
-  identityProof                       String?
-  identityProofBack                   String?
-  onlineOffline                       String?
-  onlineOfflineDateStatus             DateTime?
-  userType                            UserType?
-  userName                            String?
-  employeeId                          String?
-  userRoleId                          Int?
-  userRoleName                        String?
-  customerId                          String?
-  stripeAccountId                     String?
-  addedBy                             String?
-  adminRoleId                         Int?
-  userTypeCategoryId                  Int?
-  isActive                            Boolean                       @default(true)
-  statusNote                          String?
+  firstName                            String?
+  lastName                             String?
+  cc                                   String?
+  phoneNumber                          String?
+  dateOfBirth                          DateTime?
+  gender                               Gender?
+  profilePicture                       String?
+  status                               Status                        @default(ACTIVE)
+  tradeRole                            TypeTrader                    @default(BUYER)
+  uniqueId                             String?
+  identityProof                        String?
+  identityProofBack                    String?
+  onlineOffline                        String?
+  onlineOfflineDateStatus              DateTime?
+  userType                             UserType?
+  userName                             String?
+  employeeId                           String?
+  userRoleId                           Int?
+  userRoleName                         String?
+  customerId                           String?
+  stripeAccountId                      String?
+  addedBy                              String?
+  adminRoleId                          Int?
+  userTypeCategoryId                   Int?
+  isActive                             Boolean                       @default(true)
+  statusNote                           String?
   // COMPANY profile fields (populated by PATCH /api/v1/user/me/trade-role)
-  companyName                         String?
-  companyAddress                      String?
-  companyPhone                        String?
-  companyWebsite                      String?
-  companyTaxId                        String?
+  companyName                          String?
+  companyAddress                       String?
+  companyPhone                         String?
+  companyWebsite                       String?
+  companyTaxId                         String?
   // FREELANCER profile field
-  accountName                         String?
+  accountName                          String?
   // ── Better Auth core relations ─────────────────────────────────────
-  sessions                            Session[]
-  accounts                            Account[]
+  sessions                             Session[]
+  accounts                             Account[]
   // ── App relations ──────────────────────────────────────────────────
-  adminMember                         AdminMember[]                 @relation("subAdmin")
-  cartDetails                         Cart[]
-  ExistingProduct_admin               ExistingProduct[]             @relation("ExistingProduct_adminIdToUser")
-  ExistingProduct_user                ExistingProduct[]             @relation("ExistingProduct_userIdToUser")
-  helCenterUserDetail                 HelpCenter[]                  @relation("helpCenterUserDetail")
-  messages                            Message[]                     @relation("UserMessages")
-  user_orderProductsSeller            OrderProducts[]               @relation("OrderProductsSeller")
-  adminProduct                        Product[]                     @relation("ProductAdmin")
-  userProduct                         Product[]                     @relation("ProductUser")
-  dropshipProducts                    Product[]                     @relation("DropshipVendor")
-  originalProducts                    Product[]                     @relation("OriginalVendor")
-  user_producPrice                    ProductPrice[]                @relation("ProductPriceUser")
-  user_producPriceReview              ProductPriceReview[]          @relation("ProductPriceReviewUser")
-  user_productAnswerUser              ProductQuestion[]             @relation("ProductAnswerUser")
-  productQuesion                      ProductQuestion[]             @relation("questionByUser")
-  productQuestionAnswer               ProductQuestionAnswer[]       @relation("answerByUser")
-  user_productReview                  ProductReview[]               @relation("ProductReviewUser")
-  approved_rfq_product_Price_requests RfqQuoteProductPriceRequest[] @relation("approvedByUser")
-  rfq_product_price_buyer_requests    RfqQuoteProductPriceRequest[] @relation("requestedBuyer")
-  rejected_rfq_product_Price_requests RfqQuoteProductPriceRequest[] @relation("rejectedByUser")
+  adminMember                          AdminMember[]                 @relation("subAdmin")
+  cartDetails                          Cart[]
+  adminExistingProduct                 ExistingProduct[]             @relation("ExistingProduct_adminIdToUser")
+  userExistingProduct                  ExistingProduct[]             @relation("ExistingProduct_userIdToUser")
+  helCenterUserDetail                  HelpCenter[]                  @relation("helpCenterUserDetail")
+  messages                             Message[]                     @relation("UserMessages")
+  user_orderProductsSeller             OrderProducts[]               @relation("OrderProductsSeller")
+  adminProduct                         Product[]                     @relation("ProductAdmin")
+  userProduct                          Product[]                     @relation("ProductUser")
+  dropshipProducts                     Product[]                     @relation("DropshipVendor")
+  originalProducts                     Product[]                     @relation("OriginalVendor")
+  user_producPrice                     ProductPrice[]                @relation("ProductPriceUser")
+  user_producPriceReview               ProductPriceReview[]          @relation("ProductPriceReviewUser")
+  user_productAnswerUser               ProductQuestion[]             @relation("ProductAnswerUser")
+  productQuesion                       ProductQuestion[]             @relation("questionByUser")
+  productQuestionAnswer                ProductQuestionAnswer[]       @relation("answerByUser")
+  user_productReview                   ProductReview[]               @relation("ProductReviewUser")
+  approved_rfq_product_Price_requests  RfqQuoteProductPriceRequest[] @relation("approvedByUser")
+  rfq_product_price_buyer_requests     RfqQuoteProductPriceRequest[] @relation("requestedBuyer")
+  rejected_rfq_product_Price_requests  RfqQuoteProductPriceRequest[] @relation("rejectedByUser")
   requested_rfq_product_Price_requests RfqQuoteProductPriceRequest[] @relation("requestedByUser")
-  rfq_product_price_seller_requests   RfqQuoteProductPriceRequest[] @relation("requestedSeller")
-  user_rfqQuotesUserBuyer             RfqQuotesUsers[]              @relation("RfqQuotesUserBuyer")
-  user_rfqQuotesUserSeller            RfqQuotesUsers[]              @relation("RfqQuotesUserSeller")
-  vendorSuggestedProducts             RfqSuggestedProduct[]         @relation("VendorSuggestions")
-  createdRooms                        Room[]                        @relation("CreatedRooms")
-  rooms                               RoomParticipants[]            @relation("UserRooms")
-  services                            Service[]
-  sharedLink                          SharedLink[]                  @relation("linkGeneratorDetail")
-  teamMemberDetail                    TeamMember[]
-  adminRoleDetail                     AdminRole?                    @relation(fields: [adminRoleId], references: [id])
-  notifications                       Notification[]                @relation("UserNotifications")
-  systemLogs                          SystemLog[]
-  userRoleDetail                      UserRole?                     @relation(fields: [userRoleId], references: [id])
-  userTypeCategoryDetail              Category?                     @relation(fields: [userTypeCategoryId], references: [id])
-  UserAddress                         UserAddress[]
-  userBranch                          UserBranch[]
-  userPhone                           UserPhone[]
-  userProfile                         UserProfile[]
-  userProfileBusinessType             UserProfileBusinessType[]
-  userSocialLink                      UserSocialLink[]
-  wallets                             Wallet[]
-  walletSettings                      WalletSettings[]
-  productViews                        ProductView[]                 @relation("UserProductViews")
-  productSearches                     ProductSearch[]               @relation("UserProductSearches")
-  productClicks                       ProductClick[]                @relation("UserProductClicks")
-  contentFilterLogs                   ContentFilterLog[]
-  recommendationFeedback              RecommendationFeedback[]      @relation("UserRecommendationFeedback")
-  complaints                          Complaint[]                   @relation("ComplaintBuyer")
-  refundRequests                      RefundRequest[]               @relation("RefundBuyer")
-  supportConversations                SupportConversation[]         @relation("SupportUser")
-  assignedSupportConversations        SupportConversation[]         @relation("SupportAssignee")
+  rfq_product_price_seller_requests    RfqQuoteProductPriceRequest[] @relation("requestedSeller")
+  user_rfqQuotesUserBuyer              RfqQuotesUsers[]              @relation("RfqQuotesUserBuyer")
+  user_rfqQuotesUserSeller             RfqQuotesUsers[]              @relation("RfqQuotesUserSeller")
+  vendorSuggestedProducts              RfqSuggestedProduct[]         @relation("VendorSuggestions")
+  createdRooms                         Room[]                        @relation("CreatedRooms")
+  rooms                                RoomParticipants[]            @relation("UserRooms")
+  services                             Service[]
+  sharedLink                           SharedLink[]                  @relation("linkGeneratorDetail")
+  teamMemberDetail                     TeamMember[]
+  adminRoleDetail                      AdminRole?                    @relation(fields: [adminRoleId], references: [id])
+  notifications                        Notification[]                @relation("UserNotifications")
+  systemLogs                           SystemLog[]
+  userRoleDetail                       UserRole?                     @relation(fields: [userRoleId], references: [id])
+  userTypeCategoryDetail               Category?                     @relation(fields: [userTypeCategoryId], references: [id])
+  userAddress                          UserAddress[]
+  userBranch                           UserBranch[]
+  userPhone                            UserPhone[]
+  userProfile                          UserProfile[]
+  userProfileBusinessType              UserProfileBusinessType[]
+  userSocialLink                       UserSocialLink[]
+  wallets                              Wallet[]
+  walletSettings                       WalletSettings[]
+  productViews                         ProductView[]                 @relation("UserProductViews")
+  productSearches                      ProductSearch[]               @relation("UserProductSearches")
+  productClicks                        ProductClick[]                @relation("UserProductClicks")
+  contentFilterLogs                    ContentFilterLog[]
+  recommendationFeedback               RecommendationFeedback[]      @relation("UserRecommendationFeedback")
+  complaints                           Complaint[]                   @relation("ComplaintBuyer")
+  refundRequests                       RefundRequest[]               @relation("RefundBuyer")
+  supportConversations                 SupportConversation[]         @relation("SupportUser")
+  assignedSupportConversations         SupportConversation[]         @relation("SupportAssignee")
 
   @@index([email])
   @@index([userRoleId])
   @@index([adminRoleId])
   @@index([status])
   @@index([tradeRole])
-  @@map("user")
 }
 
 // UserRole — Defines named roles for seller team members (e.g., Manager, Sales Rep).
@@ -506,7 +505,7 @@ model Category {
   menuChild                        Category[]              @relation("MenuParentChild")
   parent                           Category?               @relation("ParentChild", fields: [parentId], references: [id])
   children                         Category[]              @relation("ParentChild")
-  category_policy                  policy?                 @relation(fields: [policy], references: [id])
+  category_policy                  Policy?                 @relation(fields: [policy], references: [id])
   categoryRfq_fees                 Fees?                   @relation("CategoryRfq", fields: [rfq], references: [id])
   categoryStore_fees               Fees?                   @relation("CategoryStore", fields: [store], references: [id])
   category_categoryIdDetail        CategoryConnectTo[]     @relation("CategoryDetail")
@@ -534,9 +533,6 @@ model Category {
   categoryMappings    CategoryMapping[]
   crossSellAsSource   CrossSellRule[]      @relation("CrossSellSource")
   crossSellAsTarget   CrossSellRule[]      @relation("CrossSellTarget")
-  useCaseMappings     UseCaseMapping[]     @relation("CategoryUseCases")
-  accessoryAsSource   AccessoryLink[]      @relation("AccessorySource")
-  accessoryAsTarget   AccessoryLink[]      @relation("AccessoryTarget")
   termDisambiguations TermDisambiguation[] @relation("TermDisambiguation")
 
   @@index([parentId])
@@ -588,7 +584,7 @@ model Fees {
   fees_categoryRfq           Category[]              @relation("CategoryRfq")
   fees_categoryStore         Category[]              @relation("CategoryStore")
   menuDetail                 Category?               @relation("menuDetail", fields: [menuId], references: [id])
-  fees_policy                policy?                 @relation(fields: [policyId], references: [id])
+  fees_policy                Policy?                 @relation(fields: [policyId], references: [id])
   fees_feesCategoryConnectTo FeesCategoryConnectTo[]
   fees_feesCountry           FeesCountry[]
   feesDetails                FeesDetail[]
@@ -774,12 +770,12 @@ model FeesCategoryConnectTo {
   feesCategoryConnectTo_fees Fees?     @relation(fields: [feeId], references: [id])
 }
 
-// policy — Defines platform policy rules that can be attached to categories and fees.
+// Policy — Defines platform policy rules that can be attached to categories and fees.
 // Fields: ruleName (policy name), rule (policy content/text), categoryName (associated category label),
 //   parentId (self-referencing for hierarchical policy trees).
 // Relations: policy_category -> Category[], policy_fees -> Fees[], parent/children (self-join for nesting).
 // Governs business rules such as return policies, listing requirements, or fee terms per category.
-model policy {
+model Policy {
   id              Int        @id @default(autoincrement())
   ruleName        String?
   rule            String?
@@ -791,8 +787,8 @@ model policy {
   parentId        Int?
   policy_category Category[]
   policy_fees     Fees[]
-  parent          policy?    @relation("ParentChild", fields: [parentId], references: [id])
-  children        policy[]   @relation("ParentChild")
+  parent          Policy?    @relation("ParentChild", fields: [parentId], references: [id])
+  children        Policy[]   @relation("ParentChild")
 }
 
 // Product — Core product catalog entity representing an item listed on the marketplace.
@@ -853,7 +849,6 @@ model Product {
   cartProductServices             CartProductService[]
   product_customizeProduct        CustomizeProduct[]
   factoriesCartDetail             FactoriesCart[]
-  orderProductServices            OrderProductService[]
   orderProducts                   OrderProducts[]
   adminBy                         User?                     @relation("ProductAdmin", fields: [adminId], references: [id])
   brand                           Brand?                    @relation(fields: [brandId], references: [id])
@@ -893,7 +888,6 @@ model Product {
   scrapedProductRaw      ScrapedProductRaw[]
   scrapedAutoParts       ScrapedAutoPart[]
   recommendationFeedback RecommendationFeedback[] @relation("ProductRecommendationFeedback")
-  compatibilityRules     CompatibilityRule[]      @relation("ProductCompatibility")
   productVariants        ProductVariant[]         @relation("ProductVariants")
 
   @@index([categoryId, status, deletedAt])
@@ -1488,7 +1482,7 @@ model FactoriesRequest {
   id                     Int               @id @default(autoincrement())
   buyerId                String?
   sellerId               String?
-  RequestNo              String?
+  requestNo              String?
   customizeProductId     Int?
   productId              String?
   quantity               Int?
@@ -1829,21 +1823,21 @@ model OrderSeller {
 //   breakdown (JSON fee/price breakdown), cashbackToCustomer/customerPay/platformFee/sellerReceives (financial split),
 //   object (JSON variant/extra data), orderProductReceipt, orderShippingId (FK to OrderShipping),
 //   orderProductType (PRODUCT/SERVICE), serviceId (FK to Service), serviceFeatures (JSON).
-// Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service, OrderProductService[].
+// Relations: Order, Product, ProductPrice, User (seller), OrderShipping, Service.
 // The core order line item; tracks per-product status and financials independently.
 model OrderProducts {
-  id                        Int                   @id @default(autoincrement())
+  id                        Int                @id @default(autoincrement())
   userId                    String?
   orderId                   Int?
   productId                 String?
-  salePrice                 Decimal?              @db.Decimal(10, 2)
-  purchasePrice             Decimal?              @db.Decimal(10, 2)
+  salePrice                 Decimal?           @db.Decimal(10, 2)
+  purchasePrice             Decimal?           @db.Decimal(10, 2)
   deletedAt                 DateTime?
-  createdAt                 DateTime              @default(now())
-  updatedAt                 DateTime              @updatedAt
-  status                    Status                @default(ACTIVE)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  status                    Status             @default(ACTIVE)
   orderProductDate          DateTime?
-  orderProductStatus        OrderProductStatus    @default(PLACED)
+  orderProductStatus        OrderProductStatus @default(PLACED)
   orderQuantity             Int?
   sellerId                  String?
   cancelReason              String?
@@ -1852,23 +1846,22 @@ model OrderProducts {
   sellerOrderNo             String?
   productPriceId            Int?
   breakdown                 Json?
-  cashbackToCustomer        Decimal?              @db.Decimal(10, 2)
-  customerPay               Decimal?              @db.Decimal(10, 2)
-  platformFee               Decimal?              @db.Decimal(10, 2)
-  sellerReceives            Decimal?              @db.Decimal(10, 2)
+  cashbackToCustomer        Decimal?           @db.Decimal(10, 2)
+  customerPay               Decimal?           @db.Decimal(10, 2)
+  platformFee               Decimal?           @db.Decimal(10, 2)
+  sellerReceives            Decimal?           @db.Decimal(10, 2)
   object                    Json?
   orderProductReceipt       String?
   orderShippingId           Int?
-  orderProductType          OrderProductType      @default(PRODUCT)
+  orderProductType          OrderProductType   @default(PRODUCT)
   serviceFeatures           Json?
   serviceId                 Int?
-  orderProductServices      OrderProductService[]
-  orderProduct_order        Order?                @relation(fields: [orderId], references: [id])
-  orderShippingDetail       OrderShipping?        @relation(fields: [orderShippingId], references: [id])
-  orderProduct_product      Product?              @relation(fields: [productId], references: [id])
-  orderProduct_productPrice ProductPrice?         @relation(fields: [productPriceId], references: [id])
-  sellerDetail              User?                 @relation("OrderProductsSeller", fields: [sellerId], references: [id])
-  service                   Service?              @relation(fields: [serviceId], references: [id])
+  orderProduct_order        Order?             @relation(fields: [orderId], references: [id])
+  orderShippingDetail       OrderShipping?     @relation(fields: [orderShippingId], references: [id])
+  orderProduct_product      Product?           @relation(fields: [productId], references: [id])
+  orderProduct_productPrice ProductPrice?      @relation(fields: [productPriceId], references: [id])
+  sellerDetail              User?              @relation("OrderProductsSeller", fields: [sellerId], references: [id])
+  service                   Service?           @relation(fields: [serviceId], references: [id])
   // Delivery management relations
   deliveryEvents            DeliveryEvent[]
   pickupCode                PickupCode?
@@ -1883,25 +1876,6 @@ model OrderProducts {
   @@index([productPriceId])
   @@index([orderShippingId])
   @@index([orderProductStatus])
-}
-
-// OrderProductService — Links an order line item to an associated service (product-service bundle in order).
-// Fields: productId (FK to Product), serviceId (FK to Service), orderProductId (FK to OrderProducts),
-//   orderProductType, relatedOrderProductId (cross-reference to paired order line item).
-// Relations: orderProduct -> OrderProducts, product -> Product, service -> Service.
-// Persists the product-service bundle pairing from CartProductService into the fulfilled order.
-model OrderProductService {
-  id                    Int           @id @default(autoincrement())
-  productId             String
-  serviceId             Int
-  orderProductId        Int
-  orderProductType      String?
-  relatedOrderProductId Int?
-  orderProduct          OrderProducts @relation(fields: [orderProductId], references: [id])
-  product               Product       @relation(fields: [productId], references: [id])
-  service               Service       @relation(fields: [serviceId], references: [id])
-
-  @@index([orderProductId])
 }
 
 // DeliveryEvent — Status history timeline for order delivery tracking.
@@ -2347,40 +2321,6 @@ model RoomParticipants {
   @@index([roomId])
 }
 
-// CustomField — Seller-defined custom form fields for a specific product.
-// Fields: adminId (seller), userId, productId, formName/formData (field definition and serialized schema).
-// Relations: None defined at Prisma level (uses raw IDs).
-// Allows sellers to add custom attribute fields beyond the standard product schema and dynamic forms.
-model CustomField {
-  id        Int       @id @default(autoincrement())
-  adminId   String?
-  userId    String?
-  productId String?
-  formName  String?
-  formData  String?
-  status    Status    @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-}
-
-// CustomFieldValue — Stores the actual value entered for a CustomField or DynamicForm element.
-// Fields: adminId (seller), userId, formId (FK to form), keyName (field identifier), value (entered value).
-// Relations: None defined at Prisma level (uses raw IDs).
-// Pairs with CustomField/DynamicForm to store seller-entered data for custom product attributes.
-model CustomFieldValue {
-  id        Int       @id @default(autoincrement())
-  adminId   String?
-  userId    String?
-  formId    Int?
-  keyName   String?
-  value     String?
-  status    Status    @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-}
-
 // Countries — Geographic lookup table for countries (used for addresses, fees, product locations).
 // Fields: sortname (ISO code), name (country name), phoneCode (international dialing code).
 // Relations: FeesCountry, FeesLocation, ProductPrice, ProductSellCountry, Service, UserAddress.
@@ -2448,23 +2388,6 @@ model Cities {
   city_userAddress     UserAddress[]
   city_rfqQuoteAddress RfqQuoteAddress[]
   city_userBranch      UserBranch[]
-}
-
-// PaymentErrorLog — Audit log for payment processing failures.
-// Fields: userId, paymentIntentId (payment gateway reference), payload (JSON of the failed request/response),
-//   location (code location/endpoint where the error occurred), errorMessage.
-// Relations: None.
-// Used for debugging and monitoring payment integration issues with Stripe/Paymob.
-model PaymentErrorLog {
-  id              Int       @id @default(autoincrement())
-  userId          String?
-  paymentIntentId String?
-  payload         Json?
-  location        String?
-  errorMessage    String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
 }
 
 // AdminPermission — Defines granular permissions for admin/sub-admin roles (platform-level RBAC).
@@ -2592,54 +2515,53 @@ model TransactionPaymob {
 //   countryId/stateId (FK to Countries/States for service area).
 // Relations: Cart, OrderProducts, OrderShipping, Category, User (seller), Cities (from/to/range),
 //   Countries, States, ServiceFeature[], ServiceImage[], ServiceTag[],
-//   CartProductService[], OrderProductService[].
+//   CartProductService[].
 // Services support both appointment booking (BOOKING) and logistics/moving (MOVING) use cases.
 model Service {
-  id                   Int                   @id @default(autoincrement())
-  workingDays          String
-  offDays              String?
-  renewEveryWeek       Boolean               @default(false)
-  oneTime              Boolean               @default(false)
-  openTime             DateTime?             @db.Timestamp(6)
-  closeTime            DateTime?             @db.Timestamp(6)
-  breakTimeFrom        DateTime?             @db.Timestamp(6)
-  breakTimeTo          DateTime?             @db.Timestamp(6)
-  shippingType         ShippingType?
-  fromCityId           Int?
-  toCityId             Int?
-  rangeCityId          Int?
-  serviceName          String
-  serviceType          ServiceType
-  description          String?
-  serviceConfirmType   ServiceConfirmType?
-  serviceFor           ServiceFor?
-  categoryId           Int
-  categoryLocation     String?
-  status               Status                @default(INACTIVE)
-  deletedAt            DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  customerPerPeiod     Int?
-  eachCustomerTime     Int?
-  sellerId             String
-  countryId            Int?
-  stateId              Int?
-  carts                Cart[]
-  cartProductServices  CartProductService[]
-  orderProductServices OrderProductService[]
-  orderProducts        OrderProducts[]
-  ordershippingDetail  OrderShipping[]
-  category             Category              @relation(fields: [categoryId], references: [id])
-  country              Countries?            @relation(fields: [countryId], references: [id])
-  fromCity             Cities?               @relation("Service_fromCity", fields: [fromCityId], references: [id])
-  rangeCity            Cities?               @relation("Service_rangeCity", fields: [rangeCityId], references: [id])
-  seller               User                  @relation(fields: [sellerId], references: [id])
-  state                States?               @relation(fields: [stateId], references: [id])
-  toCity               Cities?               @relation("Service_toCity", fields: [toCityId], references: [id])
-  serviceFeatures      ServiceFeature[]
-  images               ServiceImage[]
-  serviceTags          ServiceTag[]
-  serviceCategories    ServiceCategoryMap[]
+  id                  Int                  @id @default(autoincrement())
+  workingDays         String
+  offDays             String?
+  renewEveryWeek      Boolean              @default(false)
+  oneTime             Boolean              @default(false)
+  openTime            DateTime?            @db.Timestamp(6)
+  closeTime           DateTime?            @db.Timestamp(6)
+  breakTimeFrom       DateTime?            @db.Timestamp(6)
+  breakTimeTo         DateTime?            @db.Timestamp(6)
+  shippingType        ShippingType?
+  fromCityId          Int?
+  toCityId            Int?
+  rangeCityId         Int?
+  serviceName         String
+  serviceType         ServiceType
+  description         String?
+  serviceConfirmType  ServiceConfirmType?
+  serviceFor          ServiceFor?
+  categoryId          Int
+  categoryLocation    String?
+  status              Status               @default(INACTIVE)
+  deletedAt           DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  customerPerPeiod    Int?
+  eachCustomerTime    Int?
+  sellerId            String
+  countryId           Int?
+  stateId             Int?
+  carts               Cart[]
+  cartProductServices CartProductService[]
+  orderProducts       OrderProducts[]
+  ordershippingDetail OrderShipping[]
+  category            Category             @relation(fields: [categoryId], references: [id])
+  country             Countries?           @relation(fields: [countryId], references: [id])
+  fromCity            Cities?              @relation("Service_fromCity", fields: [fromCityId], references: [id])
+  rangeCity           Cities?              @relation("Service_rangeCity", fields: [rangeCityId], references: [id])
+  seller              User                 @relation(fields: [sellerId], references: [id])
+  state               States?              @relation(fields: [stateId], references: [id])
+  toCity              Cities?              @relation("Service_toCity", fields: [toCityId], references: [id])
+  serviceFeatures     ServiceFeature[]
+  images              ServiceImage[]
+  serviceTags         ServiceTag[]
+  serviceCategories   ServiceCategoryMap[]
 
   @@index([sellerId])
   @@index([categoryId])
@@ -2790,36 +2712,36 @@ model WalletSettings {
 //   ExistingProductImages[], ExistingProductTags[].
 // Admin creates ExistingProducts as a catalog; sellers can then list them in their own store via ProductPrice.
 model ExistingProduct {
-  id                                 Int                     @id @default(autoincrement())
-  productName                        String
-  categoryId                         Int?
-  brandId                            Int?
-  description                        String?
-  specification                      String?
-  shortDescription                   String?
-  productType                        ProductType?
-  typeOfProduct                      TypeOfProduct?
-  typeProduct                        TypeProduct?
-  placeOfOriginId                    Int?
-  barcode                            String?
-  status                             Status                  @default(ACTIVE)
-  deletedAt                          DateTime?
-  createdAt                          DateTime                @default(now())
-  updatedAt                          DateTime                @updatedAt
-  adminId                            String?
-  categoryLocation                   String?
-  offerPrice                         Decimal                 @default(0.00) @db.Decimal(8, 2)
-  productPrice                       Decimal                 @default(0.00) @db.Decimal(8, 2)
-  productViewCount                   Int?                    @default(0)
-  skuNo                              String                  @unique @default(dbgenerated("('SKU_'::text || (EXTRACT(epoch FROM now()))::text)"))
-  userId                             String?
-  User_ExistingProduct_adminIdToUser User?                   @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
-  brand                              Brand?                  @relation(fields: [brandId], references: [id])
-  category                           Category?               @relation(fields: [categoryId], references: [id])
-  placeOfOrigin                      CountryList?            @relation(fields: [placeOfOriginId], references: [id])
-  User_ExistingProduct_userIdToUser  User?                   @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
-  existingProductImages              ExistingProductImages[]
-  existingProductTags                ExistingProductTags[]
+  id                    Int                     @id @default(autoincrement())
+  productName           String
+  categoryId            Int?
+  brandId               Int?
+  description           String?
+  specification         String?
+  shortDescription      String?
+  productType           ProductType?
+  typeOfProduct         TypeOfProduct?
+  typeProduct           TypeProduct?
+  placeOfOriginId       Int?
+  barcode               String?
+  status                Status                  @default(ACTIVE)
+  deletedAt             DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  adminId               String?
+  categoryLocation      String?
+  offerPrice            Decimal                 @default(0.00) @db.Decimal(8, 2)
+  productPrice          Decimal                 @default(0.00) @db.Decimal(8, 2)
+  productViewCount      Int?                    @default(0)
+  skuNo                 String                  @unique @default(dbgenerated("('SKU_'::text || (EXTRACT(epoch FROM now()))::text)"))
+  userId                String?
+  adminBy               User?                   @relation("ExistingProduct_adminIdToUser", fields: [adminId], references: [id])
+  brand                 Brand?                  @relation(fields: [brandId], references: [id])
+  category              Category?               @relation(fields: [categoryId], references: [id])
+  placeOfOrigin         CountryList?            @relation(fields: [placeOfOriginId], references: [id])
+  userBy                User?                   @relation("ExistingProduct_userIdToUser", fields: [userId], references: [id])
+  existingProductImages ExistingProductImages[]
+  existingProductTags   ExistingProductTags[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -3246,7 +3168,6 @@ model Banner {
   @@index([priority])
   @@index([startDate, endDate])
   @@index([isActive, position])
-  @@map("banner")
 }
 
 model SystemLog {
@@ -3272,7 +3193,6 @@ model SystemLog {
   @@index([userId])
   @@index([requestId])
   @@index([context])
-  @@map("system_log")
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3301,7 +3221,6 @@ model ProductCategoryMap {
   @@unique([productId, categoryId])
   @@index([productId])
   @@index([categoryId])
-  @@map("product_category_map")
 }
 
 // CategoryKeyword — Keywords/synonyms that link products to categories automatically.
@@ -3321,7 +3240,6 @@ model CategoryKeyword {
   @@unique([categoryId, keyword])
   @@index([keyword])
   @@index([categoryId])
-  @@map("category_keyword")
 }
 
 // CategoryTag — Links Tags to Categories, replacing the keyword-based auto-mapping system.
@@ -3342,7 +3260,6 @@ model CategoryTag {
   @@unique([categoryId, tagId])
   @@index([categoryId])
   @@index([tagId])
-  @@map("category_tag")
 }
 
 // ServiceCategoryMap — Multi-category mapping for services (mirrors ProductCategoryMap for products).
@@ -3364,7 +3281,6 @@ model ServiceCategoryMap {
   @@unique([serviceId, categoryId])
   @@index([serviceId])
   @@index([categoryId])
-  @@map("service_category_map")
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3411,7 +3327,6 @@ model SpecTemplate {
   @@unique([categoryId, key])
   @@index([categoryId, isFilterable])
   @@index([categoryId, sortOrder])
-  @@map("spec_template")
 }
 
 // ProductSpecValue — Actual spec values for a product, linked to a SpecTemplate.
@@ -3435,165 +3350,6 @@ model ProductSpecValue {
   @@index([specTemplateId, value])
   @@index([specTemplateId, numericValue])
   @@index([productId])
-  @@map("product_spec_value")
-}
-
-// ══════════════════════════════════════════════════════════════
-// Health Check Logging
-// ══════════════════════════════════════════════════════════════
-
-// SystemHealthLog — Records health check results for system components.
-// Used by the HealthModule to track database, Redis, S3, and API health over time.
-model SystemHealthLog {
-  id         Int      @id @default(autoincrement())
-  component  String // "database", "redis", "s3", "openrouter", "sendgrid"
-  status     String // "healthy", "degraded", "down"
-  responseMs Int? // response time in ms
-  details    Json? // extra diagnostic info
-  checkedAt  DateTime @default(now())
-
-  @@index([component, checkedAt])
-  @@map("system_health_log")
-}
-
-// ══════════════════════════════════════════════════════════════
-// Strategy Lab — Multi-asset, multi-TF, multi-strategy testing
-// ══════════════════════════════════════════════════════════════
-
-// StrategyLabRun — One test run (solo or combined). Tracks config, status, and aggregate results.
-// Created when admin clicks "Run Test". Updated as the test progresses.
-// Relations: StrategyLabCombo (combos in this run), StrategyLabTrade (trades in this run).
-model StrategyLabRun {
-  id         Int     @id @default(autoincrement())
-  name       String? // Optional name for the run (e.g. "XAUUSD solo M15+H1")
-  mode       String // "solo" or "combined"
-  configJson Json // Full config: assets, timeframes, strategies, equity, stages, min_grade
-  statusRun  String  @default("pending") // "pending", "running", "done", "failed"
-  progress   Int     @default(0) // 0-100 percentage
-
-  // Aggregate results (filled when done)
-  totalCombos     Int   @default(0)
-  qualifiedCombos Int   @default(0)
-  totalTrades     Int   @default(0)
-  totalPnl        Float @default(0)
-  finalEquity     Float @default(0)
-  startingEquity  Float @default(10000)
-  returnPct       Float @default(0)
-  elapsedSeconds  Float @default(0)
-
-  // Solo-specific summaries
-  gradesJson      Json? // {"A": 5, "B": 12, "C": 8, ...}
-  assetSummary    Json? // Per-asset aggregates
-  strategySummary Json? // Per-strategy aggregates
-  tfSummary       Json? // Per-TF aggregates
-
-  // Combined-specific
-  equityCurve  Json? // [{stage, equity, time}, ...]
-  stageReports Json? // [{stage, trades, pnl, equity, active, paused}, ...]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime? @updatedAt
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  combos StrategyLabCombo[]
-  trades StrategyLabTrade[]
-
-  @@index([mode, statusRun])
-  @@index([createdAt])
-  @@map("strategy_lab_run")
-}
-
-// StrategyLabCombo — Results for one asset×TF×strategy combo within a run.
-// In solo mode: independent metrics. In combined mode: includes stage history and risk multiplier.
-model StrategyLabCombo {
-  id    Int            @id @default(autoincrement())
-  runId Int
-  run   StrategyLabRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  asset     String // e.g. "XAUUSD"
-  timeframe String // e.g. "H1"
-  strategy  String // e.g. "Momentum"
-  comboKey  String // e.g. "XAUUSD_Momentum_H1"
-  tier      Int    @default(1) // Asset risk tier 1/2/3
-
-  // Metrics
-  totalTrades  Int   @default(0)
-  wins         Int   @default(0)
-  losses       Int   @default(0)
-  winRate      Float @default(0)
-  profitFactor Float @default(0)
-  totalPnl     Float @default(0)
-  maxDrawdown  Float @default(0)
-  avgPnl       Float @default(0)
-  bestTrade    Float @default(0)
-  worstTrade   Float @default(0)
-
-  // Hit counts
-  tp1Hits    Int @default(0)
-  tp2Hits    Int @default(0)
-  tp3Hits    Int @default(0)
-  slHits     Int @default(0)
-  expireHits Int @default(0)
-
-  // Solo grading
-  grade String? // "A", "B", "C", "D", "F"
-
-  // Combined staging
-  paused        Boolean @default(false)
-  finalRiskMult Float   @default(1.0)
-  stageHistory  Json? // [{stage, pf, trades, pnl, action, risk_mult}, ...]
-
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  trades StrategyLabTrade[]
-
-  @@index([runId])
-  @@index([asset, timeframe, strategy])
-  @@index([grade])
-  @@index([profitFactor])
-  @@map("strategy_lab_combo")
-}
-
-// StrategyLabTrade — Individual trade record within a lab test.
-// Full detail: entry, exit, P&L, level hits, timing, stage number.
-model StrategyLabTrade {
-  id      Int              @id @default(autoincrement())
-  runId   Int
-  run     StrategyLabRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  comboId Int
-  combo   StrategyLabCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
-
-  asset      String
-  timeframe  String
-  strategy   String
-  direction  String // "buy" or "sell"
-  entryPrice Float
-  exitPrice  Float?
-  pnl        Float  @default(0)
-  barsHeld   Int    @default(0)
-
-  entryTime String? // ISO timestamp string
-  exitTime  String?
-  day       String? // Date string (YYYY-MM-DD)
-
-  // Level hits as JSON: [["TP1", 45.20], ["SL", -30.10]]
-  hitsJson Json?
-
-  // Combined mode extras
-  stageNumber Int?
-  riskMult    Float?
-
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  status    Status    @default(ACTIVE)
-
-  @@index([runId])
-  @@index([comboId])
-  @@index([asset, strategy, timeframe])
-  @@map("strategy_lab_trade")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3648,7 +3404,6 @@ model ScrapingJob {
   @@index([platform, status])
   @@index([status, priority])
   @@index([batchId])
-  @@map("scraping_job")
 }
 
 // ScrapedProductRaw — Raw scraped data staging table before processing.
@@ -3689,7 +3444,6 @@ model ScrapedProductRaw {
   @@index([jobId, status])
   @@index([sourcePlatform, status])
   @@index([productId])
-  @@map("scraped_product_raw")
 }
 
 // CategoryMapping — Maps source platform categories to Ultrasooq categories.
@@ -3716,7 +3470,6 @@ model CategoryMapping {
 
   @@unique([sourcePlatform, sourcePath])
   @@index([ultrasooqCategoryId])
-  @@map("category_mapping")
 }
 
 enum ScrapingJobStatus {
@@ -3810,40 +3563,6 @@ model ScrapedAutoPart {
   @@index([category, subcategory])
   @@index([jobId])
   @@index([productId])
-  @@map("scraped_auto_part")
-}
-
-model PartsDiagram {
-  id        Int     @id @default(autoincrement())
-  diagramId String  @unique
-  name      String
-  imageUrl  String
-  svgUrl    String?
-
-  // Vehicle
-  vehicleMake   String
-  vehicleModel  String
-  vehicleYear   Int?
-  vehicleEngine String?
-
-  // Categorization
-  category    String
-  subcategory String?
-
-  // Parts in this diagram (JSON array of DiagramPart)
-  parts Json @default("[]")
-
-  // Source
-  sourceUrl      String
-  sourcePlatform String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([vehicleMake, vehicleModel])
-  @@index([sourcePlatform])
-  @@index([category])
-  @@map("parts_diagram")
 }
 
 model ContentFilterRule {
@@ -3899,7 +3618,6 @@ model RecommendationMetric {
   @@unique([date, algorithm, placement, segment, experiment])
   @@index([date])
   @@index([algorithm])
-  @@map("recommendation_metrics")
 }
 
 // RecommendationFeedback — Tracks recommendation impressions/clicks/cart-adds/purchases per user.
@@ -3924,7 +3642,6 @@ model RecommendationFeedback {
   @@index([recId])
   @@index([userId])
   @@index([algorithm, placement, createdAt])
-  @@map("recommendation_feedback")
 }
 
 model CrossSellRule {
@@ -3942,7 +3659,6 @@ model CrossSellRule {
 
   @@unique([sourceCategoryId, targetCategoryId])
   @@index([sourceCategoryId])
-  @@map("cross_sell_rules")
 }
 
 model RecommendationConfig {
@@ -3951,71 +3667,8 @@ model RecommendationConfig {
   value     Json
   updatedBy String
   updatedAt DateTime @updatedAt
-
-  @@map("recommendation_config")
 }
 
-// ── Search Intelligence: Knowledge Graph Models ──────────────────────────────
-
-model UseCaseMapping {
-  id           Int       @id @default(autoincrement())
-  categoryId   Int
-  useCase      String    @db.VarChar(100)
-  impliedSpecs Json
-  impliedTags  Json?
-  weight       Decimal   @default(0.8) @db.Decimal(3, 2)
-  source       String    @default("manual") @db.VarChar(20)
-  status       Status    @default(ACTIVE)
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  category     Category  @relation("CategoryUseCases", fields: [categoryId], references: [id])
-
-  @@unique([categoryId, useCase])
-  @@index([categoryId])
-  @@index([useCase])
-  @@map("use_case_mappings")
-}
-
-model CompatibilityRule {
-  id           Int       @id @default(autoincrement())
-  productId    String
-  vehicleMake  String?   @db.VarChar(100)
-  vehicleModel String?   @db.VarChar(100)
-  yearFrom     Int?
-  yearTo       Int?
-  deviceBrand  String?   @db.VarChar(100)
-  deviceModel  String?   @db.VarChar(100)
-  compatType   String    @db.VarChar(20)
-  status       Status    @default(ACTIVE)
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  product      Product   @relation("ProductCompatibility", fields: [productId], references: [id])
-
-  @@index([productId])
-  @@index([vehicleMake, vehicleModel])
-  @@index([deviceBrand, deviceModel])
-  @@map("compatibility_rules")
-}
-
-model AccessoryLink {
-  id                  Int       @id @default(autoincrement())
-  sourceCategoryId    Int
-  accessoryCategoryId Int
-  strength            Decimal   @default(0.8) @db.Decimal(3, 2)
-  bidirectional       Boolean   @default(false)
-  status              Status    @default(ACTIVE)
-  deletedAt           DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  sourceCategory      Category  @relation("AccessorySource", fields: [sourceCategoryId], references: [id])
-  accessoryCategory   Category  @relation("AccessoryTarget", fields: [accessoryCategoryId], references: [id])
-
-  @@unique([sourceCategoryId, accessoryCategoryId])
-  @@index([sourceCategoryId])
-  @@map("accessory_links")
-}
 
 model TermDisambiguation {
   id              Int       @id @default(autoincrement())
@@ -4031,7 +3684,6 @@ model TermDisambiguation {
 
   @@index([term])
   @@index([categoryId])
-  @@map("term_disambiguations")
 }
 
 // ─── Complaint & Refund ─────────────────────────────────────────
@@ -4187,7 +3839,6 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("session")
 }
 
 model Account {
@@ -4208,7 +3859,6 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("account")
 }
 
 model Verification {
@@ -4220,5 +3870,4 @@ model Verification {
   updatedAt  DateTime @updatedAt
 
   @@index([identifier])
-  @@map("verification")
 }

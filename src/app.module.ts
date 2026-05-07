@@ -81,7 +81,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AppCacheModule } from './cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { SpecificationModule } from './specification/specification.module';
-import { StrategyLabModule } from './strategy-lab/strategy-lab.module';
 import { ContentFilterModule } from './content-filter/content-filter.module';
 import { RecommendationModule } from './recommendation/recommendation.module';
 import { SearchIntelligenceModule } from './search-intelligence/search-intelligence.module';
@@ -180,7 +179,6 @@ import { AuthBetterModule } from './auth-better/auth-better.module';
     WalletModule,
     // ScraperModule — extracted to standalone app (port 3002)
     BannerModule,
-    StrategyLabModule,    // Strategy Lab — multi-asset/TF/strategy backtesting
     ContentFilterModule,  // Content filtering — Trie-based bad-word detection, severity scoring
     RecommendationModule, // Recommendation engine — personalized, product-based, trending
     SearchIntelligenceModule, // Search intelligence — query parsing, intent classification, category/brand resolution
