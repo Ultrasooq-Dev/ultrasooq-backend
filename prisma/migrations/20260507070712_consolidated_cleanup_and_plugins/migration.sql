@@ -446,6 +446,14 @@ CREATE TABLE "User" (
     "companyWebsite" TEXT,
     "companyTaxId" TEXT,
     "accountName" TEXT,
+    "twoFactorEnabled" BOOLEAN DEFAULT false,
+    "phoneNumberVerified" BOOLEAN,
+    "role" TEXT,
+    "banned" BOOLEAN DEFAULT false,
+    "banReason" TEXT,
+    "banExpires" TIMESTAMP(3),
+    "username" TEXT,
+    "displayUsername" TEXT,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -779,57 +787,6 @@ CREATE TABLE "RecommendationConfig" (
 );
 
 -- CreateTable
-CREATE TABLE "UseCaseMapping" (
-    "id" SERIAL NOT NULL,
-    "categoryId" INTEGER NOT NULL,
-    "useCase" VARCHAR(100) NOT NULL,
-    "impliedSpecs" JSONB NOT NULL,
-    "impliedTags" JSONB,
-    "weight" DECIMAL(3,2) NOT NULL DEFAULT 0.8,
-    "source" VARCHAR(20) NOT NULL DEFAULT 'manual',
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "UseCaseMapping_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "CompatibilityRule" (
-    "id" SERIAL NOT NULL,
-    "productId" TEXT NOT NULL,
-    "vehicleMake" VARCHAR(100),
-    "vehicleModel" VARCHAR(100),
-    "yearFrom" INTEGER,
-    "yearTo" INTEGER,
-    "deviceBrand" VARCHAR(100),
-    "deviceModel" VARCHAR(100),
-    "compatType" VARCHAR(20) NOT NULL,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "CompatibilityRule_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "AccessoryLink" (
-    "id" SERIAL NOT NULL,
-    "sourceCategoryId" INTEGER NOT NULL,
-    "accessoryCategoryId" INTEGER NOT NULL,
-    "strength" DECIMAL(3,2) NOT NULL DEFAULT 0.8,
-    "bidirectional" BOOLEAN NOT NULL DEFAULT false,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "AccessoryLink_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "TermDisambiguation" (
     "id" SERIAL NOT NULL,
     "term" VARCHAR(100) NOT NULL,
@@ -854,6 +811,8 @@ CREATE TABLE "Session" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "ipAddress" TEXT,
     "userAgent" TEXT,
+    "activeOrganizationId" TEXT,
+    "impersonatedBy" TEXT,
 
     CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
 );
@@ -889,6 +848,71 @@ CREATE TABLE "Verification" (
     CONSTRAINT "Verification_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Organization" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "logo" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL,
+    "metadata" TEXT,
+
+    CONSTRAINT "Organization_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Member" (
+    "id" TEXT NOT NULL,
+    "organizationId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'member',
+    "createdAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Member_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Invitation" (
+    "id" TEXT NOT NULL,
+    "organizationId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "inviterId" TEXT NOT NULL,
+
+    CONSTRAINT "Invitation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TwoFactor" (
+    "id" TEXT NOT NULL,
+    "secret" TEXT NOT NULL,
+    "backupCodes" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "verified" BOOLEAN DEFAULT true,
+
+    CONSTRAINT "TwoFactor_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Passkey" (
+    "id" TEXT NOT NULL,
+    "name" TEXT,
+    "publicKey" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "credentialID" TEXT NOT NULL,
+    "counter" INTEGER NOT NULL,
+    "deviceType" TEXT NOT NULL,
+    "backedUp" BOOLEAN NOT NULL,
+    "transports" TEXT,
+    "createdAt" TIMESTAMP(3),
+    "aaguid" TEXT,
+
+    CONSTRAINT "Passkey_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -906,6 +930,9 @@ CREATE INDEX "User_status_idx" ON "User"("status");
 
 -- CreateIndex
 CREATE INDEX "User_tradeRole_idx" ON "User"("tradeRole");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
 
 -- CreateIndex
 CREATE INDEX "Banner_position_idx" ON "Banner"("position");
@@ -1073,30 +1100,6 @@ CREATE UNIQUE INDEX "CrossSellRule_sourceCategoryId_targetCategoryId_key" ON "Cr
 CREATE UNIQUE INDEX "RecommendationConfig_key_key" ON "RecommendationConfig"("key");
 
 -- CreateIndex
-CREATE INDEX "UseCaseMapping_categoryId_idx" ON "UseCaseMapping"("categoryId");
-
--- CreateIndex
-CREATE INDEX "UseCaseMapping_useCase_idx" ON "UseCaseMapping"("useCase");
-
--- CreateIndex
-CREATE UNIQUE INDEX "UseCaseMapping_categoryId_useCase_key" ON "UseCaseMapping"("categoryId", "useCase");
-
--- CreateIndex
-CREATE INDEX "CompatibilityRule_productId_idx" ON "CompatibilityRule"("productId");
-
--- CreateIndex
-CREATE INDEX "CompatibilityRule_vehicleMake_vehicleModel_idx" ON "CompatibilityRule"("vehicleMake", "vehicleModel");
-
--- CreateIndex
-CREATE INDEX "CompatibilityRule_deviceBrand_deviceModel_idx" ON "CompatibilityRule"("deviceBrand", "deviceModel");
-
--- CreateIndex
-CREATE INDEX "AccessoryLink_sourceCategoryId_idx" ON "AccessoryLink"("sourceCategoryId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "AccessoryLink_sourceCategoryId_accessoryCategoryId_key" ON "AccessoryLink"("sourceCategoryId", "accessoryCategoryId");
-
--- CreateIndex
 CREATE INDEX "TermDisambiguation_term_idx" ON "TermDisambiguation"("term");
 
 -- CreateIndex
@@ -1113,6 +1116,33 @@ CREATE INDEX "Account_userId_idx" ON "Account"("userId");
 
 -- CreateIndex
 CREATE INDEX "Verification_identifier_idx" ON "Verification"("identifier");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Organization_slug_key" ON "Organization"("slug");
+
+-- CreateIndex
+CREATE INDEX "Member_organizationId_idx" ON "Member"("organizationId");
+
+-- CreateIndex
+CREATE INDEX "Member_userId_idx" ON "Member"("userId");
+
+-- CreateIndex
+CREATE INDEX "Invitation_organizationId_idx" ON "Invitation"("organizationId");
+
+-- CreateIndex
+CREATE INDEX "Invitation_email_idx" ON "Invitation"("email");
+
+-- CreateIndex
+CREATE INDEX "TwoFactor_secret_idx" ON "TwoFactor"("secret");
+
+-- CreateIndex
+CREATE INDEX "TwoFactor_userId_idx" ON "TwoFactor"("userId");
+
+-- CreateIndex
+CREATE INDEX "Passkey_userId_idx" ON "Passkey"("userId");
+
+-- CreateIndex
+CREATE INDEX "Passkey_credentialID_idx" ON "Passkey"("credentialID");
 
 -- AddForeignKey
 ALTER TABLE "User" ADD CONSTRAINT "User_adminRoleId_fkey" FOREIGN KEY ("adminRoleId") REFERENCES "AdminRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1325,18 +1355,6 @@ ALTER TABLE "CrossSellRule" ADD CONSTRAINT "CrossSellRule_sourceCategoryId_fkey"
 ALTER TABLE "CrossSellRule" ADD CONSTRAINT "CrossSellRule_targetCategoryId_fkey" FOREIGN KEY ("targetCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UseCaseMapping" ADD CONSTRAINT "UseCaseMapping_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CompatibilityRule" ADD CONSTRAINT "CompatibilityRule_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AccessoryLink" ADD CONSTRAINT "AccessoryLink_sourceCategoryId_fkey" FOREIGN KEY ("sourceCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AccessoryLink" ADD CONSTRAINT "AccessoryLink_accessoryCategoryId_fkey" FOREIGN KEY ("accessoryCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "TermDisambiguation" ADD CONSTRAINT "TermDisambiguation_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1356,3 +1374,21 @@ ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId"
 
 -- AddForeignKey
 ALTER TABLE "Account" ADD CONSTRAINT "Account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Member" ADD CONSTRAINT "Member_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Member" ADD CONSTRAINT "Member_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_inviterId_fkey" FOREIGN KEY ("inviterId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TwoFactor" ADD CONSTRAINT "TwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Passkey" ADD CONSTRAINT "Passkey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
