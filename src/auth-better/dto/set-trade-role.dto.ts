@@ -5,8 +5,20 @@
  * register page Step 3 right after a fresh Better Auth sign-up. Mirrors
  * the legacy User shape so callers can persist BUYER / COMPANY / FREELANCER
  * without dropping role-specific fields.
+ *
+ * Validators tightened: every string field is trimmed and length-bounded;
+ * `companyWebsite` requires a protocol-qualified URL; `companyPhone` is
+ * format-restricted to digits, spaces, and standard punctuation.
  */
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export enum TradeRole {
   BUYER = 'BUYER',
@@ -20,32 +32,42 @@ export class SetTradeRoleDto {
 
   // COMPANY-only fields — silently ignored for non-COMPANY tradeRole values.
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(255)
   companyName?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(500)
   companyAddress?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @MaxLength(50)
+  @MaxLength(20)
+  @Matches(/^[+\d\s\-()]+$/, {
+    message: 'companyPhone must contain only digits, spaces, and the characters + - ( )',
+  })
   companyPhone?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(255)
+  @IsUrl({ require_protocol: true })
   companyWebsite?: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(100)
   companyTaxId?: string;
 
   // FREELANCER-only field.
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(255)
   accountName?: string;

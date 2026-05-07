@@ -21,6 +21,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../generated/prisma/client';
 import { BetterAuthGuard } from './auth.guard';
 import { SetTradeRoleDto, TradeRole } from './dto/set-trade-role.dto';
 
@@ -35,13 +36,16 @@ export class AuthBetterController {
    * company* fields are saved; for FREELANCER, optional accountName is saved.
    * Fields that don't match the chosen role are silently ignored — we don't
    * 400 on extras since the frontend may send a wider payload.
+   *
+   * Strips `password` (and any other sensitive columns) from the response by
+   * destructuring before returning so the bcrypt hash is never sent to the client.
    */
   @Patch('trade-role')
   @UseGuards(BetterAuthGuard)
   async setTradeRole(@Req() req: any, @Body() body: SetTradeRoleDto) {
     const u = req.betterAuthUser as { id: string };
 
-    const data: any = { tradeRole: body.tradeRole };
+    const data: Prisma.UserUpdateInput = { tradeRole: body.tradeRole };
 
     if (body.tradeRole === TradeRole.COMPANY) {
       if (body.companyName !== undefined) data.companyName = body.companyName;
@@ -60,6 +64,8 @@ export class AuthBetterController {
       data,
     });
 
-    return { status: true, data: updated };
+    // Strip the bcrypt password hash (and any other sensitive columns) before returning.
+    const { password, ...safeUser } = updated as typeof updated & { password?: unknown };
+    return { status: true, data: safeUser };
   }
 }

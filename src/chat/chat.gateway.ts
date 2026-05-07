@@ -30,6 +30,8 @@ import { WebSocketGateway, WebSocketServer, SubscribeMessage, MessageBody, Conne
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth } from '../auth-better/auth';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -85,40 +87,43 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    *
    * @intent Share the Socket.io Server reference with {@link ChatService} so the service can
    *         emit events (e.g., `newAttachment`) outside of the gateway's own event handlers.
-   *         Also registers a Socket.io middleware that enforces JWT authentication on every
-   *         new connection handshake.
+   *         Also registers a Socket.io middleware that enforces Better Auth session
+   *         authentication on every new connection handshake.
    * @idea Decouples socket emission from HTTP-triggered flows (like file upload) by giving
-   *       the service direct access to the server. The JWT middleware ensures that only
-   *       authenticated users can establish a WebSocket connection — the verified token
-   *       payload is stored on `socket.data.user` for downstream handlers to use.
+   *       the service direct access to the server. The Better Auth middleware verifies the
+   *       session cookie on the WS handshake and stores the resolved user on
+   *       `socket.data.user` (with `socket.data.userId` for convenient downstream lookups).
    * @usage Called automatically by the NestJS WebSocket adapter; not invoked manually.
    * @dataflow
-   *   1. Register JWT authentication middleware on the Socket.io server.
+   *   1. Register Better Auth session authentication middleware on the Socket.io server.
    *   2. this.server --> ChatService.setServer().
    *   3. this.server --> NotificationService.setServer().
-   * @dependencies {@link ChatService#setServer}, {@link JwtService#verify}, {@link ConfigService}.
+   * @dependencies {@link ChatService#setServer}, Better Auth `auth.api.getSession`.
    * @notes No return value; purely a side-effect initialiser.
+   *
+   * TODO: once Better Auth is fully shipped and no other caller relies on the
+   * legacy JWT path, drop the `JwtService` and `ConfigService` constructor
+   * dependencies along with their imports.
    */
   afterInit(server: Server) {
-    // Register JWT authentication middleware on socket connections
+    // Register Better Auth session authentication middleware on socket connections.
+    // The handshake carries the session cookie via headers (set by the browser) — we
+    // reuse the same `auth.api.getSession` call as the HTTP guard so the WS surface
+    // stays in lock-step with the REST surface.
     server.use(async (socket: Socket, next) => {
       try {
-        const token =
-          socket.handshake.auth?.token ||
-          socket.handshake.headers?.authorization?.replace('Bearer ', '');
-
-        if (!token) {
-          return next(new Error('Authentication required'));
-        }
-
-        const payload = this.jwtService.verify(token, {
-          secret: this.configService.get<string>('JWT_SECRET'),
+        const session = await auth.api.getSession({
+          headers: fromNodeHeaders(socket.handshake.headers as any),
         });
-
-        socket.data.user = payload;
-        next();
+        if (!session || !session.user) {
+          return next(new Error('Unauthorized'));
+        }
+        socket.data.userId = session.user.id;
+        socket.data.user = session.user;
+        return next();
       } catch (err) {
-        next(new Error('Invalid or expired token'));
+        console.error('[ChatGateway:auth]', err);
+        return next(new Error('Unauthorized'));
       }
     });
 
