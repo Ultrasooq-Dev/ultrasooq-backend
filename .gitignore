@@ -2,7 +2,11 @@
 /dist
 /node_modules
 /src/generated
-/.env
+
+# Environment files (committed: .env.example only)
+.env
+.env.*
+!.env.example
 
 # Logs
 logs
@@ -35,8 +39,6 @@ lerna-debug.log*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-
-.env*nul
 
 # Database backups
 *.dump
