@@ -142,6 +142,7 @@ model User {
   banReason           String?
   banExpires          DateTime?
   username            String?
+  lastLoginMethod   String?
   displayUsername     String?
   members             Member[]
   invitations         Invitation[]

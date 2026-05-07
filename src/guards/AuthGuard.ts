@@ -29,6 +29,21 @@ import { AuthService } from 'src/auth/auth.service';
 import { auth } from '../auth-better/auth';
 import { PrismaService } from '../prisma/prisma.service';
 
+// Defense-in-depth: refuse to boot if the test-auth bypass is enabled in
+// production. The runtime check at line ~54 already gates by NODE_ENV ===
+// 'development', but the assertion below catches misconfigurations earlier
+// (during module load, before any request lands) so a leaked env var in
+// prod hard-crashes the process instead of silently allowing impersonation.
+if (
+  process.env.NODE_ENV === 'production' &&
+  process.env.ENABLE_TEST_AUTH_BYPASS === 'true'
+) {
+  throw new Error(
+    'FATAL: ENABLE_TEST_AUTH_BYPASS=true is not permitted in production. ' +
+      'Unset this variable or set NODE_ENV=development.',
+  );
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);

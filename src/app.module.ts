@@ -112,12 +112,40 @@ import { AuthBetterModule } from './auth-better/auth-better.module';
                 },
               }
             : undefined,
+        // Redact sensitive request/response fields. Replaces values with
+        // [REDACTED] rather than removing them, so log shape stays stable.
+        // This prevents Better Auth verification/reset tokens, API keys,
+        // cookies, and Authorization headers from leaking into log sinks.
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers["x-api-key"]',
+            'req.headers["x-scraper-key"]',
+            'req.query.token',
+            'req.query.code',
+            'req.query.otp',
+            'res.headers["set-cookie"]',
+          ],
+          remove: false,
+          censor: '[REDACTED]',
+        },
         serializers: {
-          req: (req) => ({
-            id: req.id,
-            method: req.method,
-            url: req.url,
-          }),
+          // Mask token=, code=, otp= query params anywhere in req.url so
+          // Better Auth verification/reset URLs (e.g. /api/auth/verify-email
+          // ?token=...) never appear in plaintext in HTTP request logs.
+          req: (req: any) => {
+            const url: string = req.url || '';
+            const masked = url.replace(
+              /([?&])(token|code|otp)=[^&]*/gi,
+              '$1$2=[REDACTED]',
+            );
+            return {
+              id: req.id,
+              method: req.method,
+              url: masked,
+            };
+          },
           res: (res) => ({
             statusCode: res.statusCode,
           }),

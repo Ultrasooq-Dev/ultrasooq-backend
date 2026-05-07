@@ -55,6 +55,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import * as compression from 'compression';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { toNodeHandler } from 'better-auth/node';
@@ -87,6 +88,10 @@ if (!globalThis.crypto) {
 // error happens at module-init time.
 process.on('unhandledRejection', (reason: any) => {
   console.error('[FATAL] Unhandled Promise Rejection:', reason?.stack || reason);
+  // Mirror uncaughtException: a fatal init-time rejection should not leave
+  // the process alive serving 500s. Give the logger a moment to flush, then
+  // exit so the process manager (Docker/PM2/K8s) can restart the container.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('uncaughtException', (error: Error) => {
@@ -136,7 +141,7 @@ async function bootstrap() {
     const origin = req.headers.origin;
     const allowed =
       process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()) ?? [];
-    if (origin && (allowed.length === 0 || allowed.includes(origin))) {
+    if (origin && allowed.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
     }
@@ -147,7 +152,7 @@ async function bootstrap() {
     );
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, Accept, X-Request-Id, Cookie',
+      'Content-Type, Authorization, Accept, X-Request-Id',
     );
     if (req.method === 'OPTIONS') {
       res.statusCode = 204;
@@ -155,6 +160,20 @@ async function bootstrap() {
     }
     next();
   });
+
+  // Rate limit + body-size cap for /api/auth/* — protects against brute-force
+  // login attempts and oversized auth payloads. Must come BEFORE the auth
+  // handler so it gates every auth route.
+  const authRateLimiter = rateLimit({
+    windowMs: 60 * 1000,            // 1 minute
+    max: 30,                         // 30 requests/min/IP for /api/auth/*
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many auth attempts, please try again later.' },
+  });
+
+  app.use('/api/auth', authRateLimiter);
+  app.use('/api/auth', expressJson({ limit: '100kb' }));
 
   // Better Auth handler — must be mounted BEFORE express.json() so the
   // library can parse raw request bodies. Lives at /api/auth/* and is
@@ -250,16 +269,22 @@ async function bootstrap() {
     .addServer('http://localhost:3000', 'Development Server')
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
-    customSiteTitle: 'Ultrasooq API Documentation',
-    customfavIcon: 'https://nestjs.com/img/logo-small.svg',
-  });
+  // Swagger UI is gated behind NODE_ENV !== 'production'. Production must
+  // never serve /api-docs (avoids leaking internal route shape & operation IDs).
+  if (process.env.NODE_ENV !== 'production') {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document, {
+      customSiteTitle: 'Ultrasooq API Documentation',
+      customfavIcon: 'https://nestjs.com/img/logo-small.svg',
+    });
+  }
 
   const port = parseInt(process.env.PORT || '3000', 10);
   await app.listen(port, '0.0.0.0'); // Listen on all network interfaces
   const url = await app.getUrl();
   logger.log(`USER App is Running on port ${url}`);
-  logger.log(`API Documentation available at ${url}/api-docs`);
+  if (process.env.NODE_ENV !== 'production') {
+    logger.log(`API Documentation available at ${url}/api-docs`);
+  }
 }
 bootstrap();

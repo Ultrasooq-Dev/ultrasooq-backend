@@ -21,7 +21,6 @@ import {
   bearer,
   lastLoginMethod,
   organization,
-  phoneNumber,
   twoFactor,
   username,
 } from 'better-auth/plugins';
@@ -35,6 +34,18 @@ import {
   sendOtpMail,
   sendInvitationMail,
 } from './mailer';
+
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.BETTER_AUTH_SECRET) {
+    throw new Error('BETTER_AUTH_SECRET is required in production');
+  }
+  if (!process.env.BETTER_AUTH_URL) {
+    throw new Error('BETTER_AUTH_URL is required in production');
+  }
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required in production');
+  }
+}
 
 // Standalone Prisma client for Better Auth — runs at module load (before
 // Nest DI), so we can't reuse the @Injectable PrismaService instance here.
@@ -65,20 +76,14 @@ export const auth = betterAuth({
   databaseHooks: {
     session: {
       create: {
-        // Block sign-in for soft-deleted or inactive users. Mirrors qitaff's
-        // hook so a user marked `deletedAt` or `isActive: false` directly in
-        // the DB cannot establish a fresh session.
+        // Block sign-in for inactive users. The User model uses `isActive: false`
+        // or `status: INACTIVE` to gate accounts (soft-delete uses the same path —
+        // there is no separate `deletedAt` column on this schema).
         before: async (session) => {
           const target = await prisma.user.findUnique({
             where: { id: session.userId },
-            select: { deletedAt: true, isActive: true, status: true },
+            select: { isActive: true, status: true },
           });
-          if (target?.deletedAt) {
-            throw new APIError('FORBIDDEN', {
-              code: 'ACCOUNT_DELETED',
-              message: 'This account has been deleted. Please contact support.',
-            });
-          }
           if (target?.isActive === false || target?.status === 'INACTIVE') {
             throw new APIError('FORBIDDEN', {
               code: 'ACCOUNT_INACTIVE',
@@ -90,6 +95,7 @@ export const auth = betterAuth({
     },
   },
   user: {
+    // `username` is provided by the username() plugin — do not declare a duplicate additionalField.
     additionalFields: {
       // Profile / business fields that the frontend reads through
       // `auth.api.getSession()`. The rest (userType, status, dateOfBirth,
@@ -103,7 +109,6 @@ export const auth = betterAuth({
       cc: { type: 'string', required: false },
       firstName: { type: 'string', required: false },
       lastName: { type: 'string', required: false },
-      userName: { type: 'string', required: false },
       // Populated by PATCH /api/v1/user/me/trade-role at register Step 3.
       companyName: { type: 'string', required: false },
       companyAddress: { type: 'string', required: false },
@@ -182,16 +187,8 @@ export const auth = betterAuth({
       rpName: 'Ultrasooq',
     }),
     bearer(),
-    phoneNumber({
-      // TODO: wire up SMS provider (Twilio / SNS / local equivalent).
-      // Until then this is a no-op and phone OTP auth will not work.
-      sendOTP: ({ phoneNumber, code }) => {
-        if (isDevEnv) {
-          // eslint-disable-next-line no-console
-          console.log(`[DEV-SMS] OTP for ${phoneNumber}: ${code}`);
-        }
-      },
-    }),
+    // phoneNumber plugin removed — no SMS provider wired. Re-enable once
+    // Twilio (or equivalent) integration is in place.
     admin({
       defaultRole: 'user',
       adminRoles: ['admin'],
@@ -202,6 +199,23 @@ export const auth = betterAuth({
   ],
   advanced: {
     cookiePrefix: 'ultrasooq',
+    // Cross-subdomain session cookie. Set COOKIE_DOMAIN=.ultrasooq.com (with
+    // leading dot) in prod so the session cookie set by the api subdomain is
+    // also sent to the app subdomain. In dev (localhost), leave unset.
+    ...(process.env.COOKIE_DOMAIN
+      ? {
+          crossSubDomainCookies: {
+            enabled: true,
+            domain: process.env.COOKIE_DOMAIN,
+          },
+        }
+      : {}),
+    defaultCookieAttributes: {
+      secure: !isDevEnv,
+      sameSite: isDevEnv ? 'lax' : 'none',
+      httpOnly: true,
+    },
+    useSecureCookies: !isDevEnv,
   },
 });
 

@@ -40,7 +40,13 @@ const _logDevFallback = (msg: any, reason: string) => {
   );
 };
 sgMail.send = async (msg: any) => {
+  const isProd = process.env.NODE_ENV === 'production';
   if (!_isSendgridConfigured()) {
+    if (isProd) {
+      throw new Error(
+        'SENDGRID_API_KEY and SENDGRID_SENDER are required in production',
+      );
+    }
     _logDevFallback(msg, 'SendGrid not configured');
     return [{ statusCode: 202 }, {}];
   }
@@ -51,6 +57,10 @@ sgMail.send = async (msg: any) => {
   try {
     return await _origSend(msg);
   } catch (err: any) {
+    if (isProd) {
+      // Re-throw without logging OTP/token contents to console.
+      throw err;
+    }
     const code = err?.code || err?.response?.statusCode;
     const sgMsg = err?.response?.body?.errors?.[0]?.message;
     _logDevFallback(

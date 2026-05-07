@@ -56,7 +56,18 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       LOCAL_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ultrasooq}?schema=public
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_SERVER: ${FRONTEND_SERVER}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_SENDER: ${SENDGRID_SENDER}
+      BETTER_AUTH_ADMIN_USER_IDS: ${BETTER_AUTH_ADMIN_USER_IDS:-}
     volumes:
       - ./uploads:/app/uploads
     networks:
