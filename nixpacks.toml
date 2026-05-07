@@ -1,6 +1,14 @@
 [phases.setup]
 aptPkgs = ["chromium", "libnss3", "libfreetype6", "libharfbuzz0b", "ca-certificates", "fonts-freefont-ttf"]
 
+# Force npm. We had pnpm-lock.yaml + package-lock.json both in the repo;
+# nixpacks auto-detected pnpm and tripped over its strict-builds policy
+# (prisma, bcrypt, puppeteer, etc. need build scripts). The pnpm lockfile
+# has been removed and this override pins the package manager so future
+# stray lockfiles don't break the build.
+[phases.install]
+cmds = ["npm ci --legacy-peer-deps"]
+
 [variables]
 NODE_ENV = "production"
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"

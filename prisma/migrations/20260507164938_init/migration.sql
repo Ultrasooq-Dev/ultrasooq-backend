@@ -132,7 +132,7 @@ CREATE TABLE "Permission" (
 );
 
 -- CreateTable
-CREATE TABLE "user" (
+CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
@@ -172,8 +172,17 @@ CREATE TABLE "user" (
     "companyWebsite" TEXT,
     "companyTaxId" TEXT,
     "accountName" TEXT,
+    "twoFactorEnabled" BOOLEAN DEFAULT false,
+    "phoneNumberVerified" BOOLEAN,
+    "role" TEXT,
+    "banned" BOOLEAN DEFAULT false,
+    "banReason" TEXT,
+    "banExpires" TIMESTAMP(3),
+    "username" TEXT,
+    "lastLoginMethod" TEXT,
+    "displayUsername" TEXT,
 
-    CONSTRAINT "user_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -607,7 +616,7 @@ CREATE TABLE "FeesCategoryConnectTo" (
 );
 
 -- CreateTable
-CREATE TABLE "policy" (
+CREATE TABLE "Policy" (
     "id" SERIAL NOT NULL,
     "ruleName" TEXT,
     "rule" TEXT,
@@ -618,7 +627,7 @@ CREATE TABLE "policy" (
     "categoryName" TEXT,
     "parentId" INTEGER,
 
-    CONSTRAINT "policy_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Policy_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1079,7 +1088,7 @@ CREATE TABLE "FactoriesRequest" (
     "id" SERIAL NOT NULL,
     "buyerId" TEXT,
     "sellerId" TEXT,
-    "RequestNo" TEXT,
+    "requestNo" TEXT,
     "customizeProductId" INTEGER,
     "productId" TEXT,
     "quantity" INTEGER,
@@ -1359,18 +1368,6 @@ CREATE TABLE "OrderProducts" (
     "serviceId" INTEGER,
 
     CONSTRAINT "OrderProducts_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "OrderProductService" (
-    "id" SERIAL NOT NULL,
-    "productId" TEXT NOT NULL,
-    "serviceId" INTEGER NOT NULL,
-    "orderProductId" INTEGER NOT NULL,
-    "orderProductType" TEXT,
-    "relatedOrderProductId" INTEGER,
-
-    CONSTRAINT "OrderProductService_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1679,38 +1676,6 @@ CREATE TABLE "RoomParticipants" (
 );
 
 -- CreateTable
-CREATE TABLE "CustomField" (
-    "id" SERIAL NOT NULL,
-    "adminId" TEXT,
-    "userId" TEXT,
-    "productId" TEXT,
-    "formName" TEXT,
-    "formData" TEXT,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-
-    CONSTRAINT "CustomField_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "CustomFieldValue" (
-    "id" SERIAL NOT NULL,
-    "adminId" TEXT,
-    "userId" TEXT,
-    "formId" INTEGER,
-    "keyName" TEXT,
-    "value" TEXT,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-
-    CONSTRAINT "CustomFieldValue_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "Countries" (
     "id" SERIAL NOT NULL,
     "sortname" TEXT,
@@ -1748,21 +1713,6 @@ CREATE TABLE "Cities" (
     "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "Cities_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "PaymentErrorLog" (
-    "id" SERIAL NOT NULL,
-    "userId" TEXT,
-    "paymentIntentId" TEXT,
-    "payload" JSONB,
-    "location" TEXT,
-    "errorMessage" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-
-    CONSTRAINT "PaymentErrorLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2082,7 +2032,7 @@ CREATE TABLE "ExistingProductImages" (
 );
 
 -- CreateTable
-CREATE TABLE "banner" (
+CREATE TABLE "Banner" (
     "id" BIGSERIAL NOT NULL,
     "title" TEXT NOT NULL,
     "subtitle" TEXT,
@@ -2101,11 +2051,11 @@ CREATE TABLE "banner" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "banner_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Banner_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "system_log" (
+CREATE TABLE "SystemLog" (
     "id" SERIAL NOT NULL,
     "level" TEXT NOT NULL,
     "message" TEXT NOT NULL,
@@ -2121,11 +2071,11 @@ CREATE TABLE "system_log" (
     "userAgent" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "system_log_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "SystemLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "product_category_map" (
+CREATE TABLE "ProductCategoryMap" (
     "id" SERIAL NOT NULL,
     "productId" TEXT NOT NULL,
     "categoryId" INTEGER NOT NULL,
@@ -2136,11 +2086,11 @@ CREATE TABLE "product_category_map" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "product_category_map_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ProductCategoryMap_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "category_keyword" (
+CREATE TABLE "CategoryKeyword" (
     "id" SERIAL NOT NULL,
     "categoryId" INTEGER NOT NULL,
     "keyword" TEXT NOT NULL,
@@ -2149,11 +2099,11 @@ CREATE TABLE "category_keyword" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "category_keyword_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "CategoryKeyword_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "category_tag" (
+CREATE TABLE "CategoryTag" (
     "id" SERIAL NOT NULL,
     "categoryId" INTEGER NOT NULL,
     "tagId" INTEGER NOT NULL,
@@ -2162,11 +2112,11 @@ CREATE TABLE "category_tag" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "category_tag_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "CategoryTag_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "service_category_map" (
+CREATE TABLE "ServiceCategoryMap" (
     "id" SERIAL NOT NULL,
     "serviceId" INTEGER NOT NULL,
     "categoryId" INTEGER NOT NULL,
@@ -2177,11 +2127,11 @@ CREATE TABLE "service_category_map" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "service_category_map_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ServiceCategoryMap_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "spec_template" (
+CREATE TABLE "SpecTemplate" (
     "id" SERIAL NOT NULL,
     "categoryId" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
@@ -2198,11 +2148,11 @@ CREATE TABLE "spec_template" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "spec_template_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "SpecTemplate_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "product_spec_value" (
+CREATE TABLE "ProductSpecValue" (
     "id" SERIAL NOT NULL,
     "productId" TEXT NOT NULL,
     "specTemplateId" INTEGER NOT NULL,
@@ -2213,114 +2163,11 @@ CREATE TABLE "product_spec_value" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "product_spec_value_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ProductSpecValue_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "system_health_log" (
-    "id" SERIAL NOT NULL,
-    "component" TEXT NOT NULL,
-    "status" TEXT NOT NULL,
-    "responseMs" INTEGER,
-    "details" JSONB,
-    "checkedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "system_health_log_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "strategy_lab_run" (
-    "id" SERIAL NOT NULL,
-    "name" TEXT,
-    "mode" TEXT NOT NULL,
-    "configJson" JSONB NOT NULL,
-    "statusRun" TEXT NOT NULL DEFAULT 'pending',
-    "progress" INTEGER NOT NULL DEFAULT 0,
-    "totalCombos" INTEGER NOT NULL DEFAULT 0,
-    "qualifiedCombos" INTEGER NOT NULL DEFAULT 0,
-    "totalTrades" INTEGER NOT NULL DEFAULT 0,
-    "totalPnl" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "finalEquity" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "startingEquity" DOUBLE PRECISION NOT NULL DEFAULT 10000,
-    "returnPct" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "elapsedSeconds" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "gradesJson" JSONB,
-    "assetSummary" JSONB,
-    "strategySummary" JSONB,
-    "tfSummary" JSONB,
-    "equityCurve" JSONB,
-    "stageReports" JSONB,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3),
-    "deletedAt" TIMESTAMP(3),
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-
-    CONSTRAINT "strategy_lab_run_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "strategy_lab_combo" (
-    "id" SERIAL NOT NULL,
-    "runId" INTEGER NOT NULL,
-    "asset" TEXT NOT NULL,
-    "timeframe" TEXT NOT NULL,
-    "strategy" TEXT NOT NULL,
-    "comboKey" TEXT NOT NULL,
-    "tier" INTEGER NOT NULL DEFAULT 1,
-    "totalTrades" INTEGER NOT NULL DEFAULT 0,
-    "wins" INTEGER NOT NULL DEFAULT 0,
-    "losses" INTEGER NOT NULL DEFAULT 0,
-    "winRate" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "profitFactor" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "totalPnl" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "maxDrawdown" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "avgPnl" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "bestTrade" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "worstTrade" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "tp1Hits" INTEGER NOT NULL DEFAULT 0,
-    "tp2Hits" INTEGER NOT NULL DEFAULT 0,
-    "tp3Hits" INTEGER NOT NULL DEFAULT 0,
-    "slHits" INTEGER NOT NULL DEFAULT 0,
-    "expireHits" INTEGER NOT NULL DEFAULT 0,
-    "grade" TEXT,
-    "paused" BOOLEAN NOT NULL DEFAULT false,
-    "finalRiskMult" DOUBLE PRECISION NOT NULL DEFAULT 1.0,
-    "stageHistory" JSONB,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "deletedAt" TIMESTAMP(3),
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-
-    CONSTRAINT "strategy_lab_combo_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "strategy_lab_trade" (
-    "id" SERIAL NOT NULL,
-    "runId" INTEGER NOT NULL,
-    "comboId" INTEGER NOT NULL,
-    "asset" TEXT NOT NULL,
-    "timeframe" TEXT NOT NULL,
-    "strategy" TEXT NOT NULL,
-    "direction" TEXT NOT NULL,
-    "entryPrice" DOUBLE PRECISION NOT NULL,
-    "exitPrice" DOUBLE PRECISION,
-    "pnl" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "barsHeld" INTEGER NOT NULL DEFAULT 0,
-    "entryTime" TEXT,
-    "exitTime" TEXT,
-    "day" TEXT,
-    "hitsJson" JSONB,
-    "stageNumber" INTEGER,
-    "riskMult" DOUBLE PRECISION,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "deletedAt" TIMESTAMP(3),
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-
-    CONSTRAINT "strategy_lab_trade_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "scraping_job" (
+CREATE TABLE "ScrapingJob" (
     "id" SERIAL NOT NULL,
     "platform" TEXT NOT NULL,
     "region" TEXT,
@@ -2349,11 +2196,11 @@ CREATE TABLE "scraping_job" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
 
-    CONSTRAINT "scraping_job_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ScrapingJob_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "scraped_product_raw" (
+CREATE TABLE "ScrapedProductRaw" (
     "id" SERIAL NOT NULL,
     "jobId" INTEGER NOT NULL,
     "rawData" JSONB NOT NULL,
@@ -2374,11 +2221,11 @@ CREATE TABLE "scraped_product_raw" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "scraped_product_raw_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ScrapedProductRaw_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "category_mapping" (
+CREATE TABLE "CategoryMapping" (
     "id" SERIAL NOT NULL,
     "sourcePlatform" TEXT NOT NULL,
     "sourcePath" TEXT NOT NULL,
@@ -2391,11 +2238,11 @@ CREATE TABLE "category_mapping" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "category_mapping_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "CategoryMapping_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "scraped_auto_part" (
+CREATE TABLE "ScrapedAutoPart" (
     "id" SERIAL NOT NULL,
     "jobId" INTEGER,
     "partNumber" TEXT NOT NULL,
@@ -2432,29 +2279,7 @@ CREATE TABLE "scraped_auto_part" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "scraped_auto_part_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "parts_diagram" (
-    "id" SERIAL NOT NULL,
-    "diagramId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "imageUrl" TEXT NOT NULL,
-    "svgUrl" TEXT,
-    "vehicleMake" TEXT NOT NULL,
-    "vehicleModel" TEXT NOT NULL,
-    "vehicleYear" INTEGER,
-    "vehicleEngine" TEXT,
-    "category" TEXT NOT NULL,
-    "subcategory" TEXT,
-    "parts" JSONB NOT NULL DEFAULT '[]',
-    "sourceUrl" TEXT NOT NULL,
-    "sourcePlatform" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "parts_diagram_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ScrapedAutoPart_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2488,7 +2313,7 @@ CREATE TABLE "ContentFilterLog" (
 );
 
 -- CreateTable
-CREATE TABLE "recommendation_metrics" (
+CREATE TABLE "RecommendationMetric" (
     "id" TEXT NOT NULL,
     "date" DATE NOT NULL,
     "algorithm" VARCHAR(50) NOT NULL,
@@ -2503,11 +2328,11 @@ CREATE TABLE "recommendation_metrics" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "recommendation_metrics_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "RecommendationMetric_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "recommendation_feedback" (
+CREATE TABLE "RecommendationFeedback" (
     "id" TEXT NOT NULL,
     "recId" VARCHAR(100) NOT NULL,
     "userId" TEXT,
@@ -2521,11 +2346,11 @@ CREATE TABLE "recommendation_feedback" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "recommendation_feedback_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "RecommendationFeedback_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "cross_sell_rules" (
+CREATE TABLE "CrossSellRule" (
     "id" TEXT NOT NULL,
     "sourceCategoryId" INTEGER NOT NULL,
     "targetCategoryId" INTEGER NOT NULL,
@@ -2535,73 +2360,22 @@ CREATE TABLE "cross_sell_rules" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "cross_sell_rules_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "CrossSellRule_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "recommendation_config" (
+CREATE TABLE "RecommendationConfig" (
     "id" TEXT NOT NULL,
     "key" VARCHAR(100) NOT NULL,
     "value" JSONB NOT NULL,
     "updatedBy" TEXT NOT NULL,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "recommendation_config_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "RecommendationConfig_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "use_case_mappings" (
-    "id" SERIAL NOT NULL,
-    "categoryId" INTEGER NOT NULL,
-    "useCase" VARCHAR(100) NOT NULL,
-    "impliedSpecs" JSONB NOT NULL,
-    "impliedTags" JSONB,
-    "weight" DECIMAL(3,2) NOT NULL DEFAULT 0.8,
-    "source" VARCHAR(20) NOT NULL DEFAULT 'manual',
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "use_case_mappings_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "compatibility_rules" (
-    "id" SERIAL NOT NULL,
-    "productId" TEXT NOT NULL,
-    "vehicleMake" VARCHAR(100),
-    "vehicleModel" VARCHAR(100),
-    "yearFrom" INTEGER,
-    "yearTo" INTEGER,
-    "deviceBrand" VARCHAR(100),
-    "deviceModel" VARCHAR(100),
-    "compatType" VARCHAR(20) NOT NULL,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "compatibility_rules_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "accessory_links" (
-    "id" SERIAL NOT NULL,
-    "sourceCategoryId" INTEGER NOT NULL,
-    "accessoryCategoryId" INTEGER NOT NULL,
-    "strength" DECIMAL(3,2) NOT NULL DEFAULT 0.8,
-    "bidirectional" BOOLEAN NOT NULL DEFAULT false,
-    "status" "Status" NOT NULL DEFAULT 'ACTIVE',
-    "deletedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "accessory_links_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "term_disambiguations" (
+CREATE TABLE "TermDisambiguation" (
     "id" SERIAL NOT NULL,
     "term" VARCHAR(100) NOT NULL,
     "categoryId" INTEGER NOT NULL,
@@ -2612,7 +2386,7 @@ CREATE TABLE "term_disambiguations" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "term_disambiguations_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "TermDisambiguation_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2730,7 +2504,7 @@ CREATE TABLE "KnowledgeBase" (
 );
 
 -- CreateTable
-CREATE TABLE "session" (
+CREATE TABLE "Session" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
@@ -2739,12 +2513,14 @@ CREATE TABLE "session" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "ipAddress" TEXT,
     "userAgent" TEXT,
+    "activeOrganizationId" TEXT,
+    "impersonatedBy" TEXT,
 
-    CONSTRAINT "session_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "account" (
+CREATE TABLE "Account" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "accountId" TEXT NOT NULL,
@@ -2759,11 +2535,11 @@ CREATE TABLE "account" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "account_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Account_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "verification" (
+CREATE TABLE "Verification" (
     "id" TEXT NOT NULL,
     "identifier" TEXT NOT NULL,
     "value" TEXT NOT NULL,
@@ -2771,26 +2547,94 @@ CREATE TABLE "verification" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "verification_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Verification_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Organization" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "logo" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL,
+    "metadata" TEXT,
+
+    CONSTRAINT "Organization_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Member" (
+    "id" TEXT NOT NULL,
+    "organizationId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'member',
+    "createdAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Member_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Invitation" (
+    "id" TEXT NOT NULL,
+    "organizationId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "inviterId" TEXT NOT NULL,
+
+    CONSTRAINT "Invitation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TwoFactor" (
+    "id" TEXT NOT NULL,
+    "secret" TEXT NOT NULL,
+    "backupCodes" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "verified" BOOLEAN DEFAULT true,
+
+    CONSTRAINT "TwoFactor_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Passkey" (
+    "id" TEXT NOT NULL,
+    "name" TEXT,
+    "publicKey" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "credentialID" TEXT NOT NULL,
+    "counter" INTEGER NOT NULL,
+    "deviceType" TEXT NOT NULL,
+    "backedUp" BOOLEAN NOT NULL,
+    "transports" TEXT,
+    "createdAt" TIMESTAMP(3),
+    "aaguid" TEXT,
+
+    CONSTRAINT "Passkey_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_email_key" ON "user"("email");
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
-CREATE INDEX "user_email_idx" ON "user"("email");
+CREATE INDEX "User_email_idx" ON "User"("email");
 
 -- CreateIndex
-CREATE INDEX "user_userRoleId_idx" ON "user"("userRoleId");
+CREATE INDEX "User_userRoleId_idx" ON "User"("userRoleId");
 
 -- CreateIndex
-CREATE INDEX "user_adminRoleId_idx" ON "user"("adminRoleId");
+CREATE INDEX "User_adminRoleId_idx" ON "User"("adminRoleId");
 
 -- CreateIndex
-CREATE INDEX "user_status_idx" ON "user"("status");
+CREATE INDEX "User_status_idx" ON "User"("status");
 
 -- CreateIndex
-CREATE INDEX "user_tradeRole_idx" ON "user"("tradeRole");
+CREATE INDEX "User_tradeRole_idx" ON "User"("tradeRole");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
 
 -- CreateIndex
 CREATE INDEX "UserRolePermission_userRoleId_idx" ON "UserRolePermission"("userRoleId");
@@ -3174,9 +3018,6 @@ CREATE INDEX "OrderProducts_orderShippingId_idx" ON "OrderProducts"("orderShippi
 CREATE INDEX "OrderProducts_orderProductStatus_idx" ON "OrderProducts"("orderProductStatus");
 
 -- CreateIndex
-CREATE INDEX "OrderProductService_orderProductId_idx" ON "OrderProductService"("orderProductId");
-
--- CreateIndex
 CREATE INDEX "DeliveryEvent_orderProductId_idx" ON "DeliveryEvent"("orderProductId");
 
 -- CreateIndex
@@ -3399,181 +3240,139 @@ CREATE INDEX "Notification_userId_createdAt_idx" ON "Notification"("userId", "cr
 CREATE INDEX "ExistingProductImages_existingProductId_idx" ON "ExistingProductImages"("existingProductId");
 
 -- CreateIndex
-CREATE INDEX "banner_position_idx" ON "banner"("position");
+CREATE INDEX "Banner_position_idx" ON "Banner"("position");
 
 -- CreateIndex
-CREATE INDEX "banner_isActive_idx" ON "banner"("isActive");
+CREATE INDEX "Banner_isActive_idx" ON "Banner"("isActive");
 
 -- CreateIndex
-CREATE INDEX "banner_priority_idx" ON "banner"("priority");
+CREATE INDEX "Banner_priority_idx" ON "Banner"("priority");
 
 -- CreateIndex
-CREATE INDEX "banner_startDate_endDate_idx" ON "banner"("startDate", "endDate");
+CREATE INDEX "Banner_startDate_endDate_idx" ON "Banner"("startDate", "endDate");
 
 -- CreateIndex
-CREATE INDEX "banner_isActive_position_idx" ON "banner"("isActive", "position");
+CREATE INDEX "Banner_isActive_position_idx" ON "Banner"("isActive", "position");
 
 -- CreateIndex
-CREATE INDEX "system_log_level_idx" ON "system_log"("level");
+CREATE INDEX "SystemLog_level_idx" ON "SystemLog"("level");
 
 -- CreateIndex
-CREATE INDEX "system_log_createdAt_idx" ON "system_log"("createdAt");
+CREATE INDEX "SystemLog_createdAt_idx" ON "SystemLog"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "system_log_userId_idx" ON "system_log"("userId");
+CREATE INDEX "SystemLog_userId_idx" ON "SystemLog"("userId");
 
 -- CreateIndex
-CREATE INDEX "system_log_requestId_idx" ON "system_log"("requestId");
+CREATE INDEX "SystemLog_requestId_idx" ON "SystemLog"("requestId");
 
 -- CreateIndex
-CREATE INDEX "system_log_context_idx" ON "system_log"("context");
+CREATE INDEX "SystemLog_context_idx" ON "SystemLog"("context");
 
 -- CreateIndex
-CREATE INDEX "product_category_map_productId_idx" ON "product_category_map"("productId");
+CREATE INDEX "ProductCategoryMap_productId_idx" ON "ProductCategoryMap"("productId");
 
 -- CreateIndex
-CREATE INDEX "product_category_map_categoryId_idx" ON "product_category_map"("categoryId");
+CREATE INDEX "ProductCategoryMap_categoryId_idx" ON "ProductCategoryMap"("categoryId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "product_category_map_productId_categoryId_key" ON "product_category_map"("productId", "categoryId");
+CREATE UNIQUE INDEX "ProductCategoryMap_productId_categoryId_key" ON "ProductCategoryMap"("productId", "categoryId");
 
 -- CreateIndex
-CREATE INDEX "category_keyword_keyword_idx" ON "category_keyword"("keyword");
+CREATE INDEX "CategoryKeyword_keyword_idx" ON "CategoryKeyword"("keyword");
 
 -- CreateIndex
-CREATE INDEX "category_keyword_categoryId_idx" ON "category_keyword"("categoryId");
+CREATE INDEX "CategoryKeyword_categoryId_idx" ON "CategoryKeyword"("categoryId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "category_keyword_categoryId_keyword_key" ON "category_keyword"("categoryId", "keyword");
+CREATE UNIQUE INDEX "CategoryKeyword_categoryId_keyword_key" ON "CategoryKeyword"("categoryId", "keyword");
 
 -- CreateIndex
-CREATE INDEX "category_tag_categoryId_idx" ON "category_tag"("categoryId");
+CREATE INDEX "CategoryTag_categoryId_idx" ON "CategoryTag"("categoryId");
 
 -- CreateIndex
-CREATE INDEX "category_tag_tagId_idx" ON "category_tag"("tagId");
+CREATE INDEX "CategoryTag_tagId_idx" ON "CategoryTag"("tagId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "category_tag_categoryId_tagId_key" ON "category_tag"("categoryId", "tagId");
+CREATE UNIQUE INDEX "CategoryTag_categoryId_tagId_key" ON "CategoryTag"("categoryId", "tagId");
 
 -- CreateIndex
-CREATE INDEX "service_category_map_serviceId_idx" ON "service_category_map"("serviceId");
+CREATE INDEX "ServiceCategoryMap_serviceId_idx" ON "ServiceCategoryMap"("serviceId");
 
 -- CreateIndex
-CREATE INDEX "service_category_map_categoryId_idx" ON "service_category_map"("categoryId");
+CREATE INDEX "ServiceCategoryMap_categoryId_idx" ON "ServiceCategoryMap"("categoryId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "service_category_map_serviceId_categoryId_key" ON "service_category_map"("serviceId", "categoryId");
+CREATE UNIQUE INDEX "ServiceCategoryMap_serviceId_categoryId_key" ON "ServiceCategoryMap"("serviceId", "categoryId");
 
 -- CreateIndex
-CREATE INDEX "spec_template_categoryId_isFilterable_idx" ON "spec_template"("categoryId", "isFilterable");
+CREATE INDEX "SpecTemplate_categoryId_isFilterable_idx" ON "SpecTemplate"("categoryId", "isFilterable");
 
 -- CreateIndex
-CREATE INDEX "spec_template_categoryId_sortOrder_idx" ON "spec_template"("categoryId", "sortOrder");
+CREATE INDEX "SpecTemplate_categoryId_sortOrder_idx" ON "SpecTemplate"("categoryId", "sortOrder");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "spec_template_categoryId_key_key" ON "spec_template"("categoryId", "key");
+CREATE UNIQUE INDEX "SpecTemplate_categoryId_key_key" ON "SpecTemplate"("categoryId", "key");
 
 -- CreateIndex
-CREATE INDEX "product_spec_value_specTemplateId_value_idx" ON "product_spec_value"("specTemplateId", "value");
+CREATE INDEX "ProductSpecValue_specTemplateId_value_idx" ON "ProductSpecValue"("specTemplateId", "value");
 
 -- CreateIndex
-CREATE INDEX "product_spec_value_specTemplateId_numericValue_idx" ON "product_spec_value"("specTemplateId", "numericValue");
+CREATE INDEX "ProductSpecValue_specTemplateId_numericValue_idx" ON "ProductSpecValue"("specTemplateId", "numericValue");
 
 -- CreateIndex
-CREATE INDEX "product_spec_value_productId_idx" ON "product_spec_value"("productId");
+CREATE INDEX "ProductSpecValue_productId_idx" ON "ProductSpecValue"("productId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "product_spec_value_productId_specTemplateId_key" ON "product_spec_value"("productId", "specTemplateId");
+CREATE UNIQUE INDEX "ProductSpecValue_productId_specTemplateId_key" ON "ProductSpecValue"("productId", "specTemplateId");
 
 -- CreateIndex
-CREATE INDEX "system_health_log_component_checkedAt_idx" ON "system_health_log"("component", "checkedAt");
+CREATE UNIQUE INDEX "ScrapingJob_batchId_key" ON "ScrapingJob"("batchId");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_run_mode_statusRun_idx" ON "strategy_lab_run"("mode", "statusRun");
+CREATE INDEX "ScrapingJob_platform_status_idx" ON "ScrapingJob"("platform", "status");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_run_createdAt_idx" ON "strategy_lab_run"("createdAt");
+CREATE INDEX "ScrapingJob_status_priority_idx" ON "ScrapingJob"("status", "priority");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_combo_runId_idx" ON "strategy_lab_combo"("runId");
+CREATE INDEX "ScrapingJob_batchId_idx" ON "ScrapingJob"("batchId");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_combo_asset_timeframe_strategy_idx" ON "strategy_lab_combo"("asset", "timeframe", "strategy");
+CREATE UNIQUE INDEX "ScrapedProductRaw_sourceUrl_key" ON "ScrapedProductRaw"("sourceUrl");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_combo_grade_idx" ON "strategy_lab_combo"("grade");
+CREATE INDEX "ScrapedProductRaw_jobId_status_idx" ON "ScrapedProductRaw"("jobId", "status");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_combo_profitFactor_idx" ON "strategy_lab_combo"("profitFactor");
+CREATE INDEX "ScrapedProductRaw_sourcePlatform_status_idx" ON "ScrapedProductRaw"("sourcePlatform", "status");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_trade_runId_idx" ON "strategy_lab_trade"("runId");
+CREATE INDEX "ScrapedProductRaw_productId_idx" ON "ScrapedProductRaw"("productId");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_trade_comboId_idx" ON "strategy_lab_trade"("comboId");
+CREATE INDEX "CategoryMapping_ultrasooqCategoryId_idx" ON "CategoryMapping"("ultrasooqCategoryId");
 
 -- CreateIndex
-CREATE INDEX "strategy_lab_trade_asset_strategy_timeframe_idx" ON "strategy_lab_trade"("asset", "strategy", "timeframe");
+CREATE UNIQUE INDEX "CategoryMapping_sourcePlatform_sourcePath_key" ON "CategoryMapping"("sourcePlatform", "sourcePath");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "scraping_job_batchId_key" ON "scraping_job"("batchId");
+CREATE UNIQUE INDEX "ScrapedAutoPart_sourceUrl_key" ON "ScrapedAutoPart"("sourceUrl");
 
 -- CreateIndex
-CREATE INDEX "scraping_job_platform_status_idx" ON "scraping_job"("platform", "status");
+CREATE INDEX "ScrapedAutoPart_partNumber_idx" ON "ScrapedAutoPart"("partNumber");
 
 -- CreateIndex
-CREATE INDEX "scraping_job_status_priority_idx" ON "scraping_job"("status", "priority");
+CREATE INDEX "ScrapedAutoPart_sourcePlatform_status_idx" ON "ScrapedAutoPart"("sourcePlatform", "status");
 
 -- CreateIndex
-CREATE INDEX "scraping_job_batchId_idx" ON "scraping_job"("batchId");
+CREATE INDEX "ScrapedAutoPart_category_subcategory_idx" ON "ScrapedAutoPart"("category", "subcategory");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "scraped_product_raw_sourceUrl_key" ON "scraped_product_raw"("sourceUrl");
+CREATE INDEX "ScrapedAutoPart_jobId_idx" ON "ScrapedAutoPart"("jobId");
 
 -- CreateIndex
-CREATE INDEX "scraped_product_raw_jobId_status_idx" ON "scraped_product_raw"("jobId", "status");
-
--- CreateIndex
-CREATE INDEX "scraped_product_raw_sourcePlatform_status_idx" ON "scraped_product_raw"("sourcePlatform", "status");
-
--- CreateIndex
-CREATE INDEX "scraped_product_raw_productId_idx" ON "scraped_product_raw"("productId");
-
--- CreateIndex
-CREATE INDEX "category_mapping_ultrasooqCategoryId_idx" ON "category_mapping"("ultrasooqCategoryId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "category_mapping_sourcePlatform_sourcePath_key" ON "category_mapping"("sourcePlatform", "sourcePath");
-
--- CreateIndex
-CREATE UNIQUE INDEX "scraped_auto_part_sourceUrl_key" ON "scraped_auto_part"("sourceUrl");
-
--- CreateIndex
-CREATE INDEX "scraped_auto_part_partNumber_idx" ON "scraped_auto_part"("partNumber");
-
--- CreateIndex
-CREATE INDEX "scraped_auto_part_sourcePlatform_status_idx" ON "scraped_auto_part"("sourcePlatform", "status");
-
--- CreateIndex
-CREATE INDEX "scraped_auto_part_category_subcategory_idx" ON "scraped_auto_part"("category", "subcategory");
-
--- CreateIndex
-CREATE INDEX "scraped_auto_part_jobId_idx" ON "scraped_auto_part"("jobId");
-
--- CreateIndex
-CREATE INDEX "scraped_auto_part_productId_idx" ON "scraped_auto_part"("productId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "parts_diagram_diagramId_key" ON "parts_diagram"("diagramId");
-
--- CreateIndex
-CREATE INDEX "parts_diagram_vehicleMake_vehicleModel_idx" ON "parts_diagram"("vehicleMake", "vehicleModel");
-
--- CreateIndex
-CREATE INDEX "parts_diagram_sourcePlatform_idx" ON "parts_diagram"("sourcePlatform");
-
--- CreateIndex
-CREATE INDEX "parts_diagram_category_idx" ON "parts_diagram"("category");
+CREATE INDEX "ScrapedAutoPart_productId_idx" ON "ScrapedAutoPart"("productId");
 
 -- CreateIndex
 CREATE INDEX "ContentFilterRule_isActive_language_idx" ON "ContentFilterRule"("isActive", "language");
@@ -3597,64 +3396,40 @@ CREATE INDEX "ContentFilterLog_createdAt_idx" ON "ContentFilterLog"("createdAt")
 CREATE INDEX "ContentFilterLog_userId_severity_idx" ON "ContentFilterLog"("userId", "severity");
 
 -- CreateIndex
-CREATE INDEX "recommendation_metrics_date_idx" ON "recommendation_metrics"("date");
+CREATE INDEX "RecommendationMetric_date_idx" ON "RecommendationMetric"("date");
 
 -- CreateIndex
-CREATE INDEX "recommendation_metrics_algorithm_idx" ON "recommendation_metrics"("algorithm");
+CREATE INDEX "RecommendationMetric_algorithm_idx" ON "RecommendationMetric"("algorithm");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "recommendation_metrics_date_algorithm_placement_segment_exp_key" ON "recommendation_metrics"("date", "algorithm", "placement", "segment", "experiment");
+CREATE UNIQUE INDEX "RecommendationMetric_date_algorithm_placement_segment_exper_key" ON "RecommendationMetric"("date", "algorithm", "placement", "segment", "experiment");
 
 -- CreateIndex
-CREATE INDEX "recommendation_feedback_createdAt_idx" ON "recommendation_feedback"("createdAt");
+CREATE INDEX "RecommendationFeedback_createdAt_idx" ON "RecommendationFeedback"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "recommendation_feedback_recId_idx" ON "recommendation_feedback"("recId");
+CREATE INDEX "RecommendationFeedback_recId_idx" ON "RecommendationFeedback"("recId");
 
 -- CreateIndex
-CREATE INDEX "recommendation_feedback_userId_idx" ON "recommendation_feedback"("userId");
+CREATE INDEX "RecommendationFeedback_userId_idx" ON "RecommendationFeedback"("userId");
 
 -- CreateIndex
-CREATE INDEX "recommendation_feedback_algorithm_placement_createdAt_idx" ON "recommendation_feedback"("algorithm", "placement", "createdAt");
+CREATE INDEX "RecommendationFeedback_algorithm_placement_createdAt_idx" ON "RecommendationFeedback"("algorithm", "placement", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "cross_sell_rules_sourceCategoryId_idx" ON "cross_sell_rules"("sourceCategoryId");
+CREATE INDEX "CrossSellRule_sourceCategoryId_idx" ON "CrossSellRule"("sourceCategoryId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "cross_sell_rules_sourceCategoryId_targetCategoryId_key" ON "cross_sell_rules"("sourceCategoryId", "targetCategoryId");
+CREATE UNIQUE INDEX "CrossSellRule_sourceCategoryId_targetCategoryId_key" ON "CrossSellRule"("sourceCategoryId", "targetCategoryId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "recommendation_config_key_key" ON "recommendation_config"("key");
+CREATE UNIQUE INDEX "RecommendationConfig_key_key" ON "RecommendationConfig"("key");
 
 -- CreateIndex
-CREATE INDEX "use_case_mappings_categoryId_idx" ON "use_case_mappings"("categoryId");
+CREATE INDEX "TermDisambiguation_term_idx" ON "TermDisambiguation"("term");
 
 -- CreateIndex
-CREATE INDEX "use_case_mappings_useCase_idx" ON "use_case_mappings"("useCase");
-
--- CreateIndex
-CREATE UNIQUE INDEX "use_case_mappings_categoryId_useCase_key" ON "use_case_mappings"("categoryId", "useCase");
-
--- CreateIndex
-CREATE INDEX "compatibility_rules_productId_idx" ON "compatibility_rules"("productId");
-
--- CreateIndex
-CREATE INDEX "compatibility_rules_vehicleMake_vehicleModel_idx" ON "compatibility_rules"("vehicleMake", "vehicleModel");
-
--- CreateIndex
-CREATE INDEX "compatibility_rules_deviceBrand_deviceModel_idx" ON "compatibility_rules"("deviceBrand", "deviceModel");
-
--- CreateIndex
-CREATE INDEX "accessory_links_sourceCategoryId_idx" ON "accessory_links"("sourceCategoryId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "accessory_links_sourceCategoryId_accessoryCategoryId_key" ON "accessory_links"("sourceCategoryId", "accessoryCategoryId");
-
--- CreateIndex
-CREATE INDEX "term_disambiguations_term_idx" ON "term_disambiguations"("term");
-
--- CreateIndex
-CREATE INDEX "term_disambiguations_categoryId_idx" ON "term_disambiguations"("categoryId");
+CREATE INDEX "TermDisambiguation_categoryId_idx" ON "TermDisambiguation"("categoryId");
 
 -- CreateIndex
 CREATE INDEX "Complaint_orderProductId_idx" ON "Complaint"("orderProductId");
@@ -3687,25 +3462,52 @@ CREATE INDEX "SupportConversation_assigneeId_idx" ON "SupportConversation"("assi
 CREATE INDEX "SupportMessage_conversationId_idx" ON "SupportMessage"("conversationId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "session_token_key" ON "session"("token");
+CREATE UNIQUE INDEX "Session_token_key" ON "Session"("token");
 
 -- CreateIndex
-CREATE INDEX "session_userId_idx" ON "session"("userId");
+CREATE INDEX "Session_userId_idx" ON "Session"("userId");
 
 -- CreateIndex
-CREATE INDEX "account_userId_idx" ON "account"("userId");
+CREATE INDEX "Account_userId_idx" ON "Account"("userId");
 
 -- CreateIndex
-CREATE INDEX "verification_identifier_idx" ON "verification"("identifier");
+CREATE INDEX "Verification_identifier_idx" ON "Verification"("identifier");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Organization_slug_key" ON "Organization"("slug");
+
+-- CreateIndex
+CREATE INDEX "Member_organizationId_idx" ON "Member"("organizationId");
+
+-- CreateIndex
+CREATE INDEX "Member_userId_idx" ON "Member"("userId");
+
+-- CreateIndex
+CREATE INDEX "Invitation_organizationId_idx" ON "Invitation"("organizationId");
+
+-- CreateIndex
+CREATE INDEX "Invitation_email_idx" ON "Invitation"("email");
+
+-- CreateIndex
+CREATE INDEX "TwoFactor_secret_idx" ON "TwoFactor"("secret");
+
+-- CreateIndex
+CREATE INDEX "TwoFactor_userId_idx" ON "TwoFactor"("userId");
+
+-- CreateIndex
+CREATE INDEX "Passkey_userId_idx" ON "Passkey"("userId");
+
+-- CreateIndex
+CREATE INDEX "Passkey_credentialID_idx" ON "Passkey"("credentialID");
 
 -- AddForeignKey
-ALTER TABLE "user" ADD CONSTRAINT "user_adminRoleId_fkey" FOREIGN KEY ("adminRoleId") REFERENCES "AdminRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "User" ADD CONSTRAINT "User_adminRoleId_fkey" FOREIGN KEY ("adminRoleId") REFERENCES "AdminRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user" ADD CONSTRAINT "user_userRoleId_fkey" FOREIGN KEY ("userRoleId") REFERENCES "UserRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "User" ADD CONSTRAINT "User_userRoleId_fkey" FOREIGN KEY ("userRoleId") REFERENCES "UserRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user" ADD CONSTRAINT "user_userTypeCategoryId_fkey" FOREIGN KEY ("userTypeCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "User" ADD CONSTRAINT "User_userTypeCategoryId_fkey" FOREIGN KEY ("userTypeCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserRolePermission" ADD CONSTRAINT "UserRolePermission_permissionId_fkey" FOREIGN KEY ("permissionId") REFERENCES "Permission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3723,28 +3525,28 @@ ALTER TABLE "UserAddress" ADD CONSTRAINT "UserAddress_countryId_fkey" FOREIGN KE
 ALTER TABLE "UserAddress" ADD CONSTRAINT "UserAddress_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "States"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserAddress" ADD CONSTRAINT "UserAddress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "UserAddress" ADD CONSTRAINT "UserAddress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserPhone" ADD CONSTRAINT "UserPhone_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "UserPhone" ADD CONSTRAINT "UserPhone_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserSocialLink" ADD CONSTRAINT "UserSocialLink_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "UserSocialLink" ADD CONSTRAINT "UserSocialLink_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserProfile" ADD CONSTRAINT "UserProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "UserProfile" ADD CONSTRAINT "UserProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserProfileBusinessType" ADD CONSTRAINT "UserProfileBusinessType_businessTypeId_fkey" FOREIGN KEY ("businessTypeId") REFERENCES "Tags"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserProfileBusinessType" ADD CONSTRAINT "UserProfileBusinessType_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "UserProfileBusinessType" ADD CONSTRAINT "UserProfileBusinessType_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserProfileBusinessType" ADD CONSTRAINT "UserProfileBusinessType_userProfileId_fkey" FOREIGN KEY ("userProfileId") REFERENCES "UserProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserBranch" ADD CONSTRAINT "UserBranch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "UserBranch" ADD CONSTRAINT "UserBranch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "UserBranch" ADD CONSTRAINT "UserBranch_countryId_fkey" FOREIGN KEY ("countryId") REFERENCES "Countries"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3777,7 +3579,7 @@ ALTER TABLE "UserBranchCategory" ADD CONSTRAINT "UserBranchCategory_userBranchId
 ALTER TABLE "UserBusinessCategory" ADD CONSTRAINT "UserBusinessCategory_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TeamMember" ADD CONSTRAINT "TeamMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "TeamMember" ADD CONSTRAINT "TeamMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "TeamMember" ADD CONSTRAINT "TeamMember_userRoleId_fkey" FOREIGN KEY ("userRoleId") REFERENCES "UserRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3792,7 +3594,7 @@ ALTER TABLE "Category" ADD CONSTRAINT "Category_menuId_fkey" FOREIGN KEY ("menuI
 ALTER TABLE "Category" ADD CONSTRAINT "Category_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Category" ADD CONSTRAINT "Category_policy_fkey" FOREIGN KEY ("policy") REFERENCES "policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Category" ADD CONSTRAINT "Category_policy_fkey" FOREIGN KEY ("policy") REFERENCES "Policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Category" ADD CONSTRAINT "Category_rfq_fkey" FOREIGN KEY ("rfq") REFERENCES "Fees"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3810,7 +3612,7 @@ ALTER TABLE "CategoryConnectTo" ADD CONSTRAINT "CategoryConnectTo_connectTo_fkey
 ALTER TABLE "Fees" ADD CONSTRAINT "Fees_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Fees" ADD CONSTRAINT "Fees_policyId_fkey" FOREIGN KEY ("policyId") REFERENCES "policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Fees" ADD CONSTRAINT "Fees_policyId_fkey" FOREIGN KEY ("policyId") REFERENCES "Policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "FeesDetail" ADD CONSTRAINT "FeesDetail_consumerLocationId_fkey" FOREIGN KEY ("consumerLocationId") REFERENCES "FeesLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3867,10 +3669,10 @@ ALTER TABLE "FeesCategoryConnectTo" ADD CONSTRAINT "FeesCategoryConnectTo_catego
 ALTER TABLE "FeesCategoryConnectTo" ADD CONSTRAINT "FeesCategoryConnectTo_feeId_fkey" FOREIGN KEY ("feeId") REFERENCES "Fees"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "policy" ADD CONSTRAINT "policy_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Policy" ADD CONSTRAINT "Policy_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Policy"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Product" ADD CONSTRAINT "Product_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Product" ADD CONSTRAINT "Product_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3882,19 +3684,19 @@ ALTER TABLE "Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("cat
 ALTER TABLE "Product" ADD CONSTRAINT "Product_placeOfOriginId_fkey" FOREIGN KEY ("placeOfOriginId") REFERENCES "CountryList"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Product" ADD CONSTRAINT "Product_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Product" ADD CONSTRAINT "Product_originalProductId_fkey" FOREIGN KEY ("originalProductId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_dropshipVendorId_fkey" FOREIGN KEY ("dropshipVendorId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Product" ADD CONSTRAINT "Product_dropshipVendorId_fkey" FOREIGN KEY ("dropshipVendorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Product" ADD CONSTRAINT "Product_originalVendorId_fkey" FOREIGN KEY ("originalVendorId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Product" ADD CONSTRAINT "Product_originalVendorId_fkey" FOREIGN KEY ("originalVendorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductPrice" ADD CONSTRAINT "ProductPrice_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductPrice" ADD CONSTRAINT "ProductPrice_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductPrice" ADD CONSTRAINT "ProductPrice_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3957,7 +3759,7 @@ ALTER TABLE "ProductImages" ADD CONSTRAINT "ProductImages_productId_fkey" FOREIG
 ALTER TABLE "SellerReward" ADD CONSTRAINT "SellerReward_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SharedLink" ADD CONSTRAINT "SharedLink_linkGeneratedBy_fkey" FOREIGN KEY ("linkGeneratedBy") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "SharedLink" ADD CONSTRAINT "SharedLink_linkGeneratedBy_fkey" FOREIGN KEY ("linkGeneratedBy") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "SharedLink" ADD CONSTRAINT "SharedLink_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -3966,40 +3768,40 @@ ALTER TABLE "SharedLink" ADD CONSTRAINT "SharedLink_productId_fkey" FOREIGN KEY 
 ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductReview" ADD CONSTRAINT "ProductReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductPriceReview" ADD CONSTRAINT "ProductPriceReview_productPriceId_fkey" FOREIGN KEY ("productPriceId") REFERENCES "ProductPrice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductPriceReview" ADD CONSTRAINT "ProductPriceReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductPriceReview" ADD CONSTRAINT "ProductPriceReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductView" ADD CONSTRAINT "ProductView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductView" ADD CONSTRAINT "ProductView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductView" ADD CONSTRAINT "ProductView_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductSearch" ADD CONSTRAINT "ProductSearch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductSearch" ADD CONSTRAINT "ProductSearch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductSearch" ADD CONSTRAINT "ProductSearch_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductClick" ADD CONSTRAINT "ProductClick_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductClick" ADD CONSTRAINT "ProductClick_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductClick" ADD CONSTRAINT "ProductClick_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductQuestion" ADD CONSTRAINT "ProductQuestion_answerByuserId_fkey" FOREIGN KEY ("answerByuserId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductQuestion" ADD CONSTRAINT "ProductQuestion_answerByuserId_fkey" FOREIGN KEY ("answerByuserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductQuestion" ADD CONSTRAINT "ProductQuestion_questionByuserId_fkey" FOREIGN KEY ("questionByuserId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductQuestion" ADD CONSTRAINT "ProductQuestion_questionByuserId_fkey" FOREIGN KEY ("questionByuserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProductQuestionAnswer" ADD CONSTRAINT "ProductQuestionAnswer_answerByuserId_fkey" FOREIGN KEY ("answerByuserId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProductQuestionAnswer" ADD CONSTRAINT "ProductQuestionAnswer_answerByuserId_fkey" FOREIGN KEY ("answerByuserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProductQuestionAnswer" ADD CONSTRAINT "ProductQuestionAnswer_productQuestionId_fkey" FOREIGN KEY ("productQuestionId") REFERENCES "ProductQuestion"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4035,7 +3837,7 @@ ALTER TABLE "Cart" ADD CONSTRAINT "Cart_productPriceId_fkey" FOREIGN KEY ("produ
 ALTER TABLE "Cart" ADD CONSTRAINT "Cart_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Cart" ADD CONSTRAINT "Cart_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Cart" ADD CONSTRAINT "Cart_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CartServiceFeature" ADD CONSTRAINT "CartServiceFeature_cartId_fkey" FOREIGN KEY ("cartId") REFERENCES "Cart"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4074,19 +3876,10 @@ ALTER TABLE "OrderProducts" ADD CONSTRAINT "OrderProducts_productId_fkey" FOREIG
 ALTER TABLE "OrderProducts" ADD CONSTRAINT "OrderProducts_productPriceId_fkey" FOREIGN KEY ("productPriceId") REFERENCES "ProductPrice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderProducts" ADD CONSTRAINT "OrderProducts_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "OrderProducts" ADD CONSTRAINT "OrderProducts_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderProducts" ADD CONSTRAINT "OrderProducts_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "OrderProductService" ADD CONSTRAINT "OrderProductService_orderProductId_fkey" FOREIGN KEY ("orderProductId") REFERENCES "OrderProducts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "OrderProductService" ADD CONSTRAINT "OrderProductService_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "OrderProductService" ADD CONSTRAINT "OrderProductService_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "DeliveryEvent" ADD CONSTRAINT "DeliveryEvent_orderProductId_fkey" FOREIGN KEY ("orderProductId") REFERENCES "OrderProducts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4131,19 +3924,19 @@ ALTER TABLE "RfqQuotesProducts" ADD CONSTRAINT "RfqQuotesProducts_rfqProductId_f
 ALTER TABLE "RfqQuotesProducts" ADD CONSTRAINT "RfqQuotesProducts_rfqQuotesId_fkey" FOREIGN KEY ("rfqQuotesId") REFERENCES "RfqQuotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuotesUsers" ADD CONSTRAINT "RfqQuotesUsers_buyerID_fkey" FOREIGN KEY ("buyerID") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuotesUsers" ADD CONSTRAINT "RfqQuotesUsers_buyerID_fkey" FOREIGN KEY ("buyerID") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RfqQuotesUsers" ADD CONSTRAINT "RfqQuotesUsers_rfqQuotesId_fkey" FOREIGN KEY ("rfqQuotesId") REFERENCES "RfqQuotes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuotesUsers" ADD CONSTRAINT "RfqQuotesUsers_sellerID_fkey" FOREIGN KEY ("sellerID") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuotesUsers" ADD CONSTRAINT "RfqQuotesUsers_sellerID_fkey" FOREIGN KEY ("sellerID") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Wishlist" ADD CONSTRAINT "Wishlist_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Room" ADD CONSTRAINT "Room_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Room" ADD CONSTRAINT "Room_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Message" ADD CONSTRAINT "Message_rfqQuotesUserId_fkey" FOREIGN KEY ("rfqQuotesUserId") REFERENCES "RfqQuotesUsers"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4152,25 +3945,25 @@ ALTER TABLE "Message" ADD CONSTRAINT "Message_rfqQuotesUserId_fkey" FOREIGN KEY 
 ALTER TABLE "Message" ADD CONSTRAINT "Message_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Message" ADD CONSTRAINT "Message_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Message" ADD CONSTRAINT "Message_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ChatAttachments" ADD CONSTRAINT "ChatAttachments_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_approvedById_fkey" FOREIGN KEY ("approvedById") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_approvedById_fkey" FOREIGN KEY ("approvedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_rejectedById_fkey" FOREIGN KEY ("rejectedById") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_rejectedById_fkey" FOREIGN KEY ("rejectedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_requestedById_fkey" FOREIGN KEY ("requestedById") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_requestedById_fkey" FOREIGN KEY ("requestedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_rfqQuoteId_fkey" FOREIGN KEY ("rfqQuoteId") REFERENCES "RfqQuotes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4182,7 +3975,7 @@ ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRe
 ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_rfqQuotesUserId_fkey" FOREIGN KEY ("rfqQuotesUserId") REFERENCES "RfqQuotesUsers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RfqQuoteProductPriceRequest" ADD CONSTRAINT "RfqQuoteProductPriceRequest_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -4194,7 +3987,7 @@ ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_rfqQuotePr
 ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_suggestedProductId_fkey" FOREIGN KEY ("suggestedProductId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_rfqQuotesUserId_fkey" FOREIGN KEY ("rfqQuotesUserId") REFERENCES "RfqQuotesUsers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4203,7 +3996,7 @@ ALTER TABLE "RfqSuggestedProduct" ADD CONSTRAINT "RfqSuggestedProduct_rfqQuotesU
 ALTER TABLE "RoomParticipants" ADD CONSTRAINT "RoomParticipants_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RoomParticipants" ADD CONSTRAINT "RoomParticipants_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RoomParticipants" ADD CONSTRAINT "RoomParticipants_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AdminRolePermission" ADD CONSTRAINT "AdminRolePermission_adminPermissionId_fkey" FOREIGN KEY ("adminPermissionId") REFERENCES "AdminPermission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4215,10 +4008,10 @@ ALTER TABLE "AdminRolePermission" ADD CONSTRAINT "AdminRolePermission_adminRoleI
 ALTER TABLE "AdminMember" ADD CONSTRAINT "AdminMember_adminRoleId_fkey" FOREIGN KEY ("adminRoleId") REFERENCES "AdminRole"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "AdminMember" ADD CONSTRAINT "AdminMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "AdminMember" ADD CONSTRAINT "AdminMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "HelpCenter" ADD CONSTRAINT "HelpCenter_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "HelpCenter" ADD CONSTRAINT "HelpCenter_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Service" ADD CONSTRAINT "Service_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4233,7 +4026,7 @@ ALTER TABLE "Service" ADD CONSTRAINT "Service_fromCityId_fkey" FOREIGN KEY ("fro
 ALTER TABLE "Service" ADD CONSTRAINT "Service_rangeCityId_fkey" FOREIGN KEY ("rangeCityId") REFERENCES "Cities"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Service" ADD CONSTRAINT "Service_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Service" ADD CONSTRAINT "Service_sellerId_fkey" FOREIGN KEY ("sellerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Service" ADD CONSTRAINT "Service_stateId_fkey" FOREIGN KEY ("stateId") REFERENCES "States"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4254,7 +4047,7 @@ ALTER TABLE "ServiceFeature" ADD CONSTRAINT "ServiceFeature_serviceId_fkey" FORE
 ALTER TABLE "ServiceImage" ADD CONSTRAINT "ServiceImage_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Wallet" ADD CONSTRAINT "Wallet_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Wallet" ADD CONSTRAINT "Wallet_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "WalletTransaction" ADD CONSTRAINT "WalletTransaction_walletId_fkey" FOREIGN KEY ("walletId") REFERENCES "Wallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4266,10 +4059,10 @@ ALTER TABLE "WalletTransfer" ADD CONSTRAINT "WalletTransfer_fromWalletId_fkey" F
 ALTER TABLE "WalletTransfer" ADD CONSTRAINT "WalletTransfer_toWalletId_fkey" FOREIGN KEY ("toWalletId") REFERENCES "Wallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WalletSettings" ADD CONSTRAINT "WalletSettings_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "WalletSettings" ADD CONSTRAINT "WalletSettings_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4281,7 +4074,7 @@ ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_categoryId_fkey" F
 ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_placeOfOriginId_fkey" FOREIGN KEY ("placeOfOriginId") REFERENCES "CountryList"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ExistingProduct" ADD CONSTRAINT "ExistingProduct_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ExistingProductTags" ADD CONSTRAINT "ExistingProductTags_existingProductId_fkey" FOREIGN KEY ("existingProductId") REFERENCES "ExistingProduct"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -4290,125 +4083,122 @@ ALTER TABLE "ExistingProductTags" ADD CONSTRAINT "ExistingProductTags_existingPr
 ALTER TABLE "ExistingProductTags" ADD CONSTRAINT "ExistingProductTags_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "Tags"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ExistingProductImages" ADD CONSTRAINT "ExistingProductImages_existingProductId_fkey" FOREIGN KEY ("existingProductId") REFERENCES "ExistingProduct"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "system_log" ADD CONSTRAINT "system_log_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "SystemLog" ADD CONSTRAINT "SystemLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "product_category_map" ADD CONSTRAINT "product_category_map_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductCategoryMap" ADD CONSTRAINT "ProductCategoryMap_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "product_category_map" ADD CONSTRAINT "product_category_map_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductCategoryMap" ADD CONSTRAINT "ProductCategoryMap_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "category_keyword" ADD CONSTRAINT "category_keyword_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CategoryKeyword" ADD CONSTRAINT "CategoryKeyword_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "category_tag" ADD CONSTRAINT "category_tag_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CategoryTag" ADD CONSTRAINT "CategoryTag_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "category_tag" ADD CONSTRAINT "category_tag_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "Tags"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "CategoryTag" ADD CONSTRAINT "CategoryTag_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "Tags"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "service_category_map" ADD CONSTRAINT "service_category_map_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ServiceCategoryMap" ADD CONSTRAINT "ServiceCategoryMap_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "service_category_map" ADD CONSTRAINT "service_category_map_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ServiceCategoryMap" ADD CONSTRAINT "ServiceCategoryMap_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "spec_template" ADD CONSTRAINT "spec_template_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "SpecTemplate" ADD CONSTRAINT "SpecTemplate_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "product_spec_value" ADD CONSTRAINT "product_spec_value_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductSpecValue" ADD CONSTRAINT "ProductSpecValue_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "product_spec_value" ADD CONSTRAINT "product_spec_value_specTemplateId_fkey" FOREIGN KEY ("specTemplateId") REFERENCES "spec_template"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductSpecValue" ADD CONSTRAINT "ProductSpecValue_specTemplateId_fkey" FOREIGN KEY ("specTemplateId") REFERENCES "SpecTemplate"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "strategy_lab_combo" ADD CONSTRAINT "strategy_lab_combo_runId_fkey" FOREIGN KEY ("runId") REFERENCES "strategy_lab_run"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ScrapingJob" ADD CONSTRAINT "ScrapingJob_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "strategy_lab_trade" ADD CONSTRAINT "strategy_lab_trade_runId_fkey" FOREIGN KEY ("runId") REFERENCES "strategy_lab_run"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ScrapedProductRaw" ADD CONSTRAINT "ScrapedProductRaw_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "ScrapingJob"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "strategy_lab_trade" ADD CONSTRAINT "strategy_lab_trade_comboId_fkey" FOREIGN KEY ("comboId") REFERENCES "strategy_lab_combo"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ScrapedProductRaw" ADD CONSTRAINT "ScrapedProductRaw_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "scraping_job" ADD CONSTRAINT "scraping_job_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "CategoryMapping" ADD CONSTRAINT "CategoryMapping_ultrasooqCategoryId_fkey" FOREIGN KEY ("ultrasooqCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "scraped_product_raw" ADD CONSTRAINT "scraped_product_raw_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "scraping_job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ScrapedAutoPart" ADD CONSTRAINT "ScrapedAutoPart_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "ScrapingJob"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "scraped_product_raw" ADD CONSTRAINT "scraped_product_raw_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ScrapedAutoPart" ADD CONSTRAINT "ScrapedAutoPart_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "category_mapping" ADD CONSTRAINT "category_mapping_ultrasooqCategoryId_fkey" FOREIGN KEY ("ultrasooqCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ContentFilterLog" ADD CONSTRAINT "ContentFilterLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "scraped_auto_part" ADD CONSTRAINT "scraped_auto_part_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "scraping_job"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RecommendationFeedback" ADD CONSTRAINT "RecommendationFeedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "scraped_auto_part" ADD CONSTRAINT "scraped_auto_part_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "RecommendationFeedback" ADD CONSTRAINT "RecommendationFeedback_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ContentFilterLog" ADD CONSTRAINT "ContentFilterLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "CrossSellRule" ADD CONSTRAINT "CrossSellRule_sourceCategoryId_fkey" FOREIGN KEY ("sourceCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "recommendation_feedback" ADD CONSTRAINT "recommendation_feedback_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "CrossSellRule" ADD CONSTRAINT "CrossSellRule_targetCategoryId_fkey" FOREIGN KEY ("targetCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "recommendation_feedback" ADD CONSTRAINT "recommendation_feedback_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "cross_sell_rules" ADD CONSTRAINT "cross_sell_rules_sourceCategoryId_fkey" FOREIGN KEY ("sourceCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "cross_sell_rules" ADD CONSTRAINT "cross_sell_rules_targetCategoryId_fkey" FOREIGN KEY ("targetCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "use_case_mappings" ADD CONSTRAINT "use_case_mappings_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "compatibility_rules" ADD CONSTRAINT "compatibility_rules_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "accessory_links" ADD CONSTRAINT "accessory_links_sourceCategoryId_fkey" FOREIGN KEY ("sourceCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "accessory_links" ADD CONSTRAINT "accessory_links_accessoryCategoryId_fkey" FOREIGN KEY ("accessoryCategoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "term_disambiguations" ADD CONSTRAINT "term_disambiguations_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "TermDisambiguation" ADD CONSTRAINT "TermDisambiguation_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Complaint" ADD CONSTRAINT "Complaint_orderProductId_fkey" FOREIGN KEY ("orderProductId") REFERENCES "OrderProducts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Complaint" ADD CONSTRAINT "Complaint_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Complaint" ADD CONSTRAINT "Complaint_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RefundRequest" ADD CONSTRAINT "RefundRequest_orderProductId_fkey" FOREIGN KEY ("orderProductId") REFERENCES "OrderProducts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RefundRequest" ADD CONSTRAINT "RefundRequest_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RefundRequest" ADD CONSTRAINT "RefundRequest_buyerId_fkey" FOREIGN KEY ("buyerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_assigneeId_fkey" FOREIGN KEY ("assigneeId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "SupportConversation" ADD CONSTRAINT "SupportConversation_assigneeId_fkey" FOREIGN KEY ("assigneeId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "SupportMessage" ADD CONSTRAINT "SupportMessage_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "SupportConversation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "session" ADD CONSTRAINT "session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "account" ADD CONSTRAINT "account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Account" ADD CONSTRAINT "Account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Member" ADD CONSTRAINT "Member_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Member" ADD CONSTRAINT "Member_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Invitation" ADD CONSTRAINT "Invitation_inviterId_fkey" FOREIGN KEY ("inviterId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TwoFactor" ADD CONSTRAINT "TwoFactor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Passkey" ADD CONSTRAINT "Passkey_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
