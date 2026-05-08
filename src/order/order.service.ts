@@ -3793,8 +3793,7 @@ export class OrderService {
     try {
       const vendorId = req?.user?.id;
       const adminId = await this.helperService.getAdminId(vendorId);
-      
-      
+
       if (!adminId) {
         return {
           status: false,
@@ -3803,105 +3802,18 @@ export class OrderService {
         };
       }
 
-      // Debug: Check what orders exist for this adminId
-      const debugOrders = await this.prisma.orderProducts.findMany({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          status: 'ACTIVE'
-        },
-        include: {
-          orderProduct_product: {
-            select: {
-              productName: true
-            }
-          }
-        },
-        take: 5
+      const sellerIdNum = Number(adminId);
+
+      const sellerProducts = await this.prisma.product.findMany({
+        where: { adminId: String(adminId), deletedAt: null },
+        select: { id: true }
       });
+      const sellerProductIds = sellerProducts.map((p) => p.id);
 
-      // Debug: Check all recent orders to see what sellerIds exist
-      const allRecentOrders = await this.prisma.orderProducts.findMany({
-        where: {
-          status: 'ACTIVE',
-          createdAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
-          }
-        },
-        include: {
-          orderProduct_product: {
-            select: {
-              productName: true
-            }
-          }
-        },
-        take: 10
-      });
-
-      // Get total orders count
-      const totalOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          status: 'ACTIVE'
-        }
-      });
-
-      // Get pending orders count
-      const pendingOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          orderProductStatus: 'PLACED',
-          status: 'ACTIVE'
-        }
-      });
-
-      // Get completed orders count
-      const completedOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          orderProductStatus: 'DELIVERED',
-          status: 'ACTIVE'
-        }
-      });
-
-      // Get cancelled orders count
-      const cancelledOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          orderProductStatus: 'CANCELLED',
-          status: 'ACTIVE'
-        }
-      });
-
-      // Get total revenue
-      const revenueResult = await this.prisma.orderProducts.aggregate({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          orderProductStatus: 'DELIVERED',
-          status: 'ACTIVE'
-        },
-        _sum: {
-          salePrice: true
-        }
-      });
-
-      const totalRevenue = revenueResult._sum.salePrice || 0;
-
-      // Get this month's orders
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
 
-      const thisMonthOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          createdAt: {
-            gte: startOfMonth
-          },
-          status: 'ACTIVE'
-        }
-      });
-
-      // Get last month's orders
       const startOfLastMonth = new Date();
       startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
       startOfLastMonth.setDate(1);
@@ -3911,19 +3823,122 @@ export class OrderService {
       endOfLastMonth.setDate(0);
       endOfLastMonth.setHours(23, 59, 59, 999);
 
-      const lastMonthOrders = await this.prisma.orderProducts.count({
-        where: {
-          sellerId: adminId ? Number(adminId) : undefined,
-          createdAt: {
-            gte: startOfLastMonth,
-            lte: endOfLastMonth
-          },
-          status: 'ACTIVE'
-        }
-      });
+      const startOf14DaysAgo = new Date();
+      startOf14DaysAgo.setDate(startOf14DaysAgo.getDate() - 13);
+      startOf14DaysAgo.setHours(0, 0, 0, 0);
 
-      // Calculate average order value
+      const [
+        totalOrders,
+        pendingOrders,
+        completedOrders,
+        cancelledOrders,
+        revenueResult,
+        thisMonthOrders,
+        lastMonthOrders,
+        viewsResult,
+        totalCarts,
+        recentOrderRows,
+        recentCartRows
+      ] = await Promise.all([
+        this.prisma.orderProducts.count({
+          where: { sellerId: sellerIdNum, status: 'ACTIVE' }
+        }),
+        this.prisma.orderProducts.count({
+          where: { sellerId: sellerIdNum, orderProductStatus: 'PLACED', status: 'ACTIVE' }
+        }),
+        this.prisma.orderProducts.count({
+          where: { sellerId: sellerIdNum, orderProductStatus: 'DELIVERED', status: 'ACTIVE' }
+        }),
+        this.prisma.orderProducts.count({
+          where: { sellerId: sellerIdNum, orderProductStatus: 'CANCELLED', status: 'ACTIVE' }
+        }),
+        this.prisma.orderProducts.aggregate({
+          where: { sellerId: sellerIdNum, orderProductStatus: 'DELIVERED', status: 'ACTIVE' },
+          _sum: { salePrice: true }
+        }),
+        this.prisma.orderProducts.count({
+          where: { sellerId: sellerIdNum, createdAt: { gte: startOfMonth }, status: 'ACTIVE' }
+        }),
+        this.prisma.orderProducts.count({
+          where: {
+            sellerId: sellerIdNum,
+            createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
+            status: 'ACTIVE'
+          }
+        }),
+        sellerProductIds.length
+          ? this.prisma.productView.aggregate({
+              where: { productId: { in: sellerProductIds }, deletedAt: null },
+              _sum: { viewCount: true }
+            })
+          : Promise.resolve({ _sum: { viewCount: 0 } } as any),
+        sellerProductIds.length
+          ? this.prisma.cart.count({
+              where: {
+                productId: { in: sellerProductIds },
+                status: 'ACTIVE',
+                deletedAt: null
+              }
+            })
+          : Promise.resolve(0),
+        this.prisma.orderProducts.findMany({
+          where: {
+            sellerId: sellerIdNum,
+            status: 'ACTIVE',
+            createdAt: { gte: startOf14DaysAgo }
+          },
+          select: {
+            createdAt: true,
+            salePrice: true,
+            orderQuantity: true,
+            orderProductStatus: true
+          }
+        }),
+        sellerProductIds.length
+          ? this.prisma.cart.findMany({
+              where: {
+                productId: { in: sellerProductIds },
+                status: 'ACTIVE',
+                deletedAt: null,
+                createdAt: { gte: startOf14DaysAgo }
+              },
+              select: { createdAt: true }
+            })
+          : Promise.resolve([] as { createdAt: Date }[])
+      ]);
+
+      const totalRevenue = revenueResult._sum.salePrice || 0;
+      const totalProductViews = Number(viewsResult?._sum?.viewCount || 0);
       const averageOrderValue = totalOrders > 0 ? Number(totalRevenue) / totalOrders : 0;
+
+      const dailyStats: { date: string; orders: number; revenue: number; carts: number }[] = [];
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        d.setHours(0, 0, 0, 0);
+        dailyStats.push({
+          date: d.toISOString().slice(0, 10),
+          orders: 0,
+          revenue: 0,
+          carts: 0
+        });
+      }
+      const dayMap = new Map(dailyStats.map((d) => [d.date, d]));
+
+      for (const row of recentOrderRows) {
+        if (row.orderProductStatus === 'CANCELLED') continue;
+        const key = row.createdAt.toISOString().slice(0, 10);
+        const day = dayMap.get(key);
+        if (day) {
+          day.orders += 1;
+          day.revenue += Number(row.salePrice || 0) * (row.orderQuantity || 1);
+        }
+      }
+      for (const row of recentCartRows) {
+        const key = row.createdAt.toISOString().slice(0, 10);
+        const day = dayMap.get(key);
+        if (day) day.carts += 1;
+      }
 
       return {
         status: true,
@@ -3936,10 +3951,12 @@ export class OrderService {
           totalRevenue: Number(totalRevenue),
           thisMonthOrders,
           lastMonthOrders,
-          averageOrderValue: Number(averageOrderValue.toFixed(2))
+          averageOrderValue: Number(averageOrderValue.toFixed(2)),
+          totalProductViews,
+          totalCarts,
+          dailyStats
         }
       };
-
     } catch (error) {
       return {
         status: false,
