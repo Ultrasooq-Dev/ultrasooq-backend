@@ -119,6 +119,16 @@ export const auth = betterAuth({
   trustedOrigins,
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   databaseHooks: {
+    user: {
+      create: {
+        // Auto-activate new accounts: mark every newly created user as
+        // email-verified so signup → session → Step 3 works without the
+        // email verification round-trip. Re-enable the verification flow
+        // by removing this hook and flipping requireEmailVerification /
+        // sendOnSignUp back to true below.
+        before: async (user) => ({ data: { ...user, emailVerified: true } }),
+      },
+    },
     session: {
       create: {
         // Block sign-in for inactive users. The User model uses `isActive: false`
@@ -174,7 +184,7 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true, // true: blocks sign-in until email verified — closes account-merge attack via Google trustedProvider.
+    requireEmailVerification: false, // Auto-activated via databaseHooks.user.create.before — flip back to true to re-enable verification gating.
     password: {
       // Cost 12 for new hashes. verify() still works against legacy 10-cost hashes since bcrypt encodes cost in the hash itself.
       hash: async (password: string) => bcrypt.hash(password, 12),
@@ -186,7 +196,10 @@ export const auth = betterAuth({
     },
   },
   emailVerification: {
-    sendOnSignUp: true,
+    // Accounts are auto-verified on creation, so no signup mail is sent. The
+    // sendVerificationEmail handler stays wired for manual /send-verification-email
+    // calls (e.g. resend flow if verification is re-enabled later).
+    sendOnSignUp: false,
     sendVerificationEmail: async ({ user, url }) => {
       await sendVerificationMail({ to: user.email, name: user.name || '', url });
     },
