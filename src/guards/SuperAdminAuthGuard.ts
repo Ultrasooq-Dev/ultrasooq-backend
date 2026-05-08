@@ -1,43 +1,20 @@
 /**
- * @file SuperAdminAuthGuard.ts — JWT + Admin Role Authorization Guard
+ * @file SuperAdminAuthGuard.ts — Admin-only authorization guard (JWT + Better Auth)
  *
  * @intent
- *   Extends authentication beyond simple JWT validation by also verifying
- *   that the authenticated user has `userType === 'ADMIN'`. Routes protected
- *   by this guard are restricted to platform administrators only.
- *
- * @idea
- *   Two-step authorization: first authenticate via JWT (same as AuthGuard),
- *   then perform a database lookup to confirm the user's role. This ensures
- *   that even if a regular user obtains a valid JWT, they cannot access admin
- *   endpoints.
- *
- * @usage
- *   Applied via @UseGuards(SuperAdminAuthGuard) on admin-only controllers:
- *   - AdminController (src/admin/admin.controller.ts)
- *   - AdminMemberController (src/admin-member/admin-member.controller.ts)
- *   - Possibly other admin-restricted routes.
+ *   Restricts admin endpoints (AdminController, AdminMemberController) to users
+ *   with `userType === 'ADMIN'`. Accepts either a legacy JWT Bearer token or a
+ *   Better Auth session cookie — mirrors the bridge in AuthGuard.ts so the
+ *   admin app can migrate to Better Auth without backend churn.
  *
  * @dataflow
- *   1. Extract Bearer token from Authorization header.
- *   2. Validate JWT via AuthService.validateToken().
- *   3. If invalid → throw UnauthorizedException (401).
- *   4. Attach decoded user to req.user.
- *   5. Query the database (prisma.user.findUnique) to fetch the user's userType.
- *   6. If userType !== 'ADMIN' → throw ForbiddenException (403) "Not An Admin".
- *   7. If admin → allow request through.
- *
- * @depends
- *   - @nestjs/common       (CanActivate, ExecutionContext, UnauthorizedException, etc.)
- *   - AuthService          (src/auth/auth.service.ts — JWT validation)
- *   - PrismaService        (src/prisma/prisma.service.ts — database access via DI)
- *
- * @notes
- *   - Uses UnauthorizedException (401) for auth failures and ForbiddenException (403)
- *     for authorization failures (non-admin users).
- *   - Test auth bypass validates that the user exists in the database AND is an admin
- *     before allowing bypass. Only active when NODE_ENV=development AND
- *     ENABLE_TEST_AUTH_BYPASS=true.
+ *   1. Test auth bypass (dev only) — `x-test-user-id` header.
+ *   2. Legacy JWT path — Bearer header or `ultrasooq_accessToken` cookie.
+ *      If valid, look up user; if userType === 'ADMIN', allow.
+ *   3. Better Auth path — `auth.api.getSession()` from request cookies.
+ *      If session exists and user.userType === 'ADMIN', allow.
+ *   4. Otherwise → UnauthorizedException (no auth) or ForbiddenException (auth
+ *      but not admin).
  */
 
 import {
@@ -48,7 +25,9 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { fromNodeHeaders } from 'better-auth/node';
 import { AuthService } from 'src/auth/auth.service';
+import { auth } from '../auth-better/auth';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -125,52 +104,78 @@ export class SuperAdminAuthGuard implements CanActivate {
     }
     // --- End Test Auth Bypass ---
 
+    // ─── Legacy JWT path ────────────────────────────────────────────────
+    // Accepts either a Bearer header or the `ultrasooq_accessToken` cookie.
+    // If the JWT is valid AND the user is an ADMIN, allow and return.
+    // If the JWT is missing or invalid, fall through to Better Auth.
+    const authHeader = req.headers?.authorization || req.headers?.Authorization;
+    let bearerToken: string | undefined;
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      bearerToken = authHeader.slice('Bearer '.length).trim();
+    }
+    if (!bearerToken) {
+      const cookieHeader = req.headers?.cookie || '';
+      const match = /(?:^|;\s*)ultrasooq_accessToken=([^;]+)/.exec(cookieHeader);
+      if (match) bearerToken = decodeURIComponent(match[1]);
+    }
+
+    if (bearerToken) {
+      const result: TokenValidationResult =
+        await this.authService.validateToken(bearerToken);
+      if (!result?.error && result?.user) {
+        const claimedId =
+          (result.user as any)?.id ||
+          (result.user as any)?.user?.id ||
+          (result.user as any)?.sub;
+        if (claimedId) {
+          const userDetail = await this.prisma.user.findUnique({
+            where: { id: String(claimedId) },
+            select: { id: true, userType: true },
+          });
+          if (userDetail) {
+            if (userDetail.userType !== 'ADMIN') {
+              throw new ForbiddenException('Not An Admin');
+            }
+            req.user = result.user;
+            return result;
+          }
+        }
+      }
+      // Bad/expired bearer → fall through to Better Auth rather than 401.
+    }
+
+    // ─── Better Auth path ───────────────────────────────────────────────
+    let session;
     try {
-      /* Step 1: Extract and validate JWT (identical to AuthGuard) */
-      let jwt = req.headers['authorization'];
-      if (!jwt) {
-        throw new UnauthorizedException('No authorization token provided');
-      }
-      jwt = jwt.split(' ')[1];
-      const data = await this.authService.validateToken(jwt);
-      const res: TokenValidationResult = data;
-
-      if (res.error == true) {
-        throw new UnauthorizedException(res.message);
-      }
-
-      req.user = res['user'];
-
-      /* Step 2: Database lookup to verify the user's userType is ADMIN */
-      const userDetail = await this.prisma.user.findUnique({
-        where: { id: req.user.id },
-        select: {
-          id: true,
-          userType: true,
-        },
+      session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
       });
-
-      if (!userDetail) {
-        throw new UnauthorizedException('User not found');
-      }
-
-      /* Reject non-admin users even if they have a valid JWT */
-      if (userDetail.userType !== 'ADMIN') {
-        throw new ForbiddenException('Not An Admin');
-      }
-
-      return res;
-    } catch (err) {
-      if (
-        err instanceof UnauthorizedException ||
-        err instanceof ForbiddenException
-      ) {
-        throw err;
-      }
+    } catch (err: any) {
       throw new UnauthorizedException(
-        err?.response?.message || 'Unauthorized',
+        err?.message || 'Failed to validate session',
       );
     }
-  }
 
+    if (!session || !session.user) {
+      throw new UnauthorizedException('No active session');
+    }
+
+    const sessionUser = session.user as any;
+    const userDetail = await this.prisma.user.findUnique({
+      where: { id: sessionUser.id },
+      select: { id: true, userType: true },
+    });
+
+    if (!userDetail) {
+      throw new UnauthorizedException('Session user not found');
+    }
+    if (userDetail.userType !== 'ADMIN') {
+      throw new ForbiddenException('Not An Admin');
+    }
+
+    req.user = sessionUser;
+    req.betterAuthUser = sessionUser;
+    req.betterAuthSession = session.session;
+    return { error: false, user: sessionUser, message: 'OK' };
+  }
 }
