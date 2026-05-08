@@ -4712,16 +4712,22 @@ export class AdminService {
   // PENDING ORGANIZATIONS
   // ═══════════════════════════════════════════════════════════════════════
 
-  async getPendingOrganizations(page: any, limit: any, searchTerm: any, req: any) {
+  async getPendingOrganizations(
+    page: any,
+    limit: any,
+    searchTerm: any,
+    status: any,
+    req: any,
+  ) {
     try {
       const Page = parseInt(page) || 1;
       const pageSize = parseInt(limit) || 10;
       const skip = (Page - 1) * pageSize;
 
+      const PENDING_STATUSES = ['WAITING', 'WAITING_FOR_SUPER_ADMIN'];
       const whereCondition: any = {
         tradeRole: { in: ['COMPANY', 'FREELANCER'] },
-        status: 'WAITING',
-        deletedAt: null,
+        status: status ? status : { in: PENDING_STATUSES },
       };
       if (searchTerm) {
         whereCondition.OR = [

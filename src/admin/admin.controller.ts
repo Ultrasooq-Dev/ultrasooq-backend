@@ -1588,10 +1588,18 @@ export class AdminController {
   getPendingOrganizations(
     @Query('page') page: string,
     @Query('limit') limit: string,
+    @Query('search') search: string,
     @Query('searchTerm') searchTerm: string,
+    @Query('status') status: string,
     @Request() req,
   ) {
-    return this.adminService.getPendingOrganizations(page, limit, searchTerm, req);
+    return this.adminService.getPendingOrganizations(
+      page,
+      limit,
+      search || searchTerm,
+      status,
+      req,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════
