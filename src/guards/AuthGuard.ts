@@ -94,6 +94,42 @@ export class AuthGuard implements CanActivate {
     }
     // ─── End Test Auth Bypass ───────────────────────────────────────────
 
+    // ─── Sub-account JWT override ───────────────────────────────────────
+    // After /user/switchAccount, the frontend stores a legacy JWT in the
+    // `ultrasooq_accessToken` cookie / Authorization header. If present
+    // and valid, prefer it — its `sub` is the sub-account User row that
+    // the user picked. Falling through to Better Auth would always
+    // resolve back to the master account.
+    const authHeader = req.headers?.authorization || req.headers?.Authorization;
+    let bearerToken: string | undefined;
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      bearerToken = authHeader.slice('Bearer '.length).trim();
+    }
+    if (!bearerToken) {
+      const cookieHeader = req.headers?.cookie || '';
+      const match = /(?:^|;\s*)ultrasooq_accessToken=([^;]+)/.exec(cookieHeader);
+      if (match) bearerToken = decodeURIComponent(match[1]);
+    }
+    if (bearerToken) {
+      const result = this._authService.validateToken(bearerToken);
+      if (!result?.error && result?.user) {
+        const claimedId =
+          (result.user as any)?.id ||
+          (result.user as any)?.user?.id ||
+          (result.user as any)?.sub;
+        if (claimedId) {
+          const subUser = await this.prisma.user.findUnique({
+            where: { id: String(claimedId) },
+          });
+          if (subUser) {
+            req.user = subUser;
+            return true;
+          }
+        }
+      }
+      // Bad/expired bearer → fall through to Better Auth rather than 401.
+    }
+
     let session;
     try {
       session = await auth.api.getSession({

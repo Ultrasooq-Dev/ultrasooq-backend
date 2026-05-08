@@ -67,4 +67,12 @@ export class CreateSubAccountDto {
   @IsOptional()
   @IsString()
   companyTaxId?: string;        // Tax ID / VAT number
+
+  @IsOptional()
+  @IsString()
+  identityProof?: string;       // S3 URL of the uploaded ID card (front)
+
+  @IsOptional()
+  @IsString()
+  identityProofBack?: string;   // S3 URL of the uploaded ID card (back)
 }

@@ -27,9 +27,12 @@
  *   - userAccountId > 0 references a specific UserAccount record ID.
  */
 
-import { IsNumber } from 'class-validator';
+import { IsOptional } from 'class-validator';
 
 export class SwitchAccountDto {
-  @IsNumber()
-  userAccountId: number; // 0 for main account, >0 for sub-accounts
+  // Better Auth User.id is a string. Pass null / 0 / master id to switch
+  // back to the master account. Number is allowed for backwards compat
+  // with callers that still send `userAccountId: 0`.
+  @IsOptional()
+  userAccountId?: string | number | null;
 }

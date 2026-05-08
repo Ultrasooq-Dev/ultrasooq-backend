@@ -2948,105 +2948,229 @@ export class UserService {
   }
 
   // ===========================================================================
-  // SECTION: Multi-Account System (REMOVED in Better Auth migration)
+  // SECTION: Multi-Account System (rebuilt on flat User table)
   //
-  // The legacy User/MasterAccount split + sub-account hierarchy is gone.
-  // Each User row is now a flat top-level account. The endpoints below are
-  // kept (still routed by user.controller.ts) but return "feature removed"
-  // until the frontend is updated.
+  // Each "account" is a real User row. Sub-accounts are linked to their
+  // master via `addedBy` (= master User.id). The currently-active account
+  // is identified by the request: AuthGuard sets `req.user` to whichever
+  // User the bearer token (or Better Auth session) resolved to. To resolve
+  // the master we walk `addedBy` once.
+  //
+  // Sub-account User rows reuse the master's `email` with a `+sub-<id>`
+  // local-part suffix so Better Auth's UNIQUE(email) constraint holds
+  // without ever letting anyone log in directly as a sub-account.
   // ===========================================================================
 
-  async myAccounts(_req: any) {
+  /** Resolve the master User row for whichever User the request is acting as. */
+  private async resolveMasterUser(reqUser: any) {
+    if (!reqUser?.id) return null;
+    if (reqUser.addedBy) {
+      const master = await this.prisma.user.findUnique({
+        where: { id: reqUser.addedBy },
+      });
+      if (master) return master;
+    }
+    return reqUser;
+  }
+
+  /** Group accounts by trade role for the frontend Tabs view. */
+  private groupAccountsByType(accounts: any[]) {
     return {
-      status: true,
-      message: 'Multi-account feature removed',
-      data: {
-        masterAccount: null,
-        currentAccount: null,
-        allAccounts: [],
-        buyerAccounts: [],
-        freelancerAccounts: [],
-        companyAccounts: [],
-      },
+      company: accounts.filter((a) => a.tradeRole === 'COMPANY'),
+      freelancer: accounts.filter((a) => a.tradeRole === 'FREELANCER'),
+      buyer: accounts.filter((a) => a.tradeRole === 'BUYER'),
     };
   }
 
-  async createAccount(payload: any, req: any) {
+  async myAccounts(req: any) {
     try {
-      const userId = req?.user?.id || req?.user?.userId;
-      if (!userId) {
+      const master = await this.resolveMasterUser(req?.user);
+      if (!master) {
         return { status: false, message: 'Unauthorized' };
       }
 
-      const currentUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
-      if (!currentUser) {
-        return { status: false, message: 'User not found' };
-      }
-
-      const updatedUser = await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          accountName: payload.accountName?.trim() || currentUser.accountName,
-          tradeRole: payload.tradeRole || currentUser.tradeRole,
-          identityProof: payload.identityProof || currentUser.identityProof,
-          companyName: payload.companyName ?? currentUser.companyName,
-          companyAddress: payload.companyAddress ?? currentUser.companyAddress,
-          companyPhone: payload.companyPhone ?? currentUser.companyPhone,
-          companyWebsite: payload.companyWebsite ?? currentUser.companyWebsite,
-          companyTaxId: payload.companyTaxId ?? currentUser.companyTaxId,
-        },
+      const subAccounts = await this.prisma.user.findMany({
+        where: { addedBy: master.id },
+        orderBy: { createdAt: 'asc' },
       });
 
-      if (!currentUser.identityProof && payload.identityProof) {
-        try {
-          const userName =
-            updatedUser.firstName && updatedUser.lastName
-              ? `${updatedUser.firstName} ${updatedUser.lastName}`.trim()
-              : updatedUser.userName || updatedUser.accountName || 'Unknown User';
-          await notifyAdminsIdentityProofUpload(
-            this.notificationService,
-            userId,
-            userName,
-            this.prisma,
-          );
-        } catch (notifError) {}
-      }
+      const activeId = req?.user?.id;
+      const decorate = (u: any) => ({
+        ...u,
+        isCurrentAccount: u.id === activeId,
+        // Aliases the frontend already reads
+        orders: 0,
+        messages: 0,
+      });
+
+      const mainAccount = decorate(master);
+      const allAccounts = [mainAccount, ...subAccounts.map(decorate)];
 
       return {
         status: true,
-        message: 'Account updated successfully',
-        data: updatedUser,
+        message: 'Accounts loaded',
+        data: {
+          mainAccount,
+          // legacy alias
+          masterAccount: mainAccount,
+          currentAccount: allAccounts.find((a) => a.isCurrentAccount) || mainAccount,
+          allAccounts,
+          accountsByType: this.groupAccountsByType(allAccounts),
+          buyerAccounts: allAccounts.filter((a) => a.tradeRole === 'BUYER'),
+          freelancerAccounts: allAccounts.filter((a) => a.tradeRole === 'FREELANCER'),
+          companyAccounts: allAccounts.filter((a) => a.tradeRole === 'COMPANY'),
+        },
       };
     } catch (error) {
       return {
         status: false,
-        message: 'Error updating account',
+        message: 'Error loading accounts',
         error: getErrorMessage(error),
       };
     }
   }
 
-  async switchAccount(_payload: any, _req: any) {
-    return {
-      status: false,
-      message: 'Multi-account feature removed',
-    };
+  async createAccount(payload: any, req: any) {
+    try {
+      const master = await this.resolveMasterUser(req?.user);
+      if (!master) {
+        return { status: false, message: 'Unauthorized' };
+      }
+
+      const tradeRole = payload.tradeRole;
+      if (!tradeRole || !['BUYER', 'FREELANCER', 'COMPANY'].includes(tradeRole)) {
+        return { status: false, message: 'tradeRole is required (BUYER | FREELANCER | COMPANY)' };
+      }
+
+      // Synthesize a unique email/username for the sub-account User row.
+      // The user never logs in with this — auth always happens against the master.
+      const suffix = randomUUID().slice(0, 8);
+      const [local, domain] = (master.email || `noreply+${master.id}@ultrasooq.local`).split('@');
+      const subEmail = `${local}+sub-${suffix}@${domain || 'ultrasooq.local'}`;
+      const subUsername = `${master.username || master.id}-sub-${suffix}`;
+
+      const newSub = await this.prisma.user.create({
+        data: {
+          id: randomUUID(),
+          email: subEmail,
+          emailVerified: true,
+          name: payload.accountName?.trim() || master.name || 'Sub Account',
+          firstName: master.firstName,
+          lastName: master.lastName,
+          phoneNumber: master.phoneNumber,
+          cc: master.cc,
+          tradeRole,
+          accountName: payload.accountName?.trim() || null,
+          identityProof: payload.identityProof || null,
+          companyName: payload.companyName ?? null,
+          companyAddress: payload.companyAddress ?? null,
+          companyPhone: payload.companyPhone ?? null,
+          companyWebsite: payload.companyWebsite ?? null,
+          companyTaxId: payload.companyTaxId ?? null,
+          addedBy: master.id,
+          status: 'ACTIVE',
+          isActive: true,
+          username: subUsername,
+          displayUsername: subUsername,
+          role: 'user',
+        },
+      });
+
+      if (payload.identityProof) {
+        try {
+          await notifyAdminsIdentityProofUpload(
+            this.notificationService,
+            newSub.id,
+            payload.accountName?.trim() || master.name || 'Sub Account',
+            this.prisma,
+          );
+        } catch (_notifErr) {}
+      }
+
+      return {
+        status: true,
+        message: 'Account created',
+        data: { ...newSub, isCurrentAccount: false },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error creating account',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
+  async switchAccount(payload: any, req: any) {
+    try {
+      const master = await this.resolveMasterUser(req?.user);
+      if (!master) {
+        return { status: false, message: 'Unauthorized' };
+      }
+
+      const targetId = payload?.userAccountId;
+
+      // userAccountId === 0 / null / master.id → switch back to master
+      let target: any = master;
+      if (targetId && targetId !== 0 && String(targetId) !== String(master.id)) {
+        const found = await this.prisma.user.findUnique({
+          where: { id: String(targetId) },
+        });
+        if (!found || (found.addedBy !== master.id && found.id !== master.id)) {
+          return { status: false, message: 'Account not found or not owned by you' };
+        }
+        target = found;
+      }
+
+      const tokenResult = await this.authService.getToken({
+        id: target.id,
+        tradeRole: target.tradeRole,
+      });
+
+      return {
+        status: true,
+        message: 'Account switched',
+        data: {
+          account: target,
+          accessToken: tokenResult.accessToken,
+          // No refresh-token rotation in the post-Better-Auth world; reuse the
+          // access token so the frontend's existing setCookie() pair still has
+          // a value to write.
+          refreshToken: tokenResult.accessToken,
+        },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error switching account',
+        error: getErrorMessage(error),
+      };
+    }
   }
 
   async migrateSubAccounts(_req: any) {
     return {
-      status: false,
-      message: 'Multi-account feature removed',
+      status: true,
+      message: 'No migration needed — accounts are flat User rows linked via addedBy',
     };
   }
 
-  async currentAccount(_req: any) {
-    return {
-      status: true,
-      message: 'Multi-account feature removed',
-      data: null,
-    };
+  async currentAccount(req: any) {
+    try {
+      if (!req?.user) {
+        return { status: false, message: 'Unauthorized' };
+      }
+      return {
+        status: true,
+        message: 'Current account',
+        data: { account: { ...req.user, isCurrentAccount: true } },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error loading current account',
+        error: getErrorMessage(error),
+      };
+    }
   }
 }
