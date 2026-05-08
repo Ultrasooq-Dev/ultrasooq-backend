@@ -2971,11 +2971,61 @@ export class UserService {
     };
   }
 
-  async createAccount(_payload: any, _req: any) {
-    return {
-      status: false,
-      message: 'Multi-account feature removed; sign up a new top-level account instead',
-    };
+  async createAccount(payload: any, req: any) {
+    try {
+      const userId = req?.user?.id || req?.user?.userId;
+      if (!userId) {
+        return { status: false, message: 'Unauthorized' };
+      }
+
+      const currentUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+      if (!currentUser) {
+        return { status: false, message: 'User not found' };
+      }
+
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          accountName: payload.accountName?.trim() || currentUser.accountName,
+          tradeRole: payload.tradeRole || currentUser.tradeRole,
+          identityProof: payload.identityProof || currentUser.identityProof,
+          companyName: payload.companyName ?? currentUser.companyName,
+          companyAddress: payload.companyAddress ?? currentUser.companyAddress,
+          companyPhone: payload.companyPhone ?? currentUser.companyPhone,
+          companyWebsite: payload.companyWebsite ?? currentUser.companyWebsite,
+          companyTaxId: payload.companyTaxId ?? currentUser.companyTaxId,
+        },
+      });
+
+      if (!currentUser.identityProof && payload.identityProof) {
+        try {
+          const userName =
+            updatedUser.firstName && updatedUser.lastName
+              ? `${updatedUser.firstName} ${updatedUser.lastName}`.trim()
+              : updatedUser.userName || updatedUser.accountName || 'Unknown User';
+          await notifyAdminsIdentityProofUpload(
+            this.notificationService,
+            userId,
+            userName,
+            this.prisma,
+          );
+        } catch (notifError) {}
+      }
+
+      return {
+        status: true,
+        message: 'Account updated successfully',
+        data: updatedUser,
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error updating account',
+        error: getErrorMessage(error),
+      };
+    }
   }
 
   async switchAccount(_payload: any, _req: any) {
