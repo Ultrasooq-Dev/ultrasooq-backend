@@ -12057,6 +12057,136 @@ export class ProductService {
     }
   }
 
+  async extractProductFormWithAI(
+    files: MulterFile[],
+    body: { text?: string; currentProductName?: string },
+  ): Promise<any> {
+    try {
+      const [brands, categories, originCountries, warehouseCountries] =
+        await Promise.all([
+          this.prisma.brand.findMany({
+            where: { status: 'ACTIVE', deletedAt: null },
+            select: { id: true, brandName: true },
+            orderBy: { brandName: 'asc' },
+            take: 300,
+          }),
+          this.prisma.category.findMany({
+            where: { status: 'ACTIVE', deletedAt: null },
+            select: { id: true, name: true, children: { select: { id: true }, take: 1 } },
+            orderBy: { name: 'asc' },
+            take: 400,
+          }),
+          this.prisma.countryList.findMany({
+            where: { status: 'ACTIVE', deletedAt: null },
+            select: { id: true, countryName: true },
+            orderBy: { countryName: 'asc' },
+            take: 300,
+          }),
+          this.prisma.countries.findMany({
+            where: { status: 'ACTIVE', deletedAt: null },
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' },
+            take: 300,
+          }),
+        ]);
+
+      const brandOptions = brands
+        .filter((b) => b.brandName)
+        .map((b) => ({ id: b.id, name: b.brandName }));
+      const categoryOptions = categories
+        .filter((c) => c.name)
+        .map((c) => ({ id: c.id, name: c.name, isLeaf: !c.children?.length }));
+      const originCountryOptions = originCountries
+        .filter((c) => c.countryName)
+        .map((c) => ({ id: c.id, name: c.countryName }));
+      const warehouseCountryOptions = warehouseCountries
+        .filter((c) => c.name)
+        .map((c) => ({ id: c.id, name: c.name }));
+
+      const result = await this.openRouterService.extractProductFormFromFiles(
+        files || [],
+        {
+          text: body?.text || '',
+          currentProductName: body?.currentProductName || '',
+          brands: brandOptions,
+          categories: categoryOptions,
+          originCountries: originCountryOptions,
+          warehouseCountries: warehouseCountryOptions,
+        },
+      );
+
+      if (!result.success) {
+        return {
+          status: false,
+          message: result.message || 'Failed to extract product form fields',
+        };
+      }
+
+      const data = result.data || {};
+      const brandMatch = this.matchAiOption(data.brandName, brandOptions);
+      const categoryMatch = this.matchAiOption(data.categoryName, categoryOptions);
+      const originCountryMatch = this.matchAiOption(
+        data.placeOfOriginName,
+        originCountryOptions,
+      );
+      const warehouseCountryMatch = this.matchAiOption(
+        data.warehouseCountryName,
+        warehouseCountryOptions,
+      );
+
+      return {
+        status: true,
+        message: 'AI product form extraction completed',
+        data: {
+          ...data,
+          matches: {
+            brandId: brandMatch?.id || null,
+            brandName: brandMatch?.name || data.brandName || '',
+            categoryId: categoryMatch?.id || null,
+            categoryName: categoryMatch?.name || data.categoryName || '',
+            placeOfOriginId: originCountryMatch?.id || null,
+            placeOfOriginName:
+              originCountryMatch?.name || data.placeOfOriginName || '',
+            warehouseCountryId: warehouseCountryMatch?.id || null,
+            warehouseCountryName:
+              warehouseCountryMatch?.name || data.warehouseCountryName || '',
+          },
+        },
+      };
+    } catch (error: any) {
+      return {
+        status: false,
+        message: getErrorMessage(error) || 'Failed to extract product form fields',
+      };
+    }
+  }
+
+  private matchAiOption(
+    value: string,
+    options: Array<{ id: number; name: string }>,
+  ): { id: number; name: string } | null {
+    const needle = this.normalizeAiMatch(value);
+    if (!needle) return null;
+
+    const exact = options.find((option) => this.normalizeAiMatch(option.name) === needle);
+    if (exact) return exact;
+
+    const contains = options.find((option) => {
+      const haystack = this.normalizeAiMatch(option.name);
+      return haystack.includes(needle) || needle.includes(haystack);
+    });
+
+    return contains || null;
+  }
+
+  private normalizeAiMatch(value?: string): string {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
   /**
    * Match AI-generated category with existing platform categories using AI
    */

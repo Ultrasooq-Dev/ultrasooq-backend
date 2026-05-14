@@ -1,7 +1,54 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
+import { z } from 'zod';
 import { MulterFile } from './types';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
+
+const importEsm = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<any>;
+
+const ProductFormExtractionSchema = z.object({
+  productName: z.string().describe('Best product model/name for Product.productName. Empty string if unknown.'),
+  nickname: z.string().describe('Seller-facing display name/nickname. Empty string if unknown.'),
+  brandName: z.string().describe('Brand name if visible or inferable. Empty string if unknown.'),
+  categoryName: z.string().describe('Best product category name. Empty string if unknown.'),
+  typeOfProduct: z.enum(['BRAND', 'OWNBRAND', 'SPAREPART', '']).describe('Product.typeOfProduct enum value.'),
+  productType: z.enum(['P', 'R', 'D', 'F', '']).describe('Product.productType enum value. Prefer P for retail physical products.'),
+  productCondition: z.enum(['NEW', 'USED', 'REFURBISHED', '']).describe('Condition seen or implied by the source.'),
+  sellType: z.enum(['NORMALSELL', 'BUYGROUP', 'WHOLESALE_PRODUCT', 'TRIAL_PRODUCT', 'OTHERS', '']).describe('ProductPrice.sellType enum value.'),
+  skuNo: z.string().describe('SKU/model/part number if present. Empty string if unknown.'),
+  keywords: z.array(z.string()).describe('Search keywords extracted from visible text and image context.'),
+  description: z.string().describe('Concise full product description suitable for Product.description.'),
+  shortDescriptions: z.array(z.string()).describe('Feature bullets, each under 200 characters.'),
+  specifications: z.array(z.object({
+    label: z.string(),
+    specification: z.string(),
+    source: z.string(),
+    confidence: z.number().min(0).max(1),
+  })).describe('Structured specs mapped to ProductSpecification rows.'),
+  productPrice: z.number().min(0).nullable().describe('Listed price if visible. Use null if unknown.'),
+  offerPrice: z.number().min(0).nullable().describe('Discount/offer price if visible. Use null if unknown.'),
+  stock: z.number().int().min(0).nullable().describe('Stock quantity if visible. Use null if unknown.'),
+  deliveryAfter: z.number().int().min(0).nullable().describe('Delivery time in days if visible. Use null if unknown.'),
+  placeOfOriginName: z.string().describe('Country of origin if visible/inferable. Empty string if unknown.'),
+  warehouseCountryName: z.string().describe('Warehouse/seller country if visible. Empty string if unknown.'),
+  imageFindings: z.array(z.object({
+    fileName: z.string(),
+    description: z.string(),
+    visibleText: z.string(),
+  })).describe('What was learned from each image.'),
+  fieldMappings: z.array(z.object({
+    dbField: z.string(),
+    label: z.string(),
+    value: z.string(),
+    source: z.string(),
+    confidence: z.number().min(0).max(1),
+    reason: z.string(),
+  })).describe('How extracted values map to Ultrasooq product database fields.'),
+  unmappedNotes: z.array(z.string()).describe('Useful extracted details that do not fit current DB/form fields.'),
+  confidence: z.number().min(0).max(1).describe('Overall confidence in the extraction.'),
+});
 
 @Injectable()
 export class OpenRouterService {
@@ -10,6 +57,7 @@ export class OpenRouterService {
   private readonly model: string;
   private readonly models: string[];
   private readonly visionModel: string;
+  private readonly extractionModel: string;
 
   constructor() {
     // Get API key from environment variables
@@ -24,6 +72,7 @@ export class OpenRouterService {
     // You can override this via OPENROUTER_VISION_MODEL env var.
     // Recommended defaults: 'openai/gpt-4.1-mini' or 'openai/gpt-4o-mini'
     this.visionModel = process.env.OPENROUTER_VISION_MODEL || 'openai/gpt-4.1-mini';
+    this.extractionModel = process.env.OPENROUTER_EXTRACTION_MODEL || this.visionModel;
     
     if (!this.apiKey) {
     }
@@ -451,6 +500,137 @@ IMPORTANT:
       return {
         success: false,
         message: error.response?.data?.error?.message || error.message || 'Failed to analyze image',
+      };
+    }
+  }
+
+  async extractProductFormFromFiles(
+    files: MulterFile[],
+    context: {
+      text?: string;
+      currentProductName?: string;
+      brands?: Array<{ id: number; name: string }>;
+      categories?: Array<{ id: number; name: string; isLeaf?: boolean }>;
+      originCountries?: Array<{ id: number; name: string }>;
+      warehouseCountries?: Array<{ id: number; name: string }>;
+    },
+  ): Promise<any> {
+    try {
+      if (!this.apiKey) {
+        throw new Error('OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in your environment variables.');
+      }
+
+      const imageFiles = (files || [])
+        .filter((file) => /^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype || ''))
+        .slice(0, 4);
+      const nonImageFiles = (files || []).filter((file) => !imageFiles.includes(file));
+
+      const optionSummary = {
+        brands: (context.brands || []).slice(0, 250),
+        categories: (context.categories || []).slice(0, 300),
+        originCountries: (context.originCountries || []).slice(0, 250),
+        warehouseCountries: (context.warehouseCountries || []).slice(0, 250),
+      };
+
+      const fileSummary = (files || []).map((file) => ({
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+      }));
+
+      const content: any[] = [
+        {
+          type: 'text',
+          content: `Extract product form fields from the attached files/images and any provided OCR/text.
+
+Return values that map cleanly to the Ultrasooq product form and database schema. Use empty strings or nulls when the source does not support a value. Do not invent exact prices, stock, SKU, brand, or country if they are not visible or strongly implied.
+
+Current draft product name: ${context.currentProductName || '(none)'}
+
+Provided OCR/text:
+${(context.text || '').trim().slice(0, 12000) || '(none)'}
+
+Uploaded file metadata:
+${JSON.stringify(fileSummary, null, 2)}
+
+Available DB options for matching:
+${JSON.stringify(optionSummary, null, 2)}
+
+Target DB/form fields:
+- Product.productName, Product.categoryId, Product.brandId, Product.skuNo, Product.description, Product.specification, Product.keywords, Product.productType, Product.typeOfProduct, Product.productCondition, Product.placeOfOriginId
+- ProductImages.image/imageName for attached product images after upload
+- ProductShortDescription.shortDescription for feature bullets
+- ProductSpecification.label/specification for structured specification rows
+- ProductPrice.productPrice, offerPrice, stock, deliveryAfter, consumerType, sellType, productCountryId
+
+Rules:
+- Prefer exact visible text from the source over assumptions.
+- If a DB option list contains a matching brand/category/country, use the option name in brandName/categoryName/placeOfOriginName/warehouseCountryName.
+- Keep shortDescriptions below 200 characters each.
+- Keep specifications as label/value rows, not prose.
+- Include fieldMappings explaining which DB field each extracted value should populate and why.`,
+        },
+      ];
+
+      for (const file of imageFiles) {
+        content.push({
+          type: 'image',
+          source: {
+            type: 'data',
+            value: file.buffer.toString('base64'),
+            mimeType: file.mimetype,
+          },
+          metadata: { detail: 'high' },
+        });
+      }
+
+      if (nonImageFiles.length > 0) {
+        content.push({
+          type: 'text',
+          content: `Non-image files were attached but only their extracted text/metadata is available to the model: ${nonImageFiles.map((f) => `${f.originalname} (${f.mimetype})`).join(', ')}.`,
+        });
+      }
+
+      const [{ chat }, { createOpenRouterText }] = await Promise.all([
+        importEsm('@tanstack/ai'),
+        importEsm('@tanstack/ai-openrouter'),
+      ]);
+
+      const adapter = createOpenRouterText(this.extractionModel as any, this.apiKey, {
+        httpReferer: process.env.APP_URL || 'https://ultrasooq.com',
+        appTitle: 'UltraSooq',
+        timeoutMs: 90000,
+      });
+
+      const data = await chat({
+        adapter,
+        messages: [
+          {
+            role: 'user',
+            content,
+          },
+        ],
+        outputSchema: ProductFormExtractionSchema,
+        temperature: 0.1,
+        maxTokens: 3000,
+      });
+
+      const parsed = ProductFormExtractionSchema.parse(data);
+
+      return {
+        success: true,
+        data: {
+          ...parsed,
+          sourceFiles: fileSummary,
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          'Failed to extract product form fields',
       };
     }
   }

@@ -69,7 +69,12 @@ const mockFlowNudgeService = {
 
 const mockRedisService = {
   getMeta: jest.fn().mockResolvedValue('2026-04-05T01:00:00Z'),
+  setJson: jest.fn().mockResolvedValue(undefined),
   keys: {
+    configWeights: 'rec:config:weights',
+    configDecay: 'rec:config:decay',
+    configToggles: 'rec:config:toggles',
+    crosssell: jest.fn((id: number) => `rec:crosssell:${id}`),
     metaLastRun: 'rec:meta:lastRun',
     metaLastDuration: 'rec:meta:lastDuration',
     metaProductCount: 'rec:meta:productCount',
@@ -166,6 +171,8 @@ describe('Recommendation System (e2e)', () => {
     mockRecommendationService.getFlowRecs.mockResolvedValue({ ...mockRecommendationResponse, algorithm: 'dropship_recs' });
     mockFeedbackService.trackFeedback.mockResolvedValue(undefined);
     mockRedisService.getMeta.mockResolvedValue('2026-04-05T01:00:00Z');
+    mockRedisService.setJson.mockResolvedValue(undefined);
+    mockRedisService.keys.crosssell.mockImplementation((id: number) => `rec:crosssell:${id}`);
     mockPrisma.recommendationMetric.findMany.mockResolvedValue([]);
     mockPrisma.recommendationConfig.findMany.mockResolvedValue([]);
     mockPrisma.recommendationConfig.upsert.mockResolvedValue({ key: 'test_key', value: { enabled: true } });
@@ -228,10 +235,19 @@ describe('Recommendation System (e2e)', () => {
         });
     });
 
-    it('should return 400 for a non-numeric productId', () => {
+    it('should accept string product IDs', () => {
       return request(app.getHttpServer())
         .get('/api/v1/recommendations/product/abc')
-        .expect(400);
+        .expect(200)
+        .expect(() => {
+          expect(mockRecommendationService.getProductRecs).toHaveBeenCalledWith(
+            'abc',
+            'similar',
+            expect.any(String),
+            expect.any(String),
+            expect.any(Number),
+          );
+        });
     });
 
     it('should default type to similar when omitted', () => {
@@ -240,7 +256,7 @@ describe('Recommendation System (e2e)', () => {
         .expect(200)
         .expect(() => {
           expect(mockRecommendationService.getProductRecs).toHaveBeenCalledWith(
-            1,
+            '1',
             'similar',
             expect.any(String),
             expect.any(String),

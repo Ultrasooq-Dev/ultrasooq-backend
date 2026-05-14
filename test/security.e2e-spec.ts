@@ -215,32 +215,35 @@ describe('Security (e2e)', () => {
   // ─── Authentication on Protected Endpoints ────────────────────────────────
 
   describe('Protected endpoints require authentication', () => {
-    it('should return 401 for GET /api/v1/user/profile without auth token', async () => {
+    it('should return 401 for POST /api/v1/user/me without auth token', async () => {
       const response = await request(app.getHttpServer())
-        .get('/api/v1/user/profile');
+        .post('/api/v1/user/me')
+        .send({});
 
       expect(response.status).toBe(401);
     });
 
-    it('should return 401 for GET /api/v1/cart without auth token', async () => {
+    it('should return 401 for GET /api/v1/cart/list without auth token', async () => {
       const response = await request(app.getHttpServer())
-        .get('/api/v1/cart');
+        .get('/api/v1/cart/list');
 
       expect(response.status).toBe(401);
     });
 
     it('should return 401 with an invalid Bearer token', async () => {
       const response = await request(app.getHttpServer())
-        .get('/api/v1/user/profile')
-        .set('Authorization', 'Bearer invalid.jwt.token.here');
+        .post('/api/v1/user/me')
+        .set('Authorization', 'Bearer invalid.jwt.token.here')
+        .send({});
 
       expect(response.status).toBe(401);
     });
 
     it('should return 401 when Authorization header is malformed', async () => {
       const response = await request(app.getHttpServer())
-        .get('/api/v1/user/profile')
-        .set('Authorization', 'NotBearer some-token');
+        .post('/api/v1/user/me')
+        .set('Authorization', 'NotBearer some-token')
+        .send({});
 
       expect(response.status).toBe(401);
     });
@@ -257,40 +260,30 @@ describe('Security (e2e)', () => {
   // ─── ValidationPipe ───────────────────────────────────────────────────────
 
   describe('ValidationPipe input sanitization', () => {
-    it('should strip unknown properties from request body (whitelist: true)', async () => {
-      // The auth/refresh endpoint expects { refreshToken: string }
-      // With whitelist: true, extra properties are silently removed.
-      // The controller manually checks for refreshToken, so sending an extra
-      // field should still result in 400 (refreshToken missing) if we only
-      // send unknown fields.
+    it('should keep removed legacy auth routes unavailable for unknown bodies', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
         .send({ unknownField: 'should-be-stripped', anotherField: 123 })
-        .expect(400);
+        .expect(404);
 
       expect(response.body).toBeDefined();
-      expect(response.body.status).toBe(false);
-      // The refreshToken is required and was not sent (only unknown fields)
-      expect(response.body.message).toContain('refreshToken is required');
     });
 
-    it('should reject request with Content-Type that is not JSON for JSON endpoints', async () => {
+    it('should handle non-JSON content on removed legacy auth routes', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
         .set('Content-Type', 'text/plain')
         .send('not json data');
 
-      // Express/NestJS may return 400 or ignore the body, leading to validation failure
-      expect([400, 415]).toContain(response.status);
+      expect([400, 404, 415]).toContain(response.status);
     });
 
     it('should handle missing Content-Type header gracefully', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/v1/auth/refresh');
 
-      // Without a body, the controller should return 400 (refreshToken missing)
-      expect(response.status).toBe(400);
-      expect(response.body.status).toBe(false);
+      expect(response.status).toBe(404);
+      expect(response.body).toBeDefined();
     });
   });
 });

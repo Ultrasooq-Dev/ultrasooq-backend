@@ -50,9 +50,10 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   UsePipes,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { MulterFile } from './types';
 import { ProductService } from './product.service';
 import { S3service } from 'src/user/s3.service';
@@ -3213,6 +3214,41 @@ export class ProductController {
       return {
         status: false,
         message: error.message || 'Failed to generate product data',
+      };
+    }
+  }
+
+  // AI Extract Product Form Fields from uploaded files/images
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  @UseGuards(AuthGuard)
+  @Post('/ai-extract-form')
+  @UseInterceptors(FilesInterceptor('files', 6, {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
+  async extractProductFormWithAI(
+    @Request() req: any,
+    @Body() body: { text?: string; currentProductName?: string },
+    @UploadedFiles() files?: MulterFile[],
+  ) {
+    try {
+      const hasFiles = Array.isArray(files) && files.length > 0;
+      const hasText = typeof body?.text === 'string' && body.text.trim().length > 0;
+
+      if (!hasFiles && !hasText && !body?.currentProductName) {
+        return {
+          status: false,
+          message: 'Attach at least one file/image or provide text to analyze.',
+        };
+      }
+
+      return await this.productService.extractProductFormWithAI(files || [], {
+        text: body?.text || '',
+        currentProductName: body?.currentProductName || '',
+      });
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error.message || 'Failed to extract product form fields',
       };
     }
   }

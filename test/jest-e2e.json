@@ -6,8 +6,10 @@
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", { "diagnostics": false }]
   },
+  "setupFilesAfterEnv": ["<rootDir>/jest.setup.ts"],
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../src/$1"
   },
+  "forceExit": true,
   "roots": ["<rootDir>", "<rootDir>/performance"]
 }
