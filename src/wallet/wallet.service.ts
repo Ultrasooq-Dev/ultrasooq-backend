@@ -14,7 +14,11 @@ export class WalletService {
   /**
    * Get or create wallet for user
    */
-  async getOrCreateWallet(userId: string, _userAccountId?: string, currencyCode: string = 'USD') {
+  async getOrCreateWallet(
+    userId: string,
+    _userAccountId?: string,
+    currencyCode: string = process.env.WALLET_DEFAULT_CURRENCY || 'OMR',
+  ) {
     // userAccountId was the multi-account hierarchy field — dropped in the
     // Better Auth migration. Parameter kept for caller compatibility.
     let wallet = await this.prisma.wallet.findFirst({
@@ -37,8 +41,10 @@ export class WalletService {
       });
 
       // Create default wallet settings
-      await this.prisma.walletSettings.create({
-        data: {
+      await this.prisma.walletSettings.upsert({
+        where: { userId },
+        update: {},
+        create: {
           userId,
           autoWithdraw: false,
           withdrawLimit: 0,

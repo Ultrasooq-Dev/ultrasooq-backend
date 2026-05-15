@@ -2746,7 +2746,7 @@ model PageSetting {
 model Wallet {
   id            Int                 @id @default(autoincrement())
   userId        String
-  currencyCode  String              @default("USD")
+  currencyCode  String              @default("OMR")
   balance       Decimal             @default(0.00) @db.Decimal(15, 2)
   frozenBalance Decimal             @default(0.00) @db.Decimal(15, 2)
   status        WalletStatus        @default(ACTIVE)

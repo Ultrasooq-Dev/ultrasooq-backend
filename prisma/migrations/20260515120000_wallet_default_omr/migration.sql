@@ -1,0 +1,1 @@
+ALTER TABLE "Wallet" ALTER COLUMN "currencyCode" SET DEFAULT 'OMR';
