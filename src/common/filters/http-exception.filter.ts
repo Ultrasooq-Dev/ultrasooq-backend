@@ -34,7 +34,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }
       error = HttpStatus[status] || error;
     } else if (exception instanceof Error) {
-      message = exception.message;
       this.logger.error(
         `Unhandled exception: ${exception.message}`,
         exception.stack,

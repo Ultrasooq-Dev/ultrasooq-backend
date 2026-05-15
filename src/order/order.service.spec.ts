@@ -4,6 +4,7 @@ import { NotificationService } from '../notification/notification.service';
 import { HelperService } from '../helper/helper.service';
 import { WalletService } from '../wallet/wallet.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnalyticsIngestionService } from '../analytics-ingestion/analytics-ingestion.service';
 
 /**
  * Mock PrismaService — minimal stubs for OrderService.
@@ -24,10 +25,16 @@ const mockPrismaService = {
   orderProducts: {
     create: jest.fn(),
     findMany: jest.fn(),
+    findUnique: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
   },
   orderShipping: {
+    create: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
+  deliveryEvent: {
     create: jest.fn(),
   },
   orderAddress: {
@@ -70,6 +77,8 @@ const mockPrismaService = {
 const mockNotificationService = {
   sendNotification: jest.fn(),
   sendEmail: jest.fn(),
+  createNotification: jest.fn(),
+  emitOrderStatusUpdate: jest.fn(),
 };
 
 const mockHelperService = {
@@ -80,6 +89,10 @@ const mockWalletService = {
   getBalance: jest.fn(),
   debit: jest.fn(),
   credit: jest.fn(),
+  processWalletRefund: jest.fn(),
+};
+const mockAnalyticsService = {
+  logOrderEvent: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('OrderService', () => {
@@ -110,6 +123,7 @@ describe('OrderService', () => {
         { provide: HelperService, useValue: mockHelperService },
         { provide: WalletService, useValue: mockWalletService },
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: AnalyticsIngestionService, useValue: mockAnalyticsService },
       ],
     }).compile();
 
@@ -169,6 +183,71 @@ describe('OrderService', () => {
     it('should have autoConfirmBuygroupOrdersOnStockOut as private method', () => {
       // Private methods are accessible via bracket notation in tests
       expect(typeof (service as any).autoConfirmBuygroupOrdersOnStockOut).toBe('function');
+    });
+  });
+
+  describe('orderProductStatusById auth and transitions', () => {
+    it('rejects unauthenticated legacy status updates', async () => {
+      const result = await service.orderProductStatusById({ orderProductId: 1, status: 'CONFIRMED' });
+
+      expect(result.status).toBe(false);
+      expect(result.statusCode).toBe(401);
+      expect(prisma.orderProducts.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid status values before updating', async () => {
+      const result = await service.orderProductStatusById(
+        { orderProductId: 1, status: 'MAGIC' },
+        { user: { id: 'seller-1' } },
+      );
+
+      expect(result.status).toBe(false);
+      expect(result.message).toBe('Invalid order product status');
+      expect(prisma.orderProducts.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a seller-owned PLACED to CONFIRMED transition', async () => {
+      mockHelperService.getAdminId.mockResolvedValue('seller-1');
+      prisma.orderProducts.findUnique.mockResolvedValue({
+        id: 1,
+        sellerId: 'seller-1',
+        userId: 'buyer-1',
+        orderId: 2,
+        orderProductStatus: 'PLACED',
+        orderShippingId: null,
+      });
+      prisma.orderProducts.update.mockResolvedValue({ id: 1, orderProductStatus: 'CONFIRMED' });
+      prisma.order.findUnique.mockResolvedValue({ id: 2, orderNo: 'ORD-1' });
+
+      const result = await service.orderProductStatusById(
+        { orderProductId: 1, status: 'CONFIRMED' },
+        { user: { id: 'seller-1' } },
+      );
+
+      expect(result.status).toBe(true);
+      expect(prisma.orderProducts.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { orderProductStatus: 'CONFIRMED' },
+      });
+    });
+
+    it('rejects IDOR status updates from another seller', async () => {
+      mockHelperService.getAdminId.mockResolvedValue('seller-2');
+      prisma.orderProducts.findUnique.mockResolvedValue({
+        id: 1,
+        sellerId: 'seller-1',
+        userId: 'buyer-1',
+        orderProductStatus: 'PLACED',
+      });
+
+      const result = await service.orderProductStatusById(
+        { orderProductId: 1, status: 'CONFIRMED' },
+        { user: { id: 'seller-2' } },
+      );
+
+      expect(result.status).toBe(false);
+      expect(result.statusCode).toBe(403);
+      expect(prisma.orderProducts.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -24,7 +24,7 @@
  *           to GET; the old POST versions remain as inline comments.
  *         - `updateWhiteBlackList` is intentionally left public (no guard).
  */
-import { Body, Controller, Post, UseGuards, Request, Get, Patch, Delete, Param, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Post, UseGuards, Request, Get, Patch, Delete, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { AuthGuard } from 'src/guards/AuthGuard';
@@ -170,8 +170,13 @@ export class CategoryController {
    * @notes  Only ACTIVE children are included.
    */
   @Get('/getMenu')
-  getMenu(@Query('categoryId') categoryId: number) {
-    return this.categoryService.getMenu( categoryId );
+  getMenu(@Query('categoryId') categoryId: string) {
+    const parsedCategoryId = Number(categoryId);
+    if (!categoryId || !Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) {
+      throw new BadRequestException('A valid categoryId query parameter is required');
+    }
+
+    return this.categoryService.getMenu(parsedCategoryId);
   }
 
   /**

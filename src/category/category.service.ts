@@ -685,7 +685,14 @@ export class CategoryService {
    */
   async getMenu(categoryId: any ) {
     try {
-      const categoryID = parseInt(categoryId);
+      const categoryID = Number(categoryId);
+      if (!Number.isInteger(categoryID) || categoryID <= 0) {
+        return {
+          status: false,
+          message: 'Invalid categoryId',
+          data: []
+        };
+      }
 
       const cacheKey = CACHE_KEYS.CATEGORY_MENU(categoryID);
       const cached = await this.cacheService.get(cacheKey);
@@ -725,7 +732,7 @@ export class CategoryService {
       return {
         status: false,
         message: 'error in getMenu',
-        error: getErrorMessage(error)
+        error: 'Unable to fetch menu'
       }
     }
   }

@@ -10653,7 +10653,10 @@ export class ProductService {
         where: { id: originalProductId },
         include: {
           productImages: true,
-          product_productPrice: true,
+          product_productPrice: {
+            where: { status: 'ACTIVE', deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+          },
           userBy: true,
           category: true,
           brand: true,
@@ -10711,7 +10714,8 @@ export class ProductService {
       }
 
       // Calculate new pricing
-      const originalPrice = Number(originalProduct.productPrice);
+      const activeOriginalPrice = originalProduct.product_productPrice?.[0];
+      const originalPrice = Number(activeOriginalPrice?.offerPrice || activeOriginalPrice?.productPrice || originalProduct.offerPrice || originalProduct.productPrice);
       const newPrice = originalPrice + Number(markup);
 
       // Generate unique SKU for dropship product
@@ -10796,9 +10800,9 @@ export class ProductService {
           consumerType: 'EVERYONE',
           sellType: 'NORMALSELL',
           status: 'ACTIVE',
-          stock: originalProduct.product_productPrice[0]?.stock || 0,
+          stock: activeOriginalPrice?.stock || 0,
           deliveryAfter:
-            originalProduct.product_productPrice[0]?.deliveryAfter || 1,
+            activeOriginalPrice?.deliveryAfter || 1,
         },
       });
 
@@ -10842,8 +10846,8 @@ export class ProductService {
 
       const where: any = {
         status: 'ACTIVE',
-        productType: 'D', // Only show dropship products
         isDropshipable: true, // Only show products marked as dropshipable by vendor
+        isDropshipped: false,
         userId: { not: req.user.id }, // Exclude user's own products
         deletedAt: null, // Exclude soft-deleted products
       };
@@ -11059,7 +11063,7 @@ export class ProductService {
     }
   }
 
-  async updateDropshipProductStatus(id: number, status: string, req: any) {
+  async updateDropshipProductStatus(id: string, status: string, req: any) {
     try {
       // Verify ownership
       const dropshipProduct = await this.prisma.product.findFirst({
@@ -11104,7 +11108,7 @@ export class ProductService {
     }
   }
 
-  async deleteDropshipProduct(id: number, req: any) {
+  async deleteDropshipProduct(id: string, req: any) {
     try {
       // Verify the product exists and belongs to the user
       const dropshipProduct = await this.prisma.product.findFirst({

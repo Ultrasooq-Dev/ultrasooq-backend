@@ -57,6 +57,7 @@ import { HelperService } from 'src/helper/helper.service';
 import { WalletService } from 'src/wallet/wallet.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
+import { ORDER_PRODUCT_STATUSES, OrderProductStatusValue } from './dto/order-status.dto';
 const axios = require('axios');
 
 /**
@@ -94,6 +95,66 @@ export class OrderService {
         this.autoConfirmBuygroupOrdersOnStockOut().catch(() => {});
       }, 5 * 60 * 1000);
     }
+  }
+
+  private fail(message: string, code: 400 | 401 | 403 = 400, data: any = null) {
+    return { status: false, statusCode: code, message, data };
+  }
+
+  private normalizeOrderProductId(value: any): number | null {
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  private isAdminUser(user: any): boolean {
+    return user?.userType === 'ADMIN' || user?.userType === 'SUBADMIN' || user?.tradeRole === 'ADMINMEMBER';
+  }
+
+  private allowedOrderProductTransitions: Record<OrderProductStatusValue, OrderProductStatusValue[]> = {
+    PLACED: ['CONFIRMED', 'CANCELLED'],
+    CONFIRMED: ['SHIPPED', 'OFD', 'DELIVERED', 'CANCELLED'],
+    SHIPPED: ['OFD', 'DELIVERED', 'CANCELLED'],
+    OFD: ['DELIVERED', 'CANCELLED'],
+    DELIVERED: ['RECEIVED'],
+    RECEIVED: [],
+    CANCELLED: [],
+  };
+
+  private canTransitionOrderProduct(current: string, next: string): boolean {
+    if (!ORDER_PRODUCT_STATUSES.includes(next as any)) return false;
+    if (current === next) return true;
+    return (this.allowedOrderProductTransitions[current] || []).includes(next as any);
+  }
+
+  private async canUpdateOrderProduct(user: any, orderProduct: any, nextStatus: string) {
+    if (!user?.id) return false;
+    if (this.isAdminUser(user)) return true;
+
+    const selectedSellerId = await this.helperService.getAdminId(user.id);
+    if (orderProduct.sellerId && String(orderProduct.sellerId) === String(selectedSellerId || user.id)) {
+      return nextStatus !== 'RECEIVED';
+    }
+
+    if (orderProduct.userId && String(orderProduct.userId) === String(user.id)) {
+      return nextStatus === 'CANCELLED' || (orderProduct.orderProductStatus === 'DELIVERED' && nextStatus === 'RECEIVED');
+    }
+
+    return false;
+  }
+
+  private async resolveActiveProductPriceForCart(cart: any) {
+    if (cart?.productPriceId) {
+      const byId = await this.prisma.productPrice.findFirst({
+        where: { id: cart.productPriceId, status: 'ACTIVE', deletedAt: null },
+      });
+      if (byId) return byId;
+    }
+
+    if (!cart?.productId) return null;
+    return this.prisma.productPrice.findFirst({
+      where: { productId: cart.productId, status: 'ACTIVE', deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /**
@@ -162,6 +223,8 @@ export class OrderService {
     try {
       const userId = req?.user?.id;
       const userAddressId = payload?.userAddressId
+      const cartIds = Array.isArray(payload?.cartIds) ? payload.cartIds : [];
+      const serviceCartIds = Array.isArray(payload?.serviceCartIds) ? payload.serviceCartIds : [];
 
       // Check if this is an RFQ order
       const isRfqOrder = payload.rfqQuotesId && payload.rfqQuotesUserId;
@@ -171,8 +234,8 @@ export class OrderService {
       }
 
       let totalCartIds = [
-        ...(payload.cartIds || []),
-        ...(payload.serviceCartIds || [])
+        ...cartIds,
+        ...serviceCartIds
       ];
 
       let userDetail = await this.prisma.user.findUnique({
@@ -207,22 +270,22 @@ export class OrderService {
 
       // Batch-fetch all cart items and their product prices to avoid N+1 queries
       const allCartDetails = await this.prisma.cart.findMany({
-        where: { id: { in: payload.cartIds } },
+        where: { id: { in: cartIds }, status: 'ACTIVE', deletedAt: null },
         select: { id: true, productId: true, quantity: true, productPriceId: true, sharedLinkId: true, object: true }
       });
       const cartDetailsMap = new Map(allCartDetails.map(c => [c.id, c]));
 
       const allProductPriceIds = allCartDetails.map(c => c.productPriceId).filter((id): id is string => id !== null);
       const allProductPriceDetails = await this.prisma.productPrice.findMany({
-        where: { id: { in: allProductPriceIds } },
+        where: { id: { in: allProductPriceIds }, status: 'ACTIVE', deletedAt: null },
       });
       const productPriceMap = new Map(allProductPriceDetails.map(p => [p.id, p]));
 
-      for (let i = 0; i < payload.cartIds.length; i++) {
-        let cartDetails = cartDetailsMap.get(payload.cartIds[i]);
+      for (let i = 0; i < cartIds.length; i++) {
+        let cartDetails = cartDetailsMap.get(cartIds[i]);
         if (!cartDetails) continue;
 
-        let productPriceDetails = productPriceMap.get(cartDetails.productPriceId);
+        let productPriceDetails = productPriceMap.get(cartDetails.productPriceId) || await this.resolveActiveProductPriceForCart(cartDetails);
         if (!productPriceDetails) continue;
         let menuId = productPriceDetails.menuId;
         
@@ -378,7 +441,7 @@ export class OrderService {
 
       // Batch-fetch all service cart items to avoid N+1 queries
       const allServiceCartDetails = await this.prisma.cart.findMany({
-        where: { id: { in: payload.serviceCartIds } },
+        where: { id: { in: serviceCartIds }, status: 'ACTIVE', deletedAt: null },
         include: {
           service: {
             include: {
@@ -394,8 +457,8 @@ export class OrderService {
       });
       const serviceCartMap = new Map(allServiceCartDetails.map(c => [c.id, c]));
 
-      for (let j = 0; j < payload.serviceCartIds.length; j++) {
-        const cartDetails = serviceCartMap.get(payload.serviceCartIds[j]);
+      for (let j = 0; j < serviceCartIds.length; j++) {
+        const cartDetails = serviceCartMap.get(serviceCartIds[j]);
         if (!cartDetails) continue;
 
         let totalPrice = 0;
@@ -727,7 +790,7 @@ export class OrderService {
           });
         }
 
-        return { orderDetails, newTransaction, walletTransactionId };
+        return { orderDetails, newTransaction, walletTransactionId, cartOrder };
       }, { timeout: 30000 });
 
       // ================================================================
@@ -737,8 +800,8 @@ export class OrderService {
       // Delete only the ordered cart items (not ALL user carts)
       try {
         const orderedCartIds = [
-          ...(payload.cartIds || []),
-          ...(payload.serviceCartIds || []),
+          ...cartIds,
+          ...serviceCartIds,
         ];
         if (orderedCartIds.length > 0) {
           await this.prisma.cartServiceFeature.deleteMany({
@@ -755,7 +818,12 @@ export class OrderService {
         // Cart cleanup failure should not fail the order
       }
 
-      const { orderDetails, newTransaction } = txResult;
+      const { orderDetails, newTransaction, cartOrder } = txResult;
+      productList = productList.map((item) => ({
+        ...item,
+        orderProductId: cartOrder?.[item.cartId] || null,
+        orderItemId: cartOrder?.[item.cartId] || null,
+      }));
 
       // Fetch updated order details
       const updatedOrderDetails = await this.prisma.order.findUnique({
@@ -822,6 +890,7 @@ export class OrderService {
         message: 'Created Successfully',
         message1: invalidProducts.length > 0 ? "Some products are not available for your trade role" : "Fetch Successfully",
         data: updatedOrderDetails || orderDetails,
+        orderProductIds: Object.values(cartOrder || {}),
         data1: productList,
         totalPrice,
         totalPurchasedPrice,
@@ -2177,21 +2246,32 @@ export class OrderService {
    * @param {any} payload - Body containing { orderProductId: number, status: string }.
    * @returns {Promise<object>} Standard envelope with updated order-product.
    */
-  async orderProductStatusById(payload: any) {
+  async orderProductStatusById(payload: any, req?: any) {
     try {
-      const orderProductId = payload?.orderProductId;
+      const orderProductId = this.normalizeOrderProductId(payload?.orderProductId);
       const status = payload?.status;
+      if (!req?.user?.id) {
+        return this.fail('Unauthorized', 401);
+      }
+      if (!orderProductId || !status) {
+        return this.fail('orderProductId and status are required', 400);
+      }
+      if (!ORDER_PRODUCT_STATUSES.includes(status)) {
+        return this.fail('Invalid order product status', 400);
+      }
 
       let existOrderProduct = await this.prisma.orderProducts.findUnique({
         where: { id: orderProductId }
       });
 
       if (!existOrderProduct) {
-        return {
-          status: false,
-          message: 'Not Found',
-          data: existOrderProduct
-        } 
+        return this.fail('Order item not found', 400);
+      }
+      if (!(await this.canUpdateOrderProduct(req.user, existOrderProduct, status))) {
+        return this.fail('Forbidden', 403);
+      }
+      if (!this.canTransitionOrderProduct(existOrderProduct.orderProductStatus, status)) {
+        return this.fail('Invalid order status transition', 400);
       }
 
       let orderProductDetail = await this.prisma.orderProducts.update({
@@ -2463,20 +2543,35 @@ export class OrderService {
    */
   async orderShippingStatusUpdateById(payload: any, req: any) {
     try {
-      const orderShippingId = payload?.orderShippingId;
+      const orderShippingId = this.normalizeOrderProductId(payload?.orderShippingId);
       if (!orderShippingId) {
-        return {
-          status: false,
-          message: 'orderShippingId is required.',
-          data: []
-        }
+        return this.fail('orderShippingId is required', 400, []);
+      }
+      if (!req?.user?.id) {
+        return this.fail('Unauthorized', 401);
+      }
+
+      const existingShipping = await this.prisma.orderShipping.findUnique({
+        where: { id: orderShippingId },
+        include: { orderProductDetail: true },
+      });
+      if (!existingShipping) {
+        return this.fail('Shipping record not found', 400);
+      }
+      const selectedSellerId = await this.helperService.getAdminId(req.user.id);
+      const ownsShipping = String(existingShipping.sellerId) === String(selectedSellerId || req.user.id);
+      const ownsOrderItem = existingShipping.orderProductDetail?.some((item: any) => {
+        return String(item.sellerId) === String(selectedSellerId || req.user.id) || String(item.userId) === String(req.user.id);
+      });
+      if (!this.isAdminUser(req.user) && !ownsShipping && !ownsOrderItem) {
+        return this.fail('Forbidden', 403);
       }
 
       let updateOrderShipping = await this.prisma.orderShipping.update({
         where: { id: orderShippingId },
         data: {
-          // status: payload?.status,
-          receipt: payload?.receipt
+          ...(payload?.status ? { status: payload.status } : {}),
+          ...(payload?.receipt !== undefined ? { receipt: payload.receipt } : {}),
         }
       });
 
@@ -2607,10 +2702,12 @@ export class OrderService {
     try {
       const userId = req?.user?.id;
       const userAddressId = payload?.userAddressId
+      const cartIds = Array.isArray(payload?.cartIds) ? payload.cartIds : [];
+      const serviceCartIds = Array.isArray(payload?.serviceCartIds) ? payload.serviceCartIds : [];
 
       let totalCartIds = [
-        ...(payload.cartIds || []),
-        ...(payload.serviceCartIds || [])
+        ...cartIds,
+        ...serviceCartIds
       ];
 
       let userDetail = await this.prisma.user.findUnique({
@@ -2693,22 +2790,22 @@ export class OrderService {
 
       // Batch-fetch all cart items and their product prices to avoid N+1 queries
       const allCartDetails2 = await this.prisma.cart.findMany({
-        where: { id: { in: payload.cartIds } },
+        where: { id: { in: cartIds }, status: 'ACTIVE', deletedAt: null },
         select: { id: true, productId: true, quantity: true, productPriceId: true }
       });
       const cartDetailsMap2 = new Map(allCartDetails2.map(c => [c.id, c]));
 
       const allProductPriceIds2 = allCartDetails2.map(c => c.productPriceId).filter(Boolean);
       const allProductPriceDetails2 = await this.prisma.productPrice.findMany({
-        where: { id: { in: allProductPriceIds2 } },
+        where: { id: { in: allProductPriceIds2 }, status: 'ACTIVE', deletedAt: null },
       });
       const productPriceMap2 = new Map(allProductPriceDetails2.map(p => [p.id, p]));
 
-      for (let i = 0; i < payload.cartIds.length; i++) {
-        let cartDetails = cartDetailsMap2.get(payload.cartIds[i]);
+      for (let i = 0; i < cartIds.length; i++) {
+        let cartDetails = cartDetailsMap2.get(cartIds[i]);
         if (!cartDetails) continue;
 
-        let productPriceDetails = productPriceMap2.get(cartDetails.productPriceId);
+        let productPriceDetails = productPriceMap2.get(cartDetails.productPriceId) || await this.resolveActiveProductPriceForCart(cartDetails);
         if (!productPriceDetails) continue;
         let menuId = productPriceDetails.menuId;
         
@@ -2850,7 +2947,7 @@ export class OrderService {
 
       // Batch-fetch all service cart items to avoid N+1 queries
       const allServiceCartDetails2 = await this.prisma.cart.findMany({
-        where: { id: { in: payload.serviceCartIds } },
+        where: { id: { in: serviceCartIds }, status: 'ACTIVE', deletedAt: null },
         include: {
           service: {
             include: {
@@ -2866,8 +2963,8 @@ export class OrderService {
       });
       const serviceCartMap2 = new Map(allServiceCartDetails2.map(c => [c.id, c]));
 
-      for (let j = 0; j < payload.serviceCartIds.length; j++) {
-        const cartDetails = serviceCartMap2.get(payload.serviceCartIds[j]);
+      for (let j = 0; j < serviceCartIds.length; j++) {
+        const cartDetails = serviceCartMap2.get(serviceCartIds[j]);
         if (!cartDetails) continue;
 
         let totalPrice = 0;
@@ -4418,6 +4515,10 @@ export class OrderService {
       const vendorId = req?.user?.id;
       const adminId = await this.helperService.getAdminId(vendorId);
       const { orderProductId, status, notes } = payload;
+      const parsedOrderProductId = this.normalizeOrderProductId(orderProductId);
+      if (!parsedOrderProductId || !status) {
+        return { status: false, message: 'orderProductId and status are required', data: null };
+      }
 
 
       // Verify the order belongs to this vendor
@@ -4425,7 +4526,7 @@ export class OrderService {
       const orderProduct = await this.prisma.orderProducts.findFirst({
         where: {
           id: parseInt(orderProductId),
-          sellerId: adminId ? Number(adminId) : undefined,
+          sellerId: adminId ? String(adminId) : String(vendorId),
           status: 'ACTIVE'
         }
       });
@@ -4459,11 +4560,17 @@ export class OrderService {
           case 'refunded':
             return 'CANCELLED'; // Use CANCELLED for refunded
           default:
-            return 'PLACED'; // Default to PLACED
+            return null;
         }
       };
 
       const dbStatus = mapStatusToDb(status);
+      if (!dbStatus || !ORDER_PRODUCT_STATUSES.includes(dbStatus as any)) {
+        return { status: false, message: 'Invalid order product status', data: null };
+      }
+      if (!this.canTransitionOrderProduct(orderProduct.orderProductStatus, dbStatus)) {
+        return { status: false, message: 'Invalid order status transition', data: null };
+      }
 
       // Update the order status
 

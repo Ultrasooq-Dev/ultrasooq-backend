@@ -299,10 +299,14 @@ class ServiceFeatureDto {
  */
 class ServiceTagDto {
   /** @property {number} tagId - FK to the Tag table. Must be a positive integer. */
-  @IsNotEmpty()
+  @IsOptional()
   @IsInt()
   @IsPositive()
-  tagId: number;
+  tagId?: number;
+
+  @IsOptional()
+  @IsString()
+  tagName?: string;
 }
 
 /**

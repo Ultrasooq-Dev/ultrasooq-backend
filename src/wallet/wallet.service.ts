@@ -6,6 +6,8 @@ import { WalletWithdrawDto } from './dto/wallet-withdraw.dto';
 import { WalletTransferDto } from './dto/wallet-transfer.dto';
 import { WalletSettingsDto } from './dto/wallet-settings.dto';
 import { WalletTransactionsDto } from './dto/wallet-transactions.dto';
+import { AdminWalletAdjustmentDto } from './dto/admin-wallet-adjustment.dto';
+import { assertWalletCurrency, getWalletDefaultCurrency } from './wallet-currency.config';
 
 @Injectable()
 export class WalletService {
@@ -17,8 +19,9 @@ export class WalletService {
   async getOrCreateWallet(
     userId: string,
     _userAccountId?: string,
-    currencyCode: string = process.env.WALLET_DEFAULT_CURRENCY || 'OMR',
+    currencyCode: string = getWalletDefaultCurrency(),
   ) {
+    currencyCode = assertWalletCurrency(currencyCode);
     // userAccountId was the multi-account hierarchy field — dropped in the
     // Better Auth migration. Parameter kept for caller compatibility.
     let wallet = await this.prisma.wallet.findFirst({
@@ -75,50 +78,8 @@ export class WalletService {
    * Deposit funds to wallet
    */
   async depositToWallet(userId: string, depositDto: WalletDepositDto, userAccountId?: string) {
-    const wallet = await this.getOrCreateWallet(userId, userAccountId);
-    
-    if (wallet.status !== WalletStatus.ACTIVE) {
-      throw new BadRequestException('Wallet is not active');
-    }
-
-    const transaction = await this.prisma.$transaction(async (tx) => {
-      // Update wallet balance
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: {
-          balance: {
-            increment: depositDto.amount,
-          },
-        },
-      });
-
-      // Create transaction record
-      const walletTransaction = await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          transactionType: WalletTransactionType.DEPOSIT,
-          amount: depositDto.amount,
-          balanceBefore: wallet.balance,
-          balanceAfter: updatedWallet.balance,
-          referenceType: WalletReferenceType.PAYMENT,
-          referenceId: depositDto.paymentIntentId,
-          description: `Deposit via ${depositDto.paymentMethod}`,
-          status: WalletTransactionStatus.COMPLETED,
-          metadata: {
-            paymentMethod: depositDto.paymentMethod,
-            paymentIntentId: depositDto.paymentIntentId,
-          },
-        },
-      });
-
-      return { wallet: updatedWallet, transaction: walletTransaction };
-    });
-
-    return {
-      message: 'Funds deposited successfully',
-      status: true,
-      data: transaction.wallet,
-    };
+    await this.getOrCreateWallet(userId, userAccountId);
+    throw new ForbiddenException('Direct wallet deposits are disabled. Use an authenticated payment provider flow.');
   }
 
   /**
@@ -380,13 +341,38 @@ export class WalletService {
    * Process payment with wallet
    */
   async processWalletPayment(userId: string, amount: number, orderId: number, userAccountId?: string) {
+    if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+      throw new BadRequestException('Payment amount must be greater than 0');
+    }
+
+    if (!Number.isInteger(Number(orderId)) || Number(orderId) <= 0) {
+      throw new BadRequestException('Invalid orderId');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: Number(orderId),
+        userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Order not found for authenticated user');
+    }
+
+    const payableAmount = Number(order.totalCustomerPay ?? order.totalPrice ?? order.actualPrice ?? 0);
+    if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
+      throw new BadRequestException('Order payable amount is invalid');
+    }
+
     const wallet = await this.getOrCreateWallet(userId, userAccountId);
     
     if (wallet.status !== WalletStatus.ACTIVE) {
       throw new BadRequestException('Wallet is not active');
     }
 
-    if (wallet.balance.toNumber() < amount) {
+    if (wallet.balance.toNumber() < payableAmount) {
       throw new BadRequestException('Insufficient wallet balance');
     }
 
@@ -396,7 +382,7 @@ export class WalletService {
         where: { id: wallet.id },
         data: {
           balance: {
-            decrement: amount,
+            decrement: payableAmount,
           },
         },
       });
@@ -406,7 +392,7 @@ export class WalletService {
         data: {
           walletId: wallet.id,
           transactionType: WalletTransactionType.PAYMENT,
-          amount,
+          amount: payableAmount,
           balanceBefore: wallet.balance,
           balanceAfter: updatedWallet.balance,
           referenceType: WalletReferenceType.ORDER,
@@ -436,51 +422,130 @@ export class WalletService {
    * Process refund to wallet
    */
   async processWalletRefund(userId: string, amount: number, orderId: number, userAccountId?: string) {
-    const wallet = await this.getOrCreateWallet(userId, userAccountId);
-    
-    if (wallet.status !== WalletStatus.ACTIVE) {
-      throw new BadRequestException('Wallet is not active');
+    await this.getOrCreateWallet(userId, userAccountId);
+    throw new ForbiddenException('Direct buyer wallet refunds are disabled. Refunds must be issued through an admin or provider-verified flow.');
+  }
+
+  async adjustWalletByAdmin(adjustmentDto: AdminWalletAdjustmentDto, actor: any) {
+    const amount = Number(adjustmentDto.amount);
+    const currencyCode = assertWalletCurrency(adjustmentDto.currencyCode);
+    const idempotencyKey = String(adjustmentDto.idempotencyKey || '').trim();
+    const reason = String(adjustmentDto.reason || '').trim();
+    const targetUserId = String(adjustmentDto.targetUserId || '').trim();
+
+    if (!targetUserId || !idempotencyKey || !reason) {
+      throw new BadRequestException('targetUserId, reason, and idempotencyKey are required');
     }
 
-    const transaction = await this.prisma.$transaction(async (tx) => {
-      // Update wallet balance
-      const updatedWallet = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: {
-          balance: {
-            increment: amount,
-          },
+    if (!Number.isFinite(amount) || amount === 0) {
+      throw new BadRequestException('Adjustment amount must be a non-zero number');
+    }
+
+    const referenceId = `admin-adjust:${idempotencyKey}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const existingTransaction = await tx.walletTransaction.findFirst({
+        where: {
+          referenceType: WalletReferenceType.PAYMENT,
+          referenceId,
+          deletedAt: null,
+        },
+        include: { wallet: true },
+      });
+
+      if (existingTransaction) {
+        return {
+          message: 'Wallet adjustment already processed',
+          status: true,
+          data: existingTransaction.wallet,
+          transaction: existingTransaction,
+          idempotent: true,
+        };
+      }
+
+      let wallet = await tx.wallet.findFirst({
+        where: {
+          userId: targetUserId,
+          currencyCode,
+          deletedAt: null,
         },
       });
 
-      // Create transaction record
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            userId: targetUserId,
+            currencyCode,
+            balance: 0,
+            frozenBalance: 0,
+            status: WalletStatus.ACTIVE,
+          },
+        });
+
+        await tx.walletSettings.upsert({
+          where: { userId: targetUserId },
+          update: {},
+          create: {
+            userId: targetUserId,
+            autoWithdraw: false,
+            withdrawLimit: 0,
+            dailyLimit: 0,
+            monthlyLimit: 0,
+            notificationPreferences: {},
+          },
+        });
+      }
+
+      if (wallet.status !== WalletStatus.ACTIVE) {
+        throw new BadRequestException('Wallet is not active');
+      }
+
+      const balanceBefore = wallet.balance;
+      if (amount < 0 && balanceBefore.toNumber() < Math.abs(amount)) {
+        throw new BadRequestException('Insufficient wallet balance for debit adjustment');
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: amount > 0
+          ? { balance: { increment: amount } }
+          : { balance: { decrement: Math.abs(amount) } },
+      });
+
       const walletTransaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
-          transactionType: WalletTransactionType.REFUND,
-          amount,
-          balanceBefore: wallet.balance,
+          transactionType: amount > 0 ? WalletTransactionType.DEPOSIT : WalletTransactionType.WITHDRAWAL,
+          amount: Math.abs(amount),
+          balanceBefore,
           balanceAfter: updatedWallet.balance,
-          referenceType: WalletReferenceType.ORDER,
-          referenceId: orderId.toString(),
-          description: `Refund for order #${orderId}`,
+          referenceType: WalletReferenceType.PAYMENT,
+          referenceId,
+          description: `Admin wallet adjustment: ${reason}`,
           status: WalletTransactionStatus.COMPLETED,
           metadata: {
-            orderId,
-            refundType: 'ORDER_REFUND',
+            adjustmentType: 'ADMIN',
+            reason,
+            idempotencyKey,
+            targetUserId,
+            currencyCode,
+            actor: {
+              userId: actor?.actorUserId || null,
+              email: actor?.actorEmail || null,
+              userType: actor?.actorUserType || null,
+            },
           },
         },
       });
 
-      return { wallet: updatedWallet, transaction: walletTransaction };
+      return {
+        message: 'Wallet adjustment processed successfully',
+        status: true,
+        data: updatedWallet,
+        transaction: walletTransaction,
+        idempotent: false,
+      };
     });
-
-    return {
-      message: 'Refund processed successfully',
-      status: true,
-      data: transaction.wallet,
-      transaction: transaction.transaction,
-    };
   }
 
   /**

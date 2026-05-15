@@ -1,0 +1,17 @@
+title = "Ultrasooq Backend Secret Scan"
+
+[allowlist]
+description = "Generated outputs and obvious local test fixtures only."
+paths = [
+  '''node_modules/''',
+  '''dist/''',
+  '''coverage/''',
+  '''src/generated/prisma/''',
+  '''test/fixtures/''',
+  '''.*\.spec\.ts$''',
+  '''.*\.test\.ts$'''
+]
+regexes = [
+  '''postgresql://dummy:dummy@localhost:5432/dummy''',
+  '''example\.test'''
+]

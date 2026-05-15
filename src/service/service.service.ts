@@ -66,6 +66,51 @@ export class ServiceService {
     private readonly prisma: PrismaService,
   ) {}
 
+  private normalizeTagName(tagName: string) {
+    return String(tagName || '').trim().replace(/\s+/g, ' ');
+  }
+
+  private numericUserIdOrNull(userId: string) {
+    const parsed = Number(userId);
+    return Number.isInteger(parsed) ? parsed : null;
+  }
+
+  private async resolveServiceTags(tags: any[] = [], userId: string) {
+    const tagIds: number[] = [];
+    const seen = new Set<number>();
+
+    for (const tag of tags || []) {
+      let tagId = Number.isInteger(Number(tag?.tagId)) ? Number(tag.tagId) : null;
+      const tagName = this.normalizeTagName(tag?.tagName || tag?.tag);
+
+      if (!tagId && tagName) {
+        let existing = await this.prisma.tags.findFirst({
+          where: {
+            tagName: { equals: tagName, mode: 'insensitive' },
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+        });
+        if (!existing) {
+          existing = await this.prisma.tags.create({
+            data: {
+              tagName,
+              addedBy: this.numericUserIdOrNull(userId),
+            },
+          });
+        }
+        tagId = existing.id;
+      }
+
+      if (tagId && !seen.has(tagId)) {
+        seen.add(tagId);
+        tagIds.push(tagId);
+      }
+    }
+
+    return tagIds.map((tagId) => ({ tagId }));
+  }
+
   /**
    * Creates a new service listing with associated tags, features, and images.
    *
@@ -104,24 +149,34 @@ export class ServiceService {
       selectedUserId = await this.helperService.getAdminId(selectedUserId);
 
       const { tags, features, images, ...rest } = dto;
+      const serviceTags = await this.resolveServiceTags(tags, userId);
       const data: Prisma.ServiceUncheckedCreateInput = {
         ...rest,
         sellerId: selectedUserId,
-        serviceTags: {
-          createMany: {
-            data: tags,
-          },
-        },
+        ...(serviceTags.length
+          ? {
+              serviceTags: {
+                createMany: {
+                  data: serviceTags,
+                  skipDuplicates: true,
+                },
+              },
+            }
+          : {}),
         serviceFeatures: {
           createMany: {
-            data: features,
+            data: features || [],
           },
         },
-        images: {
-          createMany: {
-            data: images,
-          },
-        },
+        ...(images?.length
+          ? {
+              images: {
+                createMany: {
+                  data: images,
+                },
+              },
+            }
+          : {}),
       };
 
       const service = await this.prisma.service.create({

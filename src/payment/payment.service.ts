@@ -49,7 +49,7 @@
  * - The Stripe instance is initialised but currently unused; it remains for a
  *   planned future Stripe integration path.
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import { AuthService } from 'src/auth/auth.service';
 import { NotificationService } from 'src/notification/notification.service';
@@ -62,6 +62,7 @@ import * as cron from 'node-cron';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
+import { getWalletDefaultCurrency } from 'src/wallet/wallet-currency.config';
 
 /**
  * Module-scoped PrismaClient instance shared by all methods in this service.
@@ -113,6 +114,110 @@ export class PaymentService {
     private readonly helperService: HelperService,
     private readonly prisma: PrismaService,
   ) { }
+
+  private requireAuthenticatedUser(req: any): string {
+    const userId = req?.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    return String(userId);
+  }
+
+  private requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value || !String(value).trim()) {
+      throw new Error(`Missing required payment provider configuration: ${name}`);
+    }
+    return String(value).trim();
+  }
+
+  private requireNumericEnv(name: string): number {
+    const value = Number(this.requireEnv(name));
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`Invalid payment provider configuration: ${name}`);
+    }
+    return value;
+  }
+
+  private sanitizePaymentError(error: any): string {
+    if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+      return error.message;
+    }
+    return 'Payment request could not be processed';
+  }
+
+  private async resolveOrderPayment(userId: string, orderIdInput: any, requestedPaymentType?: string) {
+    const orderId = Number(orderIdInput);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      throw new BadRequestException('Invalid orderId');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Order not found for authenticated user');
+    }
+
+    const paymentType = String(requestedPaymentType || order.paymentType || 'DIRECT').toUpperCase();
+    let amount = Number(order.totalCustomerPay ?? order.totalPrice ?? order.actualPrice ?? 0);
+    if (paymentType === 'ADVANCE') {
+      amount = Number(order.advanceAmount ?? amount);
+    } else if (paymentType === 'DUE') {
+      amount = Number(order.dueAmount ?? 0);
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Order payable amount is invalid');
+    }
+
+    return { order, orderId, paymentType, amount };
+  }
+
+  private assertPlainObject(payload: any): boolean {
+    return !!payload && typeof payload === 'object' && !Array.isArray(payload);
+  }
+
+  private verifyPaymobWebhook(req: any): { valid: boolean; message?: string } {
+    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+    const data = req?.body;
+    const hmacReceived = req?.query?.hmac;
+    const obj = data?.obj;
+
+    if (!hmacSecret || !hmacReceived || !this.assertPlainObject(data) || !this.assertPlainObject(obj)) {
+      return { valid: false, message: 'Invalid webhook payload or signature' };
+    }
+
+    const crypto = require('crypto');
+    const concatenated = `${obj.amount_cents}${obj.created_at}${obj.currency}${obj.error_occured}${obj.has_parent_transaction}${obj.id}${obj.integration_id}${obj.is_3d_secure}${obj.is_auth}${obj.is_capture}${obj.is_refunded}${obj.is_standalone_payment}${obj.is_voided}${obj.order?.id || obj.order}${obj.owner}${obj.pending}${obj.source_data?.pan || ''}${obj.source_data?.sub_type || ''}${obj.source_data?.type || ''}${obj.success}`;
+    const calculated = crypto.createHmac('sha512', hmacSecret).update(concatenated).digest('hex');
+    const received = String(hmacReceived);
+
+    if (
+      calculated.length !== received.length ||
+      !crypto.timingSafeEqual(Buffer.from(calculated), Buffer.from(received))
+    ) {
+      return { valid: false, message: 'Invalid webhook signature' };
+    }
+
+    return { valid: true };
+  }
+
+  private async isDuplicateProviderTransaction(transactionId: any): Promise<boolean> {
+    if (!transactionId) return false;
+    const existing = await this.prisma.transactionPaymob.findFirst({
+      where: {
+        paymobTransactionId: String(transactionId),
+        deletedAt: null,
+      },
+    });
+    return !!existing;
+  }
 
   /**
    * Retrieve all Paymob transactions for the authenticated user (paginated).
@@ -289,8 +394,9 @@ export class PaymentService {
    */
   async createIntention(payload: any, req: any) {
     try {
+      const userId = this.requireAuthenticatedUser(req);
 
-      const requiredFields = ['amount', 'billing_data', 'extras', 'special_reference'];
+      const requiredFields = ['billing_data', 'extras', 'special_reference'];
       // Validate top-level fields
       for (const field of requiredFields) {
         if (!payload[field]) {
@@ -329,10 +435,13 @@ export class PaymentService {
       }
 
 
+      const { orderId, paymentType, amount } = await this.resolveOrderPayment(userId, payload.extras.orderId, payload.extras.paymentType);
       const PAYMOB_INTENTION_URL = 'https://oman.paymob.com/v1/intention/';
-      const AUTH_TOKEN = process.env.PAYMOB_SECRET_KEY
+      const AUTH_TOKEN = this.requireEnv('PAYMOB_SECRET_KEY');
+      const integrationId = this.requireNumericEnv('PAYMOB_INTEGRATION_ID');
+      const notificationUrl = this.requireEnv('PAYMOB_WEBHOOK_URL');
+      const redirectionUrl = this.requireEnv('FRONTEND_CHECKOUT_URL');
       const {
-        amount,
         currency,
         payment_methods,
         items,
@@ -346,15 +455,15 @@ export class PaymentService {
       const response = await axios.post(
         PAYMOB_INTENTION_URL,
         {
-          amount: amount,
-          currency: "OMR",
-          payment_methods: [parseInt(process.env.PAYMOB_INTEGRATION_ID)],
+          amount: Math.round(amount * 1000),
+          currency: getWalletDefaultCurrency(),
+          payment_methods: [integrationId],
           items: items,
           billing_data: billing_data,
-          extras: extras,
+          extras: { ...extras, orderId, paymentType },
           special_reference: special_reference,
-          notification_url: process.env.PAYMOB_WEBHOOK_URL || "https://devbackend.ultrasooq.com/payment/paymob-webhook",
-          redirection_url: process.env.FRONTEND_CHECKOUT_URL || "https://dev.ultrasooq.com/checkout-complete",
+          notification_url: notificationUrl,
+          redirection_url: redirectionUrl,
           "force_save_card": true
         },
         {
@@ -374,7 +483,7 @@ export class PaymentService {
       return {
         status: false,
         message: 'Error in createIntention',
-        error: (error as any)?.response?.data || getErrorMessage(error)
+        error: this.sanitizePaymentError(error)
       };
     }
   }
@@ -427,19 +536,9 @@ export class PaymentService {
    * @returns {Promise<{success: boolean, message: string} | {status: boolean, message: string, error?: any}>}
    */
   async paymobWebhook(payload: any, req: any) {
-    // Verify Paymob webhook signature
-    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
-    if (hmacSecret) {
-      const crypto = require('crypto');
-      const hmacReceived = req.query?.hmac;
-      const obj = req.body?.obj;
-      if (obj && hmacReceived) {
-        const concatenated = `${obj.amount_cents}${obj.created_at}${obj.currency}${obj.error_occured}${obj.has_parent_transaction}${obj.id}${obj.integration_id}${obj.is_3d_secure}${obj.is_auth}${obj.is_capture}${obj.is_refunded}${obj.is_standalone_payment}${obj.is_voided}${obj.order?.id || obj.order}${obj.owner}${obj.pending}${obj.source_data?.pan || ''}${obj.source_data?.sub_type || ''}${obj.source_data?.type || ''}${obj.success}`;
-        const calculated = crypto.createHmac('sha512', hmacSecret).update(concatenated).digest('hex');
-        if (calculated !== hmacReceived) {
-          return { status: false, message: 'Invalid webhook signature' };
-        }
-      }
+    const verification = this.verifyPaymobWebhook(req);
+    if (!verification.valid) {
+      return { status: false, message: verification.message || 'Invalid webhook signature' };
     }
 
     try {
@@ -449,6 +548,12 @@ export class PaymentService {
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
+        if (await this.isDuplicateProviderTransaction(id)) {
+          return {
+            success: true,
+            message: "paymobWebhook already processed"
+          };
+        }
         const merchant_order_id = parseInt(order?.merchant_order_id);
         const orderId = parseInt(payment_key_claims?.extra.orderId);
 
@@ -626,7 +731,11 @@ export class PaymentService {
    */
   async createPaymentLink(payload: any, req: any) {
     try {
+      this.requireAuthenticatedUser(req);
       const tokenResponse = await this.helperService.getAuthToken();
+      const integrationId = this.requireNumericEnv('PAYMOB_INTEGRATION_ID');
+      const notificationUrl = this.requireEnv('PAYMOB_PAYMENT_LINK_WEBHOOK_URL');
+      const checkoutUrl = this.requireEnv('FRONTEND_CHECKOUT_URL');
   
       
       const authToken = tokenResponse;
@@ -650,13 +759,13 @@ export class PaymentService {
       const jsonPayload = {
         amount_cents: amountCents,
         reference_id: referenceId,
-        payment_methods: [parseInt(process.env.PAYMOB_INTEGRATION_ID)],
+        payment_methods: [integrationId],
         email: email,
         is_live: isLive || false,
         full_name: fullName,
         description: description,
-        notification_url: process.env.PAYMOB_PAYMENT_LINK_WEBHOOK_URL || 'https://devbackend.ultrasooq.com/payment/paymob-webhook-createPaymentLink', // webhook
-        redirection_url: redirectionUrl || process.env.FRONTEND_CHECKOUT_URL || 'https://dev.ultrasooq.com/checkout-complete', // redirect
+        notification_url: notificationUrl,
+        redirection_url: redirectionUrl || checkoutUrl,
         // phone_number: phoneNumber, // optional
       };
   
@@ -682,7 +791,7 @@ export class PaymentService {
       return {
         success: false,
         message: "Failed to create payment link",
-        error: (error as any)?.response?.data || getErrorMessage(error),
+        error: this.sanitizePaymentError(error),
       };
     }
   }
@@ -729,6 +838,11 @@ export class PaymentService {
    * @returns {Promise<{success: boolean, message: string, orderId?: number, transactionDetail?: any} | {status: boolean, message: string, error?: any}>}
    */
   async paymobwebhookForCreatePaymentLink(payload: any, req: any) {
+    const verification = this.verifyPaymobWebhook(req);
+    if (!verification.valid) {
+      return { status: false, message: verification.message || 'Invalid webhook signature' };
+    }
+
     try {
   
       const data = req.body;
@@ -757,6 +871,12 @@ export class PaymentService {
       const obj = data?.obj || {};
       const success = obj.success;
       const id = obj.id;
+      if (await this.isDuplicateProviderTransaction(id)) {
+        return {
+          success: true,
+          message: "Payment link webhook already processed"
+        };
+      }
       const amount_cents = obj.amount_cents || 0;
       const merchant_order_id = parseInt(obj.order?.merchant_order_id);
       const paymobOrderId = data?.order?.id;
@@ -981,7 +1101,8 @@ export class PaymentService {
    */
   async createPaymentForEMI (payload: any, req: any) {
     try {
-      const requiredFields = ['amount', 'billing_data', 'extras', 'special_reference'];
+      const userId = this.requireAuthenticatedUser(req);
+      const requiredFields = ['billing_data', 'extras', 'special_reference'];
       // Validate top-level fields
       for (const field of requiredFields) {
         if (!payload[field]) {
@@ -1019,10 +1140,13 @@ export class PaymentService {
         }
       }
 
+      const { orderId, amount } = await this.resolveOrderPayment(userId, payload.extras.orderId, 'EMI');
       const PAYMOB_INTENTION_URL = 'https://oman.paymob.com/v1/intention/';
-      const AUTH_TOKEN = process.env.PAYMOB_SECRET_KEY
+      const AUTH_TOKEN = this.requireEnv('PAYMOB_SECRET_KEY');
+      const integrationId = this.requireNumericEnv('PAYMOB_INTEGRATION_ID');
+      const notificationUrl = this.requireEnv('PAYMOB_EMI_WEBHOOK_URL');
+      const redirectionUrl = this.requireEnv('FRONTEND_CHECKOUT_URL');
       const {
-        amount,
         currency,
         payment_methods,
         items,
@@ -1036,15 +1160,15 @@ export class PaymentService {
       const response = await axios.post(
         PAYMOB_INTENTION_URL,
         {
-          amount: amount,
-          currency: "OMR",
-          payment_methods: [parseInt(process.env.PAYMOB_INTEGRATION_ID)],
+          amount: Math.round(amount * 1000),
+          currency: getWalletDefaultCurrency(),
+          payment_methods: [integrationId],
           items: items,
           billing_data: billing_data,
-          extras: extras,
+          extras: { ...extras, orderId, paymentType: 'EMI' },
           special_reference: special_reference,
-          notification_url: process.env.PAYMOB_EMI_WEBHOOK_URL || "https://devbackend.ultrasooq.com/payment/webhook-PaymentForEMI",
-          redirection_url: process.env.FRONTEND_CHECKOUT_URL || "https://dev.ultrasooq.com/checkout-complete",
+          notification_url: notificationUrl,
+          redirection_url: redirectionUrl,
         },
         {
           headers: {
@@ -1064,7 +1188,7 @@ export class PaymentService {
       return {
         status: false,
         message: 'Error in createPaymentForEMI',
-        error: (error as any)?.response?.data || getErrorMessage(error)
+        error: this.sanitizePaymentError(error)
       };
     }
   }
@@ -1110,10 +1234,18 @@ export class PaymentService {
    * @returns {Promise<void | {status: boolean, message: string, error?: any}>}
    */
   async webhookForFirstEMI (req: any) {
+    const verification = this.verifyPaymobWebhook(req);
+    if (!verification.valid) {
+      return { status: false, message: verification.message || 'Invalid webhook signature' };
+    }
+
     try {
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
+        if (await this.isDuplicateProviderTransaction(id)) {
+          return { status: true, message: 'First EMI webhook already processed' };
+        }
         const merchant_order_id = parseInt(order?.merchant_order_id);
         const orderId = parseInt(payment_key_claims?.extra.orderId);
 
@@ -1283,8 +1415,8 @@ export class PaymentService {
    * **Idea:**
    * 1. Look up the order by `orderId` to obtain its `paymobOrderId`.
    * 2. Retrieve the saved card token from `orderSaveCardToken` using `paymobOrderId`.
-   * 3. Create a new Paymob intention via `/v1/intention/` using the MOTO
-   *    (Mail-Order / Telephone-Order) integration ID (`25198`), which allows
+   * 3. Create a new Paymob intention via `/v1/intention/` using the configured
+   *    MOTO (Mail-Order / Telephone-Order) integration ID, which allows
    *    unattended (no-3DS) charges.
    * 4. Extract the `payment_token` (payment key) from the intention response.
    * 5. POST to `/api/acceptance/payments/pay` with the saved card token and the
@@ -1314,8 +1446,8 @@ export class PaymentService {
    *   and should be replaced with dynamic installment amounts in production.
    * - `billing_data` fields are populated with `"dumy"` placeholder strings
    *   since the card is already tokenised and billing info is not re-validated.
-   * - `payment_methods` uses the hard-coded MOTO integration ID `25198`, not the
-   *   standard `PAYMOB_INTEGRATION_ID` environment variable.
+   * - `payment_methods` uses the configured MOTO integration ID rather than
+   *   the standard `PAYMOB_INTEGRATION_ID` environment variable.
    * - `notification_url` points to `/payment/webhookForEMI` so the result is
    *   processed by {@link webhookForEMI}.
    * - A commented-out alternative signature accepted `emiInstallmentAmountCents`
@@ -1329,8 +1461,10 @@ export class PaymentService {
   async payInstallment(req: any) {
     try {
       const PAYMOB_INTENTION_URL = 'https://oman.paymob.com/v1/intention/';
-      const AUTH_TOKEN = process.env.PAYMOB_SECRET_KEY;
-      const INTEGRATION_ID = parseInt(process.env.PAYMOB_INTEGRATION_ID);
+      const AUTH_TOKEN = this.requireEnv('PAYMOB_SECRET_KEY');
+      const motoIntegrationId = this.requireNumericEnv('PAYMOB_MOTO_INTEGRATION_ID');
+      const notificationUrl = this.requireEnv('PAYMOB_EMI_RECURRING_WEBHOOK_URL');
+      const redirectionUrl = this.requireEnv('FRONTEND_CHECKOUT_URL');
   
       const orderId = req.body.orderId;
 
@@ -1380,13 +1514,13 @@ export class PaymentService {
         PAYMOB_INTENTION_URL,
         {
           amount,
-          currency: "OMR",
-          payment_methods: [parseInt(process.env.PAYMOB_MOTO_INTEGRATION_ID || '25198')], //[INTEGRATION_ID], // Use this 25198 Intention Moto Id to create Intention for EMI Payment
+          currency: getWalletDefaultCurrency(),
+          payment_methods: [motoIntegrationId],
           billing_data,
           extras,
           special_reference,
-          notification_url: process.env.PAYMOB_EMI_RECURRING_WEBHOOK_URL || "https://devbackend.ultrasooq.com/payment/webhookForEMI",
-          redirection_url: process.env.FRONTEND_CHECKOUT_URL || "https://dev.ultrasooq.com/checkout-complete"
+          notification_url: notificationUrl,
+          redirection_url: redirectionUrl
         },
         {
           headers: {
@@ -1479,10 +1613,18 @@ export class PaymentService {
    * @returns {Promise<void | {status: boolean, message: string, error?: any}>}
    */
   async webhookForEMI (req: any) {
+    const verification = this.verifyPaymobWebhook(req);
+    if (!verification.valid) {
+      return { status: false, message: verification.message || 'Invalid webhook signature' };
+    }
+
     try {
       const data = req.body;
       if (data?.type === 'TRANSACTION') {
         const { success, id, amount_cents, order, payment_key_claims } = data.obj;
+        if (await this.isDuplicateProviderTransaction(id)) {
+          return { status: true, message: 'EMI webhook already processed' };
+        }
         const merchant_order_id = parseInt(order?.merchant_order_id);
         const orderId = parseInt(payment_key_claims?.extra.orderId);
 
@@ -1575,24 +1717,38 @@ export class PaymentService {
   /**
    * AMWALPAY INTEGRATION
    */
-  private readonly AMWALPAY_MID = process.env.AMWALPAY_MID || '158161';
-  private readonly AMWALPAY_TID = process.env.AMWALPAY_TID || '623265';
-  private readonly AMWALPAY_SECURE_HASH_KEY = process.env.AMWALPAY_SECURE_HASH_KEY || '54CB00FC77C742668B09F98B9776CC50F61D1A31D3F85EC73B31E80D1676936B'; // Hex format
-  private readonly AMWALPAY_CURRENCY_ID = process.env.AMWALPAY_CURRENCY_ID || '512'; // OMR
+  private get AMWALPAY_MID(): string {
+    return this.requireEnv('AMWALPAY_MID');
+  }
+
+  private get AMWALPAY_TID(): string {
+    return this.requireEnv('AMWALPAY_TID');
+  }
+
+  private get AMWALPAY_SECURE_HASH_KEY(): string {
+    return this.requireEnv('AMWALPAY_SECURE_HASH_KEY');
+  }
+
+  private get AMWALPAY_CURRENCY_ID(): string {
+    return this.requireEnv('AMWALPAY_CURRENCY_ID');
+  }
 
   /**
    * Create AmwalPay Smartbox Configuration
    */
   async createAmwalPayConfig(payload: any, req: any) {
     try {
-      const { amount, orderId, languageId = 'en' } = payload;
+      const userId = this.requireAuthenticatedUser(req);
+      const { orderId, languageId = 'en' } = payload;
 
-      if (!amount || !orderId) {
+      if (!orderId) {
         return {
           status: false,
-          message: 'Missing required fields: amount and orderId'
+          message: 'Missing required field: orderId'
         };
       }
+
+      const { amount } = await this.resolveOrderPayment(userId, orderId, payload?.paymentType);
 
       // Generate merchant reference (unique order identifier)
       const merchantReference = `ORDER_${orderId}_${Date.now()}`;
@@ -1659,7 +1815,7 @@ export class PaymentService {
       return {
         status: false,
         message: 'Error creating AmwalPay config',
-        error: getErrorMessage(error)
+        error: this.sanitizePaymentError(error)
       };
     }
   }
@@ -1701,6 +1857,9 @@ export class PaymentService {
     try {
       
       const data = req.body;
+      if (!this.assertPlainObject(data) || !this.assertPlainObject(data.data)) {
+        return { status: false, message: 'Invalid AmwalPay webhook payload' };
+      }
       const responseData = data?.data || {};
       
       const { 
@@ -1713,6 +1872,22 @@ export class PaymentService {
         secureHashValue // For integrity validation
       } = responseData;
 
+      if (!merchantReference || !transactionId || !secureHashValue) {
+        return { status: false, message: 'Invalid AmwalPay webhook payload' };
+      }
+
+      const hashIsValid = this.verifyAmwalPayResponseHash(responseData, data.responseCode);
+      if (!hashIsValid) {
+        return { status: false, message: 'Invalid AmwalPay webhook signature' };
+      }
+
+      if (await this.isDuplicateProviderTransaction(transactionId)) {
+        return {
+          status: true,
+          message: 'AmwalPay webhook already processed'
+        };
+      }
+
       // Check if it's a wallet recharge (starts with WALLET_)
       if (merchantReference?.startsWith('WALLET_')) {
         // Handle wallet recharge
@@ -1724,13 +1899,6 @@ export class PaymentService {
             status: false,
             message: 'Wallet ID not found in merchant reference'
           };
-        }
-
-
-        // Verify response integrity
-        const isValid = this.verifyAmwalPayResponseHash(responseData, data.responseCode);
-        if (!isValid) {
-          throw new Error('AmwalPay response hash verification failed — possible webhook forgery');
         }
 
         // Determine if payment was successful
@@ -1844,13 +2012,6 @@ export class PaymentService {
         };
       }
 
-      // Verify response integrity by calculating hash
-      const isValid = this.verifyAmwalPayResponseHash(responseData, data.responseCode);
-
-      if (!isValid) {
-        throw new Error('AmwalPay response hash verification failed — possible webhook forgery');
-      }
-
       // Determine if payment was successful
       const isSuccess = data.success === true && data.responseCode === '00';
       
@@ -1893,7 +2054,7 @@ export class PaymentService {
       return {
         status: false,
         message: 'Error processing AmwalPay webhook',
-        error: getErrorMessage(error)
+        error: this.sanitizePaymentError(error)
       };
     }
   }
@@ -1950,130 +2111,11 @@ export class PaymentService {
    * Verify and process AmwalPay wallet payment (fallback if webhook doesn't fire)
    */
   async verifyAmwalPayWalletPayment(payload: any, req: any) {
-    try {
-      const { merchantReference, transactionId, amount } = payload;
-
-      if (!merchantReference || !transactionId) {
-        return {
-          status: false,
-          message: 'Missing required fields: merchantReference and transactionId'
-        };
-      }
-
-      // Check if it's a wallet recharge
-      if (!merchantReference.startsWith('WALLET_')) {
-        return {
-          status: false,
-          message: 'Invalid merchant reference for wallet recharge'
-        };
-      }
-
-      const walletIdMatch = merchantReference.match(/WALLET_(\d+)_/);
-      const walletId = walletIdMatch ? parseInt(walletIdMatch[1]) : null;
-
-      if (!walletId) {
-        return {
-          status: false,
-          message: 'Wallet ID not found in merchant reference'
-        };
-      }
-
-      // Check if transaction already processed
-      const existingTransaction = await this.prisma.walletTransaction.findFirst({
-        where: {
-          referenceId: transactionId,
-          status: 'COMPLETED'
-        }
-      });
-
-      if (existingTransaction) {
-        return {
-          status: true,
-          message: 'Transaction already processed',
-          walletId: walletId,
-          alreadyProcessed: true
-        };
-      }
-
-      // Get wallet
-      const wallet = await this.prisma.wallet.findUnique({
-        where: { id: walletId }
-      });
-
-      if (!wallet) {
-        return {
-          status: false,
-          message: 'Wallet not found'
-        };
-      }
-
-      // Parse amount
-      // Wallet balance is stored in base currency (OMR), not cents
-      const parsedAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-      const rechargeAmount = parsedAmount; // Use amount directly
-
-      const balanceBefore = Number(wallet.balance);
-      const balanceAfter = balanceBefore + rechargeAmount; // Add in base currency
-
-      // Update wallet balance
-      await this.prisma.wallet.update({
-        where: { id: walletId },
-        data: {
-          balance: balanceAfter
-        }
-      });
-
-      // Create wallet transaction
-      // Note: WalletTransaction.amount is in base currency, not cents
-      await this.prisma.walletTransaction.create({
-        data: {
-          walletId: walletId,
-          transactionType: 'DEPOSIT',
-          amount: rechargeAmount, // Store in base currency
-          balanceBefore: balanceBefore,
-          balanceAfter: balanceAfter,
-          status: 'COMPLETED',
-          referenceId: transactionId || merchantReference,
-          referenceType: 'PAYMENT',
-          metadata: {
-            paymentGateway: 'AMWALPAY',
-            transactionId: transactionId,
-            merchantReference: merchantReference,
-            amount: parsedAmount,
-            processedVia: 'FRONTEND_CALLBACK'
-          }
-        }
-      });
-
-      // Update transactionPaymob if exists
-      await this.prisma.transactionPaymob.updateMany({
-        where: {
-          merchantOrderId: walletId,
-          transactionType: 'WALLET_RECHARGE'
-        },
-        data: {
-          transactionStatus: 'SUCCESS',
-          paymobTransactionId: transactionId,
-          amountCents: Math.round(rechargeAmount * 1000), // Store in cents for transactionPaymob
-          success: true
-        }
-      });
-
-      return {
-        status: true,
-        message: 'Wallet recharge processed successfully',
-        walletId: walletId,
-        balanceBefore: balanceBefore,
-        balanceAfter: balanceAfter,
-        rechargeAmount: rechargeAmount
-      };
-    } catch (error: any) {
-      return {
-        status: false,
-        message: 'Error verifying wallet payment',
-        error: getErrorMessage(error)
-      };
-    }
+    this.requireAuthenticatedUser(req);
+    return {
+      status: false,
+      message: 'Client-side wallet payment verification is disabled. Wallet balance changes require a signed provider webhook or admin adjustment.',
+    };
   }
 
   /**
@@ -2081,12 +2123,37 @@ export class PaymentService {
    */
   async createAmwalPayWalletConfig(payload: any, req: any) {
     try {
+      const userId = this.requireAuthenticatedUser(req);
       const { amount, walletId, languageId = 'en' } = payload;
 
       if (!amount || !walletId) {
         return {
           status: false,
           message: 'Missing required fields: amount and walletId'
+        };
+      }
+
+      const rechargeAmount = Number(amount);
+      if (!Number.isFinite(rechargeAmount) || rechargeAmount <= 0) {
+        return {
+          status: false,
+          message: 'Invalid wallet recharge amount'
+        };
+      }
+
+      const wallet = await this.prisma.wallet.findFirst({
+        where: {
+          id: Number(walletId),
+          userId,
+          currencyCode: getWalletDefaultCurrency(),
+          deletedAt: null,
+        },
+      });
+
+      if (!wallet) {
+        return {
+          status: false,
+          message: 'Wallet not found for authenticated user'
         };
       }
 
@@ -2097,7 +2164,7 @@ export class PaymentService {
       const requestDateTime = new Date().toISOString();
       
       // Convert amount to string
-      const amountStr = amount.toString();
+      const amountStr = rechargeAmount.toString();
       
       // SessionToken - empty if not using recurring payments
       const sessionToken = '';
@@ -2121,14 +2188,14 @@ export class PaymentService {
         data: {
           orderId: null, // No order for wallet recharge
           transactionStatus: 'PENDING',
-          merchantOrderId: walletId, // Use walletId as merchantOrderId
-          amountCents: Math.round(amount * 1000), // Convert to cents
+          merchantOrderId: wallet.id, // Use walletId as merchantOrderId
+          amountCents: Math.round(rechargeAmount * 1000), // Convert to cents
           transactionType: 'WALLET_RECHARGE',
-          userId: req?.user?.id || null,
+          userId,
           paymobObject: {
             paymentGateway: 'AMWALPAY',
             transactionType: 'WALLET_RECHARGE',
-            walletId: walletId,
+            walletId: wallet.id,
             merchantReference: merchantReference,
             config: paramsObj,
             secureHash: secureHash
@@ -2150,14 +2217,14 @@ export class PaymentService {
           TrxDateTime: requestDateTime,
           SessionToken: sessionToken,
           SecureHash: secureHash,
-          WalletId: walletId
+          WalletId: wallet.id
         }
       };
     } catch (error: any) {
       return {
         status: false,
         message: 'Error creating AmwalPay wallet config',
-        error: getErrorMessage(error)
+        error: this.sanitizePaymentError(error)
       };
     }
   }
@@ -2199,5 +2266,3 @@ export class PaymentService {
   }
 
 }
-
-
