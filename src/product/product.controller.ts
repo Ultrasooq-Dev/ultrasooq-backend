@@ -3034,7 +3034,7 @@ export class ProductController {
     @Request() req: any,
   ) {
     return this.productService.updateDropshipProductStatus(
-      parseInt(id),
+      id,
       payload.status,
       req,
     );
@@ -3043,7 +3043,7 @@ export class ProductController {
   @UseGuards(AuthGuard)
   @Delete('/dropship/:id')
   deleteDropshipProduct(@Param('id') id: string, @Request() req: any) {
-    return this.productService.deleteDropshipProduct(parseInt(id), req);
+    return this.productService.deleteDropshipProduct(id, req);
   }
 
   // Mark product as dropshipable
@@ -3062,7 +3062,7 @@ export class ProductController {
     @Request() req: any,
   ) {
     return this.productService.markProductAsDropshipable(
-      parseInt(id),
+      id,
       payload.isDropshipable,
       payload,
       req,

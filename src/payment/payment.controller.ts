@@ -96,6 +96,7 @@ export class PaymentController {
    * @returns {Promise<{status: boolean, message: string, data?: string}>}
    *   Standard response envelope containing the Paymob auth token on success.
    */
+  @UseGuards(AuthGuard)
   @Get('/get-auth-token')
   getAuthToken(@Request() req) {
     return this.paymentService.getAuthToken(req);
@@ -133,7 +134,7 @@ export class PaymentController {
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
    *   Paymob intention response wrapped in the standard envelope.
    */
-  // @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard)
   @Post('/create-paymob-intention')
   createIntention(@Request() req, @Body() payload: any) {
     return this.paymentService.createIntention(payload, req);
@@ -383,7 +384,8 @@ export class PaymentController {
    * @param {any} req     - Express request object.
    * @param {any} payload - Request body with EMI payment fields.
    * @returns {Promise<{status: boolean, message: string, data?: any}>}
-   */
+  */
+  @UseGuards(AuthGuard)
   @Post('/createPaymentForEMI')
   createPaymentForEMI(@Request() req, @Body() payload: any) {
     return this.paymentService.createPaymentForEMI(payload, req);
@@ -485,7 +487,7 @@ export class PaymentController {
    * **Notes:**
    * - Intended **only** for testing; no AuthGuard is applied.
    * - The amount is hard-coded to `1000` (will need to be dynamic in production).
-   * - Uses MOTO integration ID `25198` for unattended card charges.
+   * - Uses the configured MOTO integration ID for unattended card charges.
    *
    * @param {any} req     - Express request with `req.body.orderId`.
    * @param {any} payload - Request body (unused directly by service).
@@ -500,6 +502,7 @@ export class PaymentController {
   /**
    * AMWALPAY
    */
+  @UseGuards(AuthGuard)
   @Post('/create-amwalpay-config')
   createAmwalPayConfig(@Request() req, @Body() payload: any) {
     return this.paymentService.createAmwalPayConfig(payload, req);
@@ -510,11 +513,13 @@ export class PaymentController {
     return this.paymentService.amwalPayWebhook(payload, req);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/create-amwalpay-wallet-config')
   createAmwalPayWalletConfig(@Request() req, @Body() payload: any) {
     return this.paymentService.createAmwalPayWalletConfig(payload, req);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/verify-amwalpay-wallet-payment')
   verifyAmwalPayWalletPayment(@Request() req, @Body() payload: any) {
     return this.paymentService.verifyAmwalPayWalletPayment(payload, req);

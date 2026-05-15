@@ -33,6 +33,7 @@ import { Body, Controller, Get, Patch, Post, Query, Request, UseGuards, Response
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrderService } from './order.service';
 import { AuthGuard } from 'src/guards/AuthGuard';
+import { UpdateOrderProductStatusDto, UpdateOrderShippingDto } from './dto/order-status.dto';
 
 /**
  * @class OrderController
@@ -300,9 +301,10 @@ export class OrderController {
    * @param {any} payload - Body containing { orderProductId: number, status: string }.
    * @returns {Promise<object>} Standard envelope with updated order-product record.
    */
+  @UseGuards(AuthGuard)
   @Post('/orderProductStatusById')
-  orderProductStatusById(@Body() payload: any) {
-    return this.orderService.orderProductStatusById(payload);
+  orderProductStatusById(@Body() payload: UpdateOrderProductStatusDto, @Request() req) {
+    return this.orderService.orderProductStatusById(payload, req);
   }
 
   /**
@@ -325,8 +327,9 @@ export class OrderController {
    * @param {any} req     - Express request (unused in current implementation).
    * @returns {Promise<object>} Standard envelope with updated orderShipping record.
    */
+  @UseGuards(AuthGuard)
   @Patch('/orderShippingStatusUpdateById')
-  orderShippingStatusUpdateById(@Body() payload: any, @Request() req) {
+  orderShippingStatusUpdateById(@Body() payload: UpdateOrderShippingDto, @Request() req) {
     return this.orderService.orderShippingStatusUpdateById(payload, req);
   }
 

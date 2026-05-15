@@ -260,7 +260,7 @@ describe('ProductService', () => {
   describe('findOne()', () => {
     it('should test single product fetch', async () => {
       const mockProduct = {
-        id: 42,
+        id: '42',
         productName: 'Widget X',
         category: { id: 5, name: 'Electronics' },
         productImages: [],
@@ -283,7 +283,7 @@ describe('ProductService', () => {
 
       expect(prisma.product.findUnique).toHaveBeenCalledTimes(1);
       const findCall = prisma.product.findUnique.mock.calls[0][0];
-      expect(findCall.where.id).toBe(42);
+      expect(findCall.where.id).toBe('42');
 
       expect((result as any).status).toBe(true);
     });
@@ -374,6 +374,65 @@ describe('ProductService', () => {
       expect(result.status).toBe(false);
       expect(result.message).toBe('error in update product');
       expect(result.error).toBeDefined();
+    });
+  });
+
+  describe('dropship helpers', () => {
+    it('marks CUID products as dropshipable without integer coercion', async () => {
+      const productId = 'clx_product_123';
+      prisma.product.findFirst.mockResolvedValue({
+        id: productId,
+        userId: 'seller-1',
+        isDropshipped: false,
+        status: 'ACTIVE',
+      });
+      prisma.product.update.mockResolvedValue({
+        id: productId,
+        isDropshipable: true,
+      });
+
+      const result = await service.markProductAsDropshipable(
+        productId,
+        true,
+        { dropshipMinMarkup: 5, dropshipMaxMarkup: 20 },
+        { user: { id: 'seller-1' } },
+      );
+
+      expect(result.status).toBe(true);
+      expect(prisma.product.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: productId,
+          userId: 'seller-1',
+          isDropshipped: false,
+          status: 'ACTIVE',
+        },
+      });
+    });
+
+    it('lists any opted-in active product for dropship, not only productType D', async () => {
+      prisma.product.findMany.mockResolvedValue([]);
+      prisma.product.count.mockResolvedValue(0);
+
+      const result = await service.getAvailableProductsForDropship(
+        1,
+        10,
+        '',
+        undefined,
+        undefined,
+        undefined,
+        { user: { id: 'vendor-1' } },
+      );
+
+      expect(result.status).toBe(true);
+      const where = prisma.product.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        status: 'ACTIVE',
+        isDropshipable: true,
+        isDropshipped: false,
+        userId: { not: 'vendor-1' },
+        deletedAt: null,
+      });
+      expect(where.productType).toBeUndefined();
     });
   });
 });

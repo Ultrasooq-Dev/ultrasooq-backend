@@ -1341,10 +1341,29 @@ export class UserService {
     try {
       // Handle both user object structures (from User model or custom object)
       const userId = req.user.id || req.user.userId;
+      const tagName = String(payload.tagName || '').trim().replace(/\s+/g, ' ');
+      if (!tagName) {
+        return { status: false, message: 'tagName is required' };
+      }
+      const existingTag = await this.prisma.tags.findFirst({
+        where: {
+          tagName: { equals: tagName, mode: 'insensitive' },
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      });
+      if (existingTag) {
+        return {
+          status: true,
+          message: 'Added Succesfully',
+          data: existingTag,
+        };
+      }
+      const numericUserId = Number(userId);
       let addTag = await this.prisma.tags.create({
         data: {
-          tagName: payload.tagName,
-          addedBy: userId,
+          tagName,
+          addedBy: Number.isInteger(numericUserId) ? numericUserId : null,
         },
       });
 

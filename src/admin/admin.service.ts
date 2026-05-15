@@ -2462,9 +2462,10 @@ export class AdminService {
 
       if (!getAllRfqQuotes) {
         return {
-          status: false,
-          message: 'Not Found',
+          status: true,
+          message: 'Fetched RFQ quotes successfully',
           data: [],
+          totalCount: 0,
         };
       }
 
@@ -2476,7 +2477,7 @@ export class AdminService {
 
       return {
         status: true,
-        message: 'Not Found',
+        message: 'Fetched RFQ quotes successfully',
         data: getAllRfqQuotes,
         totalCount: getAllRfqQuotesCount,
       };
@@ -3263,6 +3264,7 @@ export class AdminService {
           include: {
             order_orderProducts: {
               select: {
+                id: true,
                 salePrice: true,
                 purchasePrice: true,
                 orderQuantity: true,
@@ -3292,6 +3294,11 @@ export class AdminService {
         if (!currentTotal || currentTotal === 0) {
           let calculatedTotal = 0;
           if (order.order_orderProducts && order.order_orderProducts.length > 0) {
+            order.order_orderProducts = order.order_orderProducts.map((product: any) => ({
+              ...product,
+              orderProductId: product.id,
+              orderItemId: product.id,
+            }));
             order.order_orderProducts.forEach((product: any) => {
               const price = product.salePrice 
                 ? (typeof product.salePrice === 'object' && product.salePrice.toNumber 
@@ -3313,6 +3320,11 @@ export class AdminService {
             : 0;
           order.totalCustomerPay = calculatedTotal + deliveryCharge;
         } else {
+          order.order_orderProducts = (order.order_orderProducts || []).map((product: any) => ({
+            ...product,
+            orderProductId: product.id,
+            orderItemId: product.id,
+          }));
           // Ensure it's a number, not a Decimal object
           order.totalCustomerPay = currentTotal;
         }
@@ -3637,9 +3649,10 @@ export class AdminService {
 
       if (!services || services.length === 0) {
         return {
-          status: false,
-          message: 'No services found',
+          status: true,
+          message: 'Fetched services successfully',
           data: [],
+          totalCount: 0,
         };
       }
 

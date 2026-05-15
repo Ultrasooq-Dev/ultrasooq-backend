@@ -6,7 +6,9 @@ import { WalletWithdrawDto } from './dto/wallet-withdraw.dto';
 import { WalletTransferDto } from './dto/wallet-transfer.dto';
 import { WalletSettingsDto } from './dto/wallet-settings.dto';
 import { WalletTransactionsDto } from './dto/wallet-transactions.dto';
+import { AdminWalletAdjustmentDto } from './dto/admin-wallet-adjustment.dto';
 import { AuthGuard } from '../guards/AuthGuard';
+import { SuperAdminAuthGuard } from '../guards/SuperAdminAuthGuard';
 
 @ApiTags('wallet')
 @ApiBearerAuth('JWT-auth')
@@ -121,7 +123,7 @@ export class WalletController {
  * Admin wallet controller
  */
 @Controller('admin/wallets')
-@UseGuards(AuthGuard)
+@UseGuards(SuperAdminAuthGuard)
 export class AdminWalletController {
   constructor(private readonly walletService: WalletService) {}
 
@@ -148,5 +150,17 @@ export class AdminWalletController {
   @Get('transactions')
   async getAllTransactions(@Query() query: any) {
     return this.walletService.getAllTransactions(query);
+  }
+
+  /**
+   * Guarded admin-only wallet adjustment.
+   */
+  @Post('adjust')
+  async adjustWallet(@Req() req: any, @Body() body: AdminWalletAdjustmentDto) {
+    return this.walletService.adjustWalletByAdmin(body, {
+      actorUserId: req?.user?.id,
+      actorEmail: req?.user?.email,
+      actorUserType: req?.user?.userType,
+    });
   }
 }

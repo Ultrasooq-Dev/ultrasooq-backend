@@ -26,7 +26,13 @@ import {
 } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
 import * as bcrypt from 'bcrypt';
-import { PrismaClient } from '../generated/prisma/client';
+import {
+  PrismaClient,
+  WalletReferenceType,
+  WalletStatus,
+  WalletTransactionStatus,
+  WalletTransactionType,
+} from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
   sendVerificationMail,
@@ -104,6 +110,9 @@ const trustedOrigins = process.env.CORS_ORIGINS?.split(',')
 
 const appUrl = process.env.FRONTEND_SERVER || 'http://localhost:4001';
 const isDevEnv = process.env.NODE_ENV !== 'production';
+const signupSimulationCreditCurrency = (
+  process.env.SIGNUP_SIMULATION_CREDIT_CURRENCY || 'OMR'
+).toUpperCase();
 // TODO: populate with the User.id of platform admins once known. Members
 // listed here gain admin permissions via Better Auth's `admin` plugin
 // regardless of their `role` column value.
@@ -111,6 +120,99 @@ const adminUserIds: string[] = (process.env.BETTER_AUTH_ADMIN_USER_IDS ?? '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+
+function isTruthyEnv(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((value || '').toLowerCase());
+}
+
+function shouldGrantSignupSimulationCredit(): boolean {
+  const enabled = process.env.ENABLE_SIGNUP_SIMULATION_CREDIT;
+  if (enabled !== undefined && enabled.toLowerCase() !== 'auto') {
+    return isTruthyEnv(enabled);
+  }
+
+  return isDevEnv;
+}
+
+function getSignupSimulationCreditAmount(): number {
+  const amount = Number(process.env.SIGNUP_SIMULATION_CREDIT_AMOUNT ?? 1000);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+async function grantSignupSimulationCredit(user: { id?: string; email?: string }) {
+  const amount = getSignupSimulationCreditAmount();
+  if (!shouldGrantSignupSimulationCredit() || amount <= 0 || !user.id) {
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existingWallet = await tx.wallet.findUnique({
+        where: {
+          userId_currencyCode: {
+            userId: user.id!,
+            currencyCode: signupSimulationCreditCurrency,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existingWallet) {
+        return;
+      }
+
+      const wallet = await tx.wallet.create({
+        data: {
+          userId: user.id!,
+          currencyCode: signupSimulationCreditCurrency,
+          balance: amount,
+          frozenBalance: 0,
+          status: WalletStatus.ACTIVE,
+        },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          transactionType: WalletTransactionType.BONUS,
+          amount,
+          balanceBefore: 0,
+          balanceAfter: amount,
+          referenceType: WalletReferenceType.BONUS,
+          referenceId: `signup-simulation-credit:${user.id}`,
+          description: `Signup simulation credit (${amount} ${signupSimulationCreditCurrency})`,
+          status: WalletTransactionStatus.COMPLETED,
+          metadata: {
+            reason: 'SIGNUP_SIMULATION_CREDIT',
+            userId: user.id,
+            email: user.email ?? null,
+            amount,
+            currencyCode: signupSimulationCreditCurrency,
+          },
+        },
+      });
+
+      await tx.walletSettings.upsert({
+        where: { userId: user.id! },
+        update: {},
+        create: {
+          userId: user.id!,
+          autoWithdraw: false,
+          withdrawLimit: 0,
+          dailyLimit: 0,
+          monthlyLimit: 0,
+          notificationPreferences: {},
+        },
+      });
+    });
+  } catch (error) {
+    console.error('[auth] Failed to grant signup simulation credit', {
+      userId: user.id,
+      email: user.email,
+      error,
+    });
+  }
+}
 
 export const auth = betterAuth({
   appName: 'Ultrasooq',
@@ -127,6 +229,7 @@ export const auth = betterAuth({
         // by removing this hook and flipping requireEmailVerification /
         // sendOnSignUp back to true below.
         before: async (user) => ({ data: { ...user, emailVerified: true } }),
+        after: grantSignupSimulationCredit,
       },
     },
     session: {
