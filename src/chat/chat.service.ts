@@ -1873,20 +1873,14 @@ export class ChatService {
         return { status: 200, message: 'success', data: updated };
     }
 
-    // ─── Admin Support Channel ──────────────────────────────────────
+    // ─── Admin Support Channel (DEPRECATED — moved to SupportModule) ──
     //
-    // A "support" room is a regular `Room` row whose `rfqId` and
-    // `orderProductId` are both NULL (i.e. a general/private chat),
-    // with exactly two participants: the user, and a platform admin.
-    //
-    // We deliberately do NOT introduce a new column on `Room` — keeping
-    // schema flat means existing channel-summary, archiving and unread
-    // counters work for support rooms without any other refactor.
-    //
-    // `pickSupportAdminId` is the single decision point for who the
-    // user talks to: today it's "first ACTIVE userType=ADMIN", but if
-    // routing rules ever change (language, country, on-call rota) only
-    // this helper has to change.
+    // The /chat/support/* endpoints below were the first iteration. They
+    // wrote into Room/Message which is read by the chat UI but NOT by
+    // the admin's Support Dashboard (which reads SupportConversation).
+    // Replaced by src/support/support.controller.ts which writes into
+    // the same tables the admin dashboard reads. Kept the helpers here
+    // for reference only — they're no longer wired to any controller.
 
     private async pickSupportAdminId(): Promise<string> {
         const admin = await this.prisma.user.findFirst({

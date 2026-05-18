@@ -61,6 +61,7 @@ import { VerificationModule } from './verification/verification.module';
 import { RfqProductModule } from './rfq-product/rfq-product.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ChatModule } from './chat/chat.module';
+import { SupportModule } from './support/support.module';
 import { PolicyModule } from './policy/policy.module';
 import { FeesModule } from './fees/fees.module';
 import { TeamMemberModule } from './team-member/team-member.module';
@@ -195,6 +196,7 @@ import { AuthBetterModule } from './auth-better/auth-better.module';
     RfqProductModule,     // Request-for-Quote product management
     WishlistModule,       // User wishlists
     ChatModule,           // Real-time chat (Socket.io gateway), rooms, messages
+    SupportModule,        // User-facing "Talk to admin" widget (writes SupportConversation/Message read by /admin/support)
     PolicyModule,         // Store/seller policy management
     FeesModule,           // Platform fee configuration (location-based)
     TeamMemberModule,     // Team member management for seller accounts

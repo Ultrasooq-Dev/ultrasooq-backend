@@ -500,41 +500,4 @@ export class ChatController {
     return this.chatService.updateRfqAlternative(req.user.id, roomId, productId, payload);
   }
 
-  // ─── Admin Support Channel ──────────────────────────────────────
-  //
-  // The /chat/support/* routes let a user (typically one whose account is
-  // not ACTIVE — WAITING / INACTIVE / REJECT) open a chat with a platform
-  // admin without going through the RFQ negotiation flow.
-  //
-  // We intentionally keep the surface tiny (open / send / read) rather
-  // than reusing /chat/send-message, because that DTO requires rfqId.
-
-  @UseGuards(AuthGuard)
-  @Post('/support/open-room')
-  async openSupportRoom(@Request() req: any) {
-    return this.chatService.openSupportRoom(req.user.id);
-  }
-
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @UseGuards(AuthGuard)
-  @Post('/support/send-message')
-  async sendSupportMessage(
-    @Request() req: any,
-    @Body() body: { roomId: number; content: string },
-  ) {
-    return this.chatService.sendSupportMessage(
-      req.user.id,
-      Number(body?.roomId),
-      String(body?.content ?? ''),
-    );
-  }
-
-  @UseGuards(AuthGuard)
-  @Get('/support/messages')
-  async getSupportMessages(
-    @Request() req: any,
-    @Query('roomId', ParseIntPipe) roomId: number,
-  ) {
-    return this.chatService.getSupportMessages(req.user.id, roomId);
-  }
 }
