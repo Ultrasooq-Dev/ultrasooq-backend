@@ -121,13 +121,37 @@ export class AuthGuard implements CanActivate {
           const subUser = await this.prisma.user.findUnique({
             where: { id: String(claimedId) },
           });
+          // Mirror the BetterAuthGuard's isActive/status gate so a
+          // suspended / pending / soft-deleted user can't keep using a
+          // pre-issued JWT after admin action.
+          //
+          // IMPORTANT: If the JWT points to a user whose state is no longer
+          // valid (WAITING, INACTIVE, REJECT, DELETE, or isActive=false), we
+          // FALL THROUGH to the Better Auth path instead of throwing 401.
+          // Reason: it's common for the frontend to carry a stale
+          // `ultrasooq_accessToken` cookie from a previous switchAccount
+          // (e.g. a sub that was created but never approved) WHILE the user
+          // is concurrently authenticated as the master via a fresh Better
+          // Auth session. Throwing here would 401 the master's request just
+          // because of a leftover sub-account JWT. Letting Better Auth handle
+          // it lets the master in normally; if Better Auth ALSO rejects, we
+          // 401 at the bottom of this function.
           if (subUser) {
-            req.user = subUser;
-            return true;
+            const subActive =
+              subUser.isActive !== false &&
+              subUser.status !== 'INACTIVE' &&
+              subUser.status !== 'WAITING' &&
+              subUser.status !== 'REJECT' &&
+              subUser.status !== 'DELETE';
+            if (subActive) {
+              req.user = subUser;
+              return true;
+            }
+            // else: stale JWT → fall through
           }
         }
       }
-      // Bad/expired bearer → fall through to Better Auth rather than 401.
+      // Bad/expired bearer or stale-state user → fall through to Better Auth.
     }
 
     let session;
@@ -156,6 +180,23 @@ export class AuthGuard implements CanActivate {
     });
     if (!fullUser) {
       throw new UnauthorizedException('Session user not found');
+    }
+
+    // Mirror the BetterAuthGuard's isActive/status gate so a suspended,
+    // pending-admin-approval, or soft-deleted user can't keep using a
+    // pre-issued Better Auth session after their state changes. Better Auth's
+    // session.create.before hook blocks NEW sign-ins for these, but EXISTING
+    // sessions need this per-request check too.
+    if (
+      fullUser.isActive === false ||
+      fullUser.status === 'INACTIVE' ||
+      fullUser.status === 'WAITING' ||
+      fullUser.status === 'REJECT' ||
+      fullUser.status === 'DELETE'
+    ) {
+      throw new UnauthorizedException(
+        'This account is not active. Please contact support.',
+      );
     }
 
     req.user = fullUser;

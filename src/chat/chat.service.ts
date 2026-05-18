@@ -1872,4 +1872,185 @@ export class ChatService {
         });
         return { status: 200, message: 'success', data: updated };
     }
+
+    // ─── Admin Support Channel (DEPRECATED — moved to SupportModule) ──
+    //
+    // The /chat/support/* endpoints below were the first iteration. They
+    // wrote into Room/Message which is read by the chat UI but NOT by
+    // the admin's Support Dashboard (which reads SupportConversation).
+    // Replaced by src/support/support.controller.ts which writes into
+    // the same tables the admin dashboard reads. Kept the helpers here
+    // for reference only — they're no longer wired to any controller.
+
+    private async pickSupportAdminId(): Promise<string> {
+        const admin = await this.prisma.user.findFirst({
+            where: { userType: 'ADMIN', status: 'ACTIVE' },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+        });
+        if (!admin) {
+            throw new NotFoundException('No active admin available for support');
+        }
+        return admin.id;
+    }
+
+    /**
+     * @method openSupportRoom
+     * @description Returns the support chat room for a given user, creating one
+     *              on demand if none exists. Idempotent: calling it repeatedly
+     *              for the same user yields the same room.
+     *
+     * @dataflow user.id --> pick admin --> find existing general room shared
+     *           by both --> reuse OR create new room+participants.
+     */
+    async openSupportRoom(userId: string) {
+        const adminId = await this.pickSupportAdminId();
+
+        // Reuse an existing support thread between this user and any admin so
+        // history is not fragmented when the routing rule changes admins.
+        const existing = await this.prisma.room.findFirst({
+            where: {
+                rfqId: null,
+                orderProductId: null,
+                AND: [
+                    { participants: { some: { userId } } },
+                    {
+                        participants: {
+                            some: {
+                                user: { userType: 'ADMIN' },
+                            },
+                        },
+                    },
+                ],
+            },
+            orderBy: { updatedAt: 'desc' },
+            include: {
+                participants: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                firstName: true,
+                                lastName: true,
+                                userType: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (existing) {
+            const adminParticipant = existing.participants.find(
+                (p) => p.user?.userType === 'ADMIN',
+            );
+            return {
+                status: 200,
+                message: 'success',
+                data: {
+                    roomId: existing.id,
+                    admin: adminParticipant?.user ?? { id: adminId },
+                    created: false,
+                },
+            };
+        }
+
+        const room = await this.prisma.room.create({
+            data: {
+                creatorId: userId,
+                participants: {
+                    create: [{ userId }, { userId: adminId }],
+                },
+            },
+        });
+
+        const adminUser = await this.prisma.user.findUnique({
+            where: { id: adminId },
+            select: { id: true, firstName: true, lastName: true, userType: true },
+        });
+
+        return {
+            status: 201,
+            message: 'support room created',
+            data: { roomId: room.id, admin: adminUser, created: true },
+        };
+    }
+
+    /**
+     * @method sendSupportMessage
+     * @description Persists a plain-text message in a verified support room.
+     *              Verifies the caller is actually a participant of the room
+     *              so users cannot post into other people's threads by ID.
+     */
+    async sendSupportMessage(userId: string, roomId: number, content: string) {
+        const text = (content ?? '').toString().trim();
+        if (!text) throw new BadRequestException('Message content is required');
+
+        const room = await this.prisma.room.findUnique({
+            where: { id: roomId },
+            select: { id: true, rfqId: true, orderProductId: true },
+        });
+        if (!room) throw new NotFoundException('Support room not found');
+        if (room.rfqId || room.orderProductId) {
+            throw new BadRequestException('Not a support room');
+        }
+
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { roomId, userId },
+        });
+        if (!participant) throw new ForbiddenException('Not a participant of this room');
+
+        const message = await this.prisma.message.create({
+            data: {
+                content: text,
+                userId,
+                roomId,
+            },
+            include: {
+                user: {
+                    select: { id: true, firstName: true, lastName: true, userType: true },
+                },
+            },
+        });
+
+        // Bump the room's updatedAt so it floats to the top of the admin's inbox.
+        await this.prisma.room.update({
+            where: { id: roomId },
+            data: { updatedAt: new Date() },
+        });
+
+        return { status: 201, message: 'sent', data: message };
+    }
+
+    /**
+     * @method getSupportMessages
+     * @description Returns chronological messages for a support room, gated
+     *              on participant membership.
+     */
+    async getSupportMessages(userId: string, roomId: number) {
+        const participant = await this.prisma.roomParticipants.findFirst({
+            where: { roomId, userId },
+        });
+        if (!participant) throw new ForbiddenException('Not a participant of this room');
+
+        const messages = await this.prisma.message.findMany({
+            where: { roomId },
+            orderBy: { createdAt: 'asc' },
+            include: {
+                user: {
+                    select: { id: true, firstName: true, lastName: true, userType: true },
+                },
+            },
+        });
+
+        // Best-effort mark inbound as read; never block the response on this.
+        try {
+            await this.prisma.message.updateMany({
+                where: { roomId, userId: { not: userId }, status: 'UNREAD' },
+                data: { status: 'READ' },
+            });
+        } catch { /* swallow — read-receipts are non-critical */ }
+
+        return { status: 200, message: 'success', data: messages };
+    }
 }

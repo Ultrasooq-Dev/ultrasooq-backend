@@ -66,7 +66,7 @@ const ACCOUNTS = [
 ];
 
 async function main() {
-  const passwordHash = await bcrypt.hash('Password123!', 10);
+  const passwordHash = await bcrypt.hash('Test@1234', 10);
 
   for (const acct of ACCOUNTS) {
     const user = await prisma.user.upsert({

@@ -20,6 +20,9 @@ export enum NotificationType {
   BUYGROUP = 'BUYGROUP',
   STOCK = 'STOCK',
   PRICE = 'PRICE',
+  // Admin-side ticket events from the "Talk to admin" support widget.
+  // Included in the admin notification feed filter — see admin.service.ts.
+  SUPPORT = 'SUPPORT',
 }
 
 /**
@@ -527,6 +530,66 @@ export async function notifyAdminsDropshipableProduct(
       });
     }
   } catch (error) {
+  }
+}
+
+/**
+ * Notify all admins when a user sends a new message in the "Talk to admin"
+ * support widget. Fans the notification out to every ACTIVE admin so any
+ * member of the support team sees the bell light up — the conversation
+ * itself can later be claimed via `assigneeId` from the dashboard.
+ *
+ * Type is `SUPPORT` (not the generic `MESSAGE`) so the admin notification
+ * filter can keep excluding user-facing MESSAGE notifications while still
+ * surfacing support tickets.
+ */
+export async function notifyAdminsSupportMessage(
+  notificationService: NotificationService,
+  prisma: PrismaService,
+  args: {
+    conversationId: number;
+    senderId: string;
+    senderName: string;
+    senderEmail?: string | null;
+    preview: string;
+    isNewConversation: boolean;
+  },
+) {
+  try {
+    const adminIds = await getAllAdminUserIds(prisma);
+    const title = args.isNewConversation
+      ? 'New support conversation'
+      : 'New support message';
+    const previewTrimmed = args.preview.length > 120
+      ? `${args.preview.slice(0, 117)}…`
+      : args.preview;
+    const senderLabel = args.senderEmail
+      ? `${args.senderName} (${args.senderEmail})`
+      : args.senderName;
+    const message = args.isNewConversation
+      ? `${senderLabel} opened a new ticket: "${previewTrimmed}"`
+      : `${senderLabel}: "${previewTrimmed}"`;
+
+    for (const adminId of adminIds) {
+      await notificationService.createNotification({
+        userId: adminId,
+        type: NotificationType.SUPPORT,
+        title,
+        message,
+        data: {
+          conversationId: args.conversationId,
+          senderId: args.senderId,
+          senderName: args.senderName,
+          isNewConversation: args.isNewConversation,
+        },
+        link: `/support?conversation=${args.conversationId}`,
+        icon: '🛟',
+      });
+    }
+  } catch (error) {
+    // Never let notification failures break the user-side send. The
+    // SupportConversation row + SupportMessage row are already
+    // committed, so the dashboard still picks it up on next poll.
   }
 }
 

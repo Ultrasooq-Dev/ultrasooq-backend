@@ -3009,17 +3009,39 @@ export class UserService {
       }
 
       const subAccounts = await this.prisma.user.findMany({
-        where: { addedBy: master.id },
+        where: {
+          addedBy: master.id,
+          // User table uses status='DELETE' for soft-delete (no deletedAt column on User)
+          status: { not: 'DELETE' },
+        },
         orderBy: { createdAt: 'asc' },
       });
 
       const activeId = req?.user?.id;
+      const familyIds = [master.id, ...subAccounts.map((s) => s.id)];
+
+      // Single batched query: unread notification counts grouped by userId.
+      // Map them back onto the accounts in the decorate() step so the /
+      // my-accounts UI can show "Notifications: N" per card without an N+1.
+      const notifGroups = await this.prisma.notification.groupBy({
+        by: ['userId'],
+        where: { userId: { in: familyIds }, read: false },
+        _count: { _all: true },
+      });
+      const notifByUser = new Map<string, number>(
+        notifGroups.map((g) => [g.userId, g._count._all]),
+      );
+
       const decorate = (u: any) => ({
         ...u,
         isCurrentAccount: u.id === activeId,
-        // Aliases the frontend already reads
+        // Frontend reads these per-account counters in the notification
+        // summary block on /my-accounts. Orders + messages stay at 0 for now
+        // (not yet wired — they'd each need a similar groupBy on their
+        // respective tables). Notifications uses the live unread count.
         orders: 0,
         messages: 0,
+        notifications: notifByUser.get(u.id) || 0,
       });
 
       const mainAccount = decorate(master);
@@ -3061,17 +3083,49 @@ export class UserService {
         return { status: false, message: 'tradeRole is required (BUYER | FREELANCER | COMPANY)' };
       }
 
-      // Synthesize a unique email/username for the sub-account User row.
-      // The user never logs in with this — auth always happens against the master.
+      // Business rule: each user (master + their subs) may only have ONE BUYER
+      // identity. This is the "shop as me" persona — the buyer is universal so
+      // there's no reason to have multiple. Master's own tradeRole counts too.
+      if (tradeRole === 'BUYER') {
+        const existingBuyer = await this.findExistingBuyerInFamily(master.id);
+        if (existingBuyer) {
+          return {
+            status: false,
+            message:
+              'You already have a buyer account. Only one buyer account is allowed per user.',
+          };
+        }
+      }
+
+      // Sub-account model:
+      //   - COMPANY / FREELANCER subs are ORGANIZATION-style entities. They
+      //     never log in directly — the master is the credential owner and
+      //     switches into the org via /user/switchAccount. So they don't
+      //     need an email address at all. `User.email` is now nullable
+      //     specifically for this case (Postgres allows multiple NULLs in a
+      //     UNIQUE column index, so the constraint still holds for real
+      //     users with real emails).
+      //   - BUYER subs are legacy and no longer created via this endpoint
+      //     (since the master is permanently BUYER). The branch is kept for
+      //     forward-compatibility with the BUYER cap rule.
+      //
+      // Username is a short, non-leaking identifier (no master id in it).
       const suffix = randomUUID().slice(0, 8);
-      const [local, domain] = (master.email || `noreply+${master.id}@ultrasooq.local`).split('@');
-      const subEmail = `${local}+sub-${suffix}@${domain || 'ultrasooq.local'}`;
-      const subUsername = `${master.username || master.id}-sub-${suffix}`;
+      const subUsername = `sub-${suffix}-${randomUUID().slice(0, 8)}`;
+
+      const requiresApproval = tradeRole === 'COMPANY' || tradeRole === 'FREELANCER';
+      const initialStatus = requiresApproval ? 'WAITING' : 'ACTIVE';
 
       const newSub = await this.prisma.user.create({
         data: {
           id: randomUUID(),
-          email: subEmail,
+          // null for org sub-accounts; BUYER subs (legacy) still get a synth
+          // email since `email` may not be null on rows that pretend to be
+          // people (e.g. if any code path needs a non-null email handle).
+          email:
+            tradeRole === 'BUYER'
+              ? `${(master.email || 'noreply').split('@')[0]}+sub-${suffix}@${(master.email || '@ultrasooq.local').split('@')[1] || 'ultrasooq.local'}`
+              : null,
           emailVerified: true,
           name: payload.accountName?.trim() || master.name || 'Sub Account',
           firstName: master.firstName,
@@ -3087,8 +3141,8 @@ export class UserService {
           companyWebsite: payload.companyWebsite ?? null,
           companyTaxId: payload.companyTaxId ?? null,
           addedBy: master.id,
-          status: 'ACTIVE',
-          isActive: true,
+          status: initialStatus,
+          isActive: !requiresApproval,
           username: subUsername,
           displayUsername: subUsername,
           role: 'user',
@@ -3120,6 +3174,156 @@ export class UserService {
     }
   }
 
+  /**
+   * Looks for a BUYER account in the family rooted at `masterId`. Counts
+   *   1. the master itself (if its tradeRole is BUYER)
+   *   2. any sub whose `addedBy === masterId` and `tradeRole === 'BUYER'`
+   * Excludes soft-deleted (`status='DELETE'`) rows so a deleted buyer doesn't
+   * permanently block creating a replacement. Returns the User row or null.
+   *
+   * Used by:
+   *   - `createAccount` to enforce the one-BUYER-per-family cap
+   *   - `setTradeRole` to skip auto-creation if a buyer is already there
+   */
+  private async findExistingBuyerInFamily(masterId: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: masterId, tradeRole: 'BUYER', status: { not: 'DELETE' } },
+          {
+            addedBy: masterId,
+            tradeRole: 'BUYER',
+            status: { not: 'DELETE' },
+          },
+        ],
+      },
+    });
+  }
+
+  /**
+   * Creates a BUYER sub-account for the given master. Idempotent: if a buyer
+   * already exists in the family (or the master itself is the buyer), returns
+   * that one instead of creating a duplicate.
+   *
+   * Intended for the post-Step-3 hook in AuthBetterController.setTradeRole —
+   * when a user promotes to COMPANY or FREELANCER we want them to retain a
+   * buyer identity for shopping, so we auto-spawn one. Personal info is
+   * inherited from the master (firstName, lastName, phone, cc).
+   *
+   * The BUYER sub is created ACTIVE/isActive=true immediately (no identity
+   * verification needed for buyers — same rule as the manual createAccount
+   * path).
+   */
+  async ensureBuyerSubForMaster(masterId: string) {
+    const master = await this.prisma.user.findUnique({ where: { id: masterId } });
+    if (!master) return null;
+    const existing = await this.findExistingBuyerInFamily(masterId);
+    if (existing) return existing;
+
+    const suffix = randomUUID().slice(0, 8);
+    const [local, domain] = (
+      master.email || `noreply+${master.id}@ultrasooq.local`
+    ).split('@');
+    const subEmail = `${local}+sub-${suffix}@${domain || 'ultrasooq.local'}`;
+    const subUsername = `sub-${suffix}-${randomUUID().slice(0, 8)}`;
+
+    return this.prisma.user.create({
+      data: {
+        id: randomUUID(),
+        email: subEmail,
+        emailVerified: true,
+        name: master.name || 'Buyer Account',
+        firstName: master.firstName,
+        lastName: master.lastName,
+        phoneNumber: master.phoneNumber,
+        cc: master.cc,
+        tradeRole: 'BUYER',
+        accountName: 'My Buyer Account',
+        addedBy: master.id,
+        status: 'ACTIVE',
+        isActive: true,
+        username: subUsername,
+        displayUsername: subUsername,
+        role: 'user',
+      },
+    });
+  }
+
+  /**
+   * Called by the login flow right after Better Auth establishes the master
+   * session. If the master previously switched into a sub-account, this
+   * issues a fresh JWT for that sub so the client can rehydrate the cookie
+   * and land the user on the same persona they ended last session on.
+   *
+   * Safety:
+   *   - Skips restoration if the saved sub no longer exists.
+   *   - Skips restoration if the saved sub is not ACTIVE / isActive=true
+   *     (so e.g. a sub that was rejected mid-session doesn't get reused).
+   *   - Confirms the sub still belongs to this master (defends against the
+   *     edge case where addedBy was mutated externally).
+   * In all skip cases we clear `lastActiveAccountId` so the stale pointer
+   * isn't tried again on the next sign-in.
+   */
+  async restoreLastAccount(req: any) {
+    try {
+      const master = await this.resolveMasterUser(req?.user);
+      if (!master) return { status: false, message: 'Unauthorized' };
+
+      // Re-fetch fresh because req.user may have been hydrated before
+      // lastActiveAccountId was set in a previous request.
+      const fresh = await this.prisma.user.findUnique({
+        where: { id: master.id },
+        select: { id: true, lastActiveAccountId: true },
+      });
+      const targetId = fresh?.lastActiveAccountId;
+      if (!targetId) {
+        return { status: true, message: 'Nothing to restore', data: { restored: false } };
+      }
+
+      const target = await this.prisma.user.findUnique({
+        where: { id: targetId },
+      });
+      const stillValid =
+        target &&
+        target.addedBy === master.id &&
+        target.status === 'ACTIVE' &&
+        target.isActive === true;
+      if (!stillValid) {
+        // Clear stale pointer so we don't keep retrying.
+        await this.prisma.user.update({
+          where: { id: master.id },
+          data: { lastActiveAccountId: null },
+        });
+        return {
+          status: true,
+          message: 'Last account no longer available',
+          data: { restored: false },
+        };
+      }
+
+      const tokenResult = await this.authService.getToken({
+        id: target.id,
+        tradeRole: target.tradeRole,
+      });
+      return {
+        status: true,
+        message: 'Last account restored',
+        data: {
+          restored: true,
+          account: target,
+          accessToken: tokenResult.accessToken,
+          refreshToken: tokenResult.accessToken,
+        },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error restoring last account',
+        error: getErrorMessage(error),
+      };
+    }
+  }
+
   async switchAccount(payload: any, req: any) {
     try {
       const master = await this.resolveMasterUser(req?.user);
@@ -3140,6 +3344,15 @@ export class UserService {
         }
         target = found;
       }
+
+      // Remember which persona the user just switched into so next sign-in
+      // can restore them automatically. NULL when they're on the master
+      // (clearing prior state).
+      const isSwitchingToMaster = String(target.id) === String(master.id);
+      await this.prisma.user.update({
+        where: { id: master.id },
+        data: { lastActiveAccountId: isSwitchingToMaster ? null : target.id },
+      });
 
       const tokenResult = await this.authService.getToken({
         id: target.id,
@@ -3172,6 +3385,67 @@ export class UserService {
       status: true,
       message: 'No migration needed — accounts are flat User rows linked via addedBy',
     };
+  }
+
+  /**
+   * Soft-delete a sub-account. The master can delete any sub-account they
+   * created (addedBy === master.id). Soft-delete preserves all FK chains
+   * (orders, products, reviews) — the row stays but `status = DELETE` excludes
+   * it from queries with the standard `where: { deletedAt: null }` filter.
+   *
+   * Master cannot be deleted via this endpoint (would orphan the family).
+   * Sub-accounts cannot delete other sub-accounts — must be acting as master
+   * (or the target must be the actor itself, i.e. self-delete is allowed).
+   */
+  async deleteSubAccount(targetId: string, req: any) {
+    try {
+      const master = await this.resolveMasterUser(req?.user);
+      if (!master) {
+        return { status: false, message: 'Unauthorized' };
+      }
+      if (!targetId || String(targetId) === String(master.id)) {
+        return {
+          status: false,
+          message: 'Cannot delete the master account via this endpoint',
+        };
+      }
+
+      const target = await this.prisma.user.findUnique({
+        where: { id: String(targetId) },
+      });
+      if (!target) {
+        return { status: false, message: 'Sub-account not found' };
+      }
+      if (target.addedBy !== master.id) {
+        return {
+          status: false,
+          message: 'Sub-account not owned by you',
+        };
+      }
+      if (target.status === 'DELETE') {
+        return { status: false, message: 'Sub-account already deleted' };
+      }
+
+      await this.prisma.user.update({
+        where: { id: target.id },
+        data: {
+          status: 'DELETE',
+          isActive: false,
+        },
+      });
+
+      return {
+        status: true,
+        message: 'Sub-account deleted',
+        data: { id: target.id },
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: 'Error deleting sub-account',
+        error: getErrorMessage(error),
+      };
+    }
   }
 
   async currentAccount(req: any) {

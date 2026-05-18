@@ -499,4 +499,5 @@ export class ChatController {
   ) {
     return this.chatService.updateRfqAlternative(req.user.id, roomId, productId, payload);
   }
+
 }
