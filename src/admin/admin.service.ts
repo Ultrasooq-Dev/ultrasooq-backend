@@ -5201,7 +5201,21 @@ export class AdminService {
         this.prisma.supportConversation.findMany({
           where: whereCondition,
           include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true } },
+            // accountName + companyName included so the admin list can show
+            // the most-identifying label for sub-accounts whose firstName/
+            // lastName aren't populated (org subs).
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                accountName: true,
+                companyName: true,
+                email: true,
+                profilePicture: true,
+                tradeRole: true,
+              },
+            },
             assignee: { select: { id: true, firstName: true, lastName: true, email: true } },
             messages: { orderBy: { createdAt: 'desc' }, take: 1 },
           },
@@ -5225,7 +5239,19 @@ export class AdminService {
       const record = await this.prisma.supportConversation.findUnique({
         where: { id: convId },
         include: {
-          user: { select: { id: true, firstName: true, lastName: true, email: true, profilePicture: true } },
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              accountName: true,
+              companyName: true,
+              email: true,
+              profilePicture: true,
+              tradeRole: true,
+              status: true,
+            },
+          },
           assignee: { select: { id: true, firstName: true, lastName: true, email: true } },
           messages: { orderBy: { createdAt: 'asc' } },
         },
