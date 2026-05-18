@@ -4378,8 +4378,10 @@ export class AdminService {
         userId: adminId,
         // Only show admin-specific notification types
         // Exclude user-facing notifications like RFQ, ORDER, MESSAGE, etc.
+        // SUPPORT is the "Talk to admin" widget channel — admin-facing,
+        // not the same as the generic per-user MESSAGE type.
         type: {
-          in: ['PRODUCT', 'ACCOUNT', 'SYSTEM'],
+          in: ['PRODUCT', 'ACCOUNT', 'SYSTEM', 'SUPPORT'],
         },
       };
 

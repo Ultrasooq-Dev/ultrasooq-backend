@@ -17,6 +17,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from '../notification/notification.service';
+import { notifyAdminsSupportMessage } from '../notification/notification.helper';
 
 type InitWidgetOpts = {
   metadata?: Record<string, any> | null;
@@ -26,7 +28,10 @@ type InitWidgetOpts = {
 
 @Injectable()
 export class SupportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   private widgetPayload(conversation: any, messages: any[] = [], created = false) {
     return {
@@ -123,6 +128,12 @@ export class SupportService {
       throw new ForbiddenException('Not your conversation');
     }
 
+    // Detect "first message in a fresh ticket" so the admin notification
+    // can read differently ("opened a new ticket" vs. "new message").
+    const priorMessageCount = await this.prisma.supportMessage.count({
+      where: { conversationId },
+    });
+
     const message = await this.prisma.supportMessage.create({
       data: {
         conversationId,
@@ -145,7 +156,54 @@ export class SupportService {
       },
     });
 
+    // Fire-and-forget notification to every active admin. Wrapped in a
+    // best-effort try/catch inside the helper itself so a notification
+    // failure never rolls back the message persistence above.
+    void this.fanoutAdminNotification({
+      conversationId,
+      senderId: userId,
+      preview: text,
+      isNewConversation: priorMessageCount === 0,
+    });
+
     return { status: true, message: 'Sent', data: message };
+  }
+
+  /**
+   * Look up the sender's display name and email, then notify all admins.
+   * Kept private so the message-send path stays cohesive and easy to read.
+   */
+  private async fanoutAdminNotification(args: {
+    conversationId: number;
+    senderId: string;
+    preview: string;
+    isNewConversation: boolean;
+  }) {
+    const sender = await this.prisma.user.findUnique({
+      where: { id: args.senderId },
+      select: {
+        firstName: true,
+        lastName: true,
+        accountName: true,
+        email: true,
+        companyName: true,
+      },
+    });
+    const senderName =
+      sender?.accountName ||
+      sender?.companyName ||
+      [sender?.firstName, sender?.lastName].filter(Boolean).join(' ').trim() ||
+      sender?.email ||
+      'User';
+
+    await notifyAdminsSupportMessage(this.notificationService, this.prisma, {
+      conversationId: args.conversationId,
+      senderId: args.senderId,
+      senderName,
+      senderEmail: sender?.email ?? null,
+      preview: args.preview,
+      isNewConversation: args.isNewConversation,
+    });
   }
 
   /**
