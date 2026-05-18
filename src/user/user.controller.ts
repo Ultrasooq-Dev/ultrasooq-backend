@@ -582,6 +582,31 @@ export class UserController {
     return this.userService.switchAccount(payload, req);
   }
 
+  /**
+   * POST /user/restore-last-account — Resume the persona the user was on at
+   * their last `/switchAccount` call. The frontend calls this right after a
+   * successful sign-in: if the master's `lastActiveAccountId` points to a
+   * still-valid + ACTIVE sub-account, the response includes a JWT that the
+   * client stores in the `ultrasooq_accessToken` cookie. If nothing to
+   * restore (master was last, or the saved sub is gone/inactive), responds
+   * with `{ status: true, data: { restored: false } }` and the user stays on
+   * the master.
+   */
+  @UseGuards(AuthGuard)
+  @Post('/restore-last-account')
+  restoreLastAccount(@Request() req) {
+    return this.userService.restoreLastAccount(req);
+  }
+
+  /** DELETE /user/account/:id — Soft-delete a sub-account owned by the master (protected).
+   * The target must be a sub-account (addedBy = master.id), not the master itself.
+   * Order history and other FK chains are preserved via soft-delete. */
+  @UseGuards(AuthGuard)
+  @Delete('/account/:id')
+  deleteSubAccount(@Request() req, @Param('id') id: string) {
+    return this.userService.deleteSubAccount(id, req);
+  }
+
   /** GET /user/currentAccount — Get details of the currently active account (protected). */
   @UseGuards(AuthGuard)
   @Get('/currentAccount')

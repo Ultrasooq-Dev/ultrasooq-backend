@@ -37,7 +37,13 @@ model Permission {
 
 model User {
   id                                   String                        @id
-  email                                String                        @unique
+  // `email` is the credential identifier for human-login users (masters /
+  // BUYER accounts). Sub-account ORG rows (COMPANY / FREELANCER spawned via
+  // createAccount) leave this NULL because the org isn't a person and never
+  // logs in directly — auth is owned by the master, who switches into the
+  // org via /user/switchAccount. Postgres allows multiple NULLs in a UNIQUE
+  // index, so the @unique constraint stays sound.
+  email                                String?                       @unique
   emailVerified                        Boolean                       @default(false)
   name                                 String                        @default("")
   image                                String?
@@ -66,6 +72,14 @@ model User {
   customerId                           String?
   stripeAccountId                      String?
   addedBy                              String?
+  // Remembers which account this user was switched INTO at the time of the
+  // last `/user/switchAccount` call (set on the master row, points to a sub
+  // they own; NULL when the user is on the master itself). At next sign-in
+  // the frontend calls /user/restore-last-account so the user lands on the
+  // same persona they ended their previous session on. Cleared explicitly
+  // when the user switches back to the master via the "Switch to Main
+  // Account" button.
+  lastActiveAccountId                  String?
   adminRoleId                          Int?
   userTypeCategoryId                   Int?
   isActive                             Boolean                       @default(true)

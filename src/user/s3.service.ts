@@ -48,6 +48,31 @@ import fileType from 'file-type';
 import { BadRequestException } from '@nestjs/common';
 import { getErrorMessage } from 'src/common/utils/get-error-message';
 
+/**
+ * Detects whether AWS/R2 credentials are still the `.env.example` placeholder
+ * values (or missing). Used to short-circuit the upload path in development so
+ * the team can test the identity-proof-upload UX without standing up real
+ * AWS creds. Production must have real credentials configured — the bypass
+ * gated on NODE_ENV !== 'production' refuses to trigger there.
+ */
+function isS3Placeholder(): boolean {
+  const ak = process.env.AWS_ACCESS_KEY_ID || '';
+  const sk = process.env.AWS_SECRET_ACCESS_KEY || '';
+  const r2ak = process.env.R2_ACCESS_KEY_ID || '';
+  const r2sk = process.env.R2_SECRET_ACCESS_KEY || '';
+  // Common placeholder patterns seen in .env.example
+  const looksFake = (v: string) =>
+    !v ||
+    v.toLowerCase().includes('your-') ||
+    v.toLowerCase().includes('placeholder') ||
+    v === 'changeme' ||
+    v === 'xxx';
+  // If R2 creds are real, use them. Otherwise check AWS.
+  if (r2ak && r2sk && !looksFake(r2ak) && !looksFake(r2sk)) return false;
+  if (ak && sk && !looksFake(ak) && !looksFake(sk)) return false;
+  return true;
+}
+
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
   document: ['application/pdf', 'text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
@@ -135,6 +160,28 @@ export class S3service {
     if (originalFile) {
       this.validateFile(originalFile);
     }
+
+    // Dev-mode bypass: when AWS/R2 credentials are placeholders (`.env.example`
+    // values) or unset, return a placeholder URL instead of trying a real S3
+    // PUT that would fail with InvalidAccessKeyId. Keeps the
+    // identity-proof-upload step in CreateSubAccountDialog working in local
+    // dev where the team hasn't wired their own AWS account. Bypass is ONLY
+    // active when NODE_ENV !== 'production'.
+    if (isS3Placeholder() && process.env.NODE_ENV !== 'production') {
+      const placeholderUrl = `https://placeholder.invalid/dev-upload/${path}`;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[s3.service] AWS credentials are placeholders — returning fake URL ' +
+          `(${placeholderUrl}). Set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY ` +
+          'in .env to enable real uploads.',
+      );
+      return {
+        status: true,
+        message: 'Dev-mode placeholder URL (AWS keys not configured)',
+        data: placeholderUrl,
+      };
+    }
+
     const s3 = await this.getS3();
 
 

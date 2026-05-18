@@ -21,13 +21,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../generated/prisma/client';
 import { BetterAuthGuard } from './auth.guard';
 import { SetTradeRoleDto, TradeRole } from './dto/set-trade-role.dto';
+import { UserService } from '../user/user.service';
 
 @Controller('user/me')
 export class AuthBetterController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userService: UserService,
+  ) {}
 
   /**
    * PATCH /api/v1/user/me/trade-role
@@ -45,27 +48,63 @@ export class AuthBetterController {
   async setTradeRole(@Req() req: any, @Body() body: SetTradeRoleDto) {
     const u = req.betterAuthUser as { id: string };
 
-    const data: Prisma.UserUpdateInput = { tradeRole: body.tradeRole };
+    // Model: every user's master row is permanently BUYER (so they can always
+    // shop). COMPANY and FREELANCER are sub-accounts under that buyer master.
+    // Step 3 of registration calls this endpoint with the role the user picked.
 
+    // Case 1 — BUYER: master is already BUYER, nothing to do. Return current.
+    if (body.tradeRole === TradeRole.BUYER) {
+      const current = await this.prisma.user.findUnique({
+        where: { id: u.id },
+      });
+      if (!current) return { status: false, message: 'User not found' };
+      const { password, ...safeUser } = current as any;
+      return {
+        status: true,
+        data: { ...safeUser, subAccountCreated: false, masterIsBuyer: true },
+      };
+    }
+
+    // Case 2 — COMPANY / FREELANCER: spawn a sub-account that goes through
+    // admin approval. Leave the master untouched so the user can keep
+    // shopping immediately as a buyer; the sub becomes switchable once admin
+    // flips it to ACTIVE.
+    const master = await this.prisma.user.findUnique({ where: { id: u.id } });
+    if (!master) return { status: false, message: 'User not found' };
+
+    const subPayload: any = {
+      tradeRole: body.tradeRole,
+      accountName:
+        body.accountName?.trim() ||
+        body.companyName?.trim() ||
+        `My ${body.tradeRole} Account`,
+    };
     if (body.tradeRole === TradeRole.COMPANY) {
-      if (body.companyName !== undefined) data.companyName = body.companyName;
-      if (body.companyAddress !== undefined) data.companyAddress = body.companyAddress;
-      if (body.companyPhone !== undefined) data.companyPhone = body.companyPhone;
-      if (body.companyWebsite !== undefined) data.companyWebsite = body.companyWebsite;
-      if (body.companyTaxId !== undefined) data.companyTaxId = body.companyTaxId;
+      if (body.companyName !== undefined) subPayload.companyName = body.companyName;
+      if (body.companyAddress !== undefined) subPayload.companyAddress = body.companyAddress;
+      if (body.companyPhone !== undefined) subPayload.companyPhone = body.companyPhone;
+      if (body.companyWebsite !== undefined) subPayload.companyWebsite = body.companyWebsite;
+      if (body.companyTaxId !== undefined) subPayload.companyTaxId = body.companyTaxId;
     }
 
-    if (body.tradeRole === TradeRole.FREELANCER && body.accountName !== undefined) {
-      data.accountName = body.accountName;
-    }
-
-    const updated = await this.prisma.user.update({
-      where: { id: u.id },
-      data,
+    const result = await this.userService.createAccount(subPayload, {
+      user: master,
     });
 
-    // Strip the bcrypt password hash (and any other sensitive columns) before returning.
-    const { password, ...safeUser } = updated as typeof updated & { password?: unknown };
-    return { status: true, data: safeUser };
+    // Mirror the previous response shape but flag that a sub was created so
+    // the frontend can show a "pending review" toast without signing the
+    // user out (the master is still active).
+    if (result?.status && result?.data) {
+      return {
+        status: true,
+        data: {
+          ...master,
+          subAccountCreated: true,
+          masterIsBuyer: true,
+          subAccount: result.data,
+        },
+      };
+    }
+    return result;
   }
 }

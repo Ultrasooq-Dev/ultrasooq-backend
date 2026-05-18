@@ -55,6 +55,9 @@ import { HelperService } from 'src/helper/helper.service';
 
 @Module({
   providers: [UserService, AuthService, JwtService, NotificationService, S3service, HelperService],
-  controllers: [UserController]
+  controllers: [UserController],
+  // Exported so other modules (e.g. AuthBetterModule's controller) can inject
+  // UserService — needed for the auto-create-BUYER-sub hook after Step 3.
+  exports: [UserService],
 })
 export class UserModule {}

@@ -104,10 +104,42 @@ export class SuperAdminAuthGuard implements CanActivate {
     }
     // --- End Test Auth Bypass ---
 
-    // ─── Legacy JWT path ────────────────────────────────────────────────
+    // ─── Better Auth path (PRIMARY) ─────────────────────────────────────
+    // Better Auth is the source of truth for "who is logged in" post-migration.
+    // We check it FIRST so a current admin session always wins over a stale
+    // legacy `ultrasooq_accessToken` cookie left behind by a prior switchAccount
+    // call (which would otherwise lock the admin out — see Bug #4).
+    let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+    try {
+      session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+      });
+    } catch {
+      // Session lookup failed — fall through to legacy JWT path.
+      session = null;
+    }
+
+    if (session?.user) {
+      const sessionUser = session.user as any;
+      const userDetail = await this.prisma.user.findUnique({
+        where: { id: sessionUser.id },
+        select: { id: true, userType: true },
+      });
+      if (userDetail?.userType === 'ADMIN') {
+        req.user = sessionUser;
+        req.betterAuthUser = sessionUser;
+        req.betterAuthSession = session.session;
+        return { error: false, user: sessionUser, message: 'OK' };
+      }
+      // Better Auth session exists but not admin → fall through to legacy
+      // path (Bearer-token admins are still allowed; otherwise we 403 below).
+    }
+
+    // ─── Legacy JWT path (FALLBACK) ─────────────────────────────────────
     // Accepts either a Bearer header or the `ultrasooq_accessToken` cookie.
-    // If the JWT is valid AND the user is an ADMIN, allow and return.
-    // If the JWT is missing or invalid, fall through to Better Auth.
+    // Kept for: (a) admin app sessions still using JWT, (b) legacy CI/test
+    // scripts using x-test-user-id + Bearer. Should be removed once all
+    // callers migrate to Better Auth cookies.
     const authHeader = req.headers?.authorization || req.headers?.Authorization;
     let bearerToken: string | undefined;
     if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
@@ -132,50 +164,20 @@ export class SuperAdminAuthGuard implements CanActivate {
             where: { id: String(claimedId) },
             select: { id: true, userType: true },
           });
-          if (userDetail) {
-            if (userDetail.userType !== 'ADMIN') {
-              throw new ForbiddenException('Not An Admin');
-            }
+          if (userDetail?.userType === 'ADMIN') {
             req.user = result.user;
             return result;
           }
         }
       }
-      // Bad/expired bearer → fall through to Better Auth rather than 401.
     }
 
-    // ─── Better Auth path ───────────────────────────────────────────────
-    let session;
-    try {
-      session = await auth.api.getSession({
-        headers: fromNodeHeaders(req.headers),
-      });
-    } catch (err: any) {
-      throw new UnauthorizedException(
-        err?.message || 'Failed to validate session',
-      );
-    }
-
-    if (!session || !session.user) {
+    // Reached here only if neither Better Auth nor legacy JWT pointed at
+    // an ADMIN user. Distinguish "no auth at all" from "auth but not admin"
+    // so the client gets a useful error.
+    if (!session?.user && !bearerToken) {
       throw new UnauthorizedException('No active session');
     }
-
-    const sessionUser = session.user as any;
-    const userDetail = await this.prisma.user.findUnique({
-      where: { id: sessionUser.id },
-      select: { id: true, userType: true },
-    });
-
-    if (!userDetail) {
-      throw new UnauthorizedException('Session user not found');
-    }
-    if (userDetail.userType !== 'ADMIN') {
-      throw new ForbiddenException('Not An Admin');
-    }
-
-    req.user = sessionUser;
-    req.betterAuthUser = sessionUser;
-    req.betterAuthSession = session.session;
-    return { error: false, user: sessionUser, message: 'OK' };
+    throw new ForbiddenException('Not An Admin');
   }
 }

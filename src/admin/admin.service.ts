@@ -1675,6 +1675,8 @@ export class AdminService {
       const sortType = 'desc';
 
       const where: any = {
+        // User table uses status='DELETE' for soft-delete (no deletedAt column).
+        status: { not: 'DELETE' },
         ...(tradeRole && { tradeRole: tradeRole }),
       };
 
@@ -1695,6 +1697,11 @@ export class AdminService {
           companyName: true,
           isActive: true,
           status: true,
+          // Surface the sub-account relationship so the admin UI can render
+          // "Sub of <master email>" instead of the synth `xxx+sub-yyy@…` email
+          // that the User row carries internally. addedBy is null for master
+          // accounts; non-null for sub-accounts.
+          addedBy: true,
         },
         orderBy: { createdAt: sortType },
         skip,
@@ -1709,12 +1716,34 @@ export class AdminService {
         };
       }
 
+      // Resolve master emails in a single batched query so we don't N+1.
+      const masterIds = Array.from(
+        new Set(
+          (users as Array<{ addedBy: string | null }>)
+            .map((u) => u.addedBy)
+            .filter((x): x is string => !!x),
+        ),
+      );
+      const masterById = new Map<string, string>();
+      if (masterIds.length) {
+        const masters = await this.prisma.user.findMany({
+          where: { id: { in: masterIds } },
+          select: { id: true, email: true },
+        });
+        for (const m of masters) masterById.set(m.id, m.email);
+      }
+
+      const enriched = users.map((u: any) => ({
+        ...u,
+        masterEmail: u.addedBy ? masterById.get(u.addedBy) ?? null : null,
+      }));
+
       let usersCount = await this.prisma.user.count({ where });
 
       return {
         status: true,
         message: 'Fetch Successfully',
-        data: users,
+        data: enriched,
         totalCount: usersCount,
       };
     } catch (error) {
@@ -1765,8 +1794,16 @@ export class AdminService {
   /**
    * @method getAccountTree
    * @async
-   * @description Returns paginated master accounts with their sub-accounts and team
-   *   members for the Organization Tree page.
+   * @description Returns paginated **master** accounts (those without an `addedBy`)
+   *   with their sub-accounts nested under each. Soft-deleted users (status='DELETE')
+   *   are excluded from both levels.
+   *
+   *   Hierarchy is `User.addedBy` (multi-account family). Team members
+   *   (`TeamMember.addedBy`) are NOT returned here — they live on the per-user
+   *   detail page under the `team` tab.
+   *
+   *   Search matches master fields OR any sub's accountName/companyName, so
+   *   searching for a sub's persona name still surfaces the parent master.
    */
   async getAccountTree(page: any, limit: any, search?: string) {
     try {
@@ -1775,28 +1812,54 @@ export class AdminService {
       const skip = (Page - 1) * pageSize;
       const trimmed = (search || '').trim();
 
-      // Multi-account hierarchy was dropped in the Better Auth migration —
-      // there is no master/sub split anymore. We list flat users plus the
-      // team-members each one has added.
-      const userWhere: any = {};
+      // Two-level hierarchy via User.addedBy self-FK. Masters have addedBy=null.
+      const masterWhere: any = {
+        addedBy: null,
+        status: { not: 'DELETE' },
+      };
+
       if (trimmed) {
-        userWhere.OR = [
+        // Two-pass search: User.addedBy has no Prisma @relation, so we can't
+        // use nested {some: ...} filters. Instead, find sub IDs matching the
+        // query first, then OR their parent master IDs into the main filter.
+        const matchingSubs = await this.prisma.user.findMany({
+          where: {
+            addedBy: { not: null },
+            status: { not: 'DELETE' },
+            OR: [
+              { accountName: { contains: trimmed, mode: 'insensitive' } },
+              { companyName: { contains: trimmed, mode: 'insensitive' } },
+            ],
+          },
+          select: { addedBy: true },
+        });
+        const masterIdsViaSubs = Array.from(
+          new Set(
+            matchingSubs
+              .map((s) => s.addedBy)
+              .filter((id): id is string => !!id),
+          ),
+        );
+
+        masterWhere.OR = [
           { email: { contains: trimmed, mode: 'insensitive' } },
           { firstName: { contains: trimmed, mode: 'insensitive' } },
           { lastName: { contains: trimmed, mode: 'insensitive' } },
           { companyName: { contains: trimmed, mode: 'insensitive' } },
           { accountName: { contains: trimmed, mode: 'insensitive' } },
+          ...(masterIdsViaSubs.length ? [{ id: { in: masterIdsViaSubs } }] : []),
         ];
       }
 
-      const [users, total] = await Promise.all([
+      const [masters, total] = await Promise.all([
         this.prisma.user.findMany({
-          where: userWhere,
+          where: masterWhere,
           select: {
             id: true,
             firstName: true,
             lastName: true,
             email: true,
+            cc: true,
             phoneNumber: true,
             createdAt: true,
             accountName: true,
@@ -1808,58 +1871,50 @@ export class AdminService {
           skip,
           take: pageSize,
         }),
-        this.prisma.user.count({ where: userWhere }),
+        this.prisma.user.count({ where: masterWhere }),
       ]);
 
-      const orgUserIds = users
-        .filter((u) => u.tradeRole === 'COMPANY' || u.tradeRole === 'FREELANCER')
-        .map((u) => u.id);
-
-      const teamMembers = orgUserIds.length
-        ? await this.prisma.teamMember.findMany({
-            where: { addedBy: { in: orgUserIds }, deletedAt: null },
+      // Eagerly load sub-accounts for each master on this page.
+      const masterIds = masters.map((m) => m.id);
+      const subs = masterIds.length
+        ? await this.prisma.user.findMany({
+            where: {
+              addedBy: { in: masterIds },
+              status: { not: 'DELETE' },
+            },
             select: {
               id: true,
               addedBy: true,
+              accountName: true,
+              tradeRole: true,
               status: true,
-              userDetail: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                  employeeId: true,
-                  status: true,
-                },
-              },
-              userRolDetail: {
-                select: { id: true, userRoleName: true },
-              },
+              statusNote: true,
+              createdAt: true,
+              companyName: true,
+              companyAddress: true,
+              companyPhone: true,
+              companyWebsite: true,
+              identityProof: true,
+              // Intentionally NOT selected: email, firstName, lastName,
+              // phoneNumber. Those belong to the master (per design — the
+              // master account's primary contact is the family's single
+              // source of truth; sub rows store only role-specific fields).
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'asc' },
           })
         : [];
 
-      const membersByOwner = new Map<string, any[]>();
-      for (const tm of teamMembers) {
-        if (!tm.addedBy || !tm.userDetail) continue;
-        const flat = {
-          id: tm.userDetail.id,
-          firstName: tm.userDetail.firstName,
-          lastName: tm.userDetail.lastName,
-          email: tm.userDetail.email,
-          employeeId: tm.userDetail.employeeId,
-          status: tm.userDetail.status,
-          userRoleDetail: tm.userRolDetail,
-        };
-        const list = membersByOwner.get(tm.addedBy) || [];
-        list.push(flat);
-        membersByOwner.set(tm.addedBy, list);
+      const subsByMaster = new Map<string, any[]>();
+      for (const s of subs) {
+        if (!s.addedBy) continue;
+        const list = subsByMaster.get(s.addedBy) || [];
+        list.push(s);
+        subsByMaster.set(s.addedBy, list);
       }
 
-      const enriched = users.map((u) => ({
-        ...u,
-        teamMembers: membersByOwner.get(u.id) || [],
+      const enriched = masters.map((m) => ({
+        ...m,
+        subAccounts: subsByMaster.get(m.id) || [],
       }));
 
       return {
@@ -2063,7 +2118,18 @@ export class AdminService {
 
       // Prepare update data
       const updateData: any = {};
-      if (status) updateData.status = status;
+      if (status) {
+        updateData.status = status;
+        // Keep `isActive` in sync with status. Better Auth's session refresh
+        // hook and our AuthGuard both gate on `isActive === false`, so an
+        // "approved" user (status=ACTIVE) must also be isActive=true or they
+        // can never authenticate. WAITING/WAITING_FOR_SUPER_ADMIN leave the
+        // current value alone (still pending). DELETE is reserved for the
+        // soft-delete endpoint, not this status transition.
+        if (status === 'ACTIVE') updateData.isActive = true;
+        else if (status === 'INACTIVE' || status === 'REJECT')
+          updateData.isActive = false;
+      }
       if (statusNote !== undefined) updateData.statusNote = statusNote;
       if (tradeRole) updateData.tradeRole = tradeRole;
 
@@ -2357,12 +2423,19 @@ export class AdminService {
             continue;
           }
 
-          // Update user status
+          // Update user status. Mirror the `isActive` derivation from
+          // `updateOneUser` so bulk-approve also restores the active flag —
+          // Better Auth gates on `isActive === false`.
           const updatedUser = await this.prisma.user.update({
             where: { id: userId },
             data: {
               status,
               statusNote: statusNote || null,
+              ...(status === 'ACTIVE'
+                ? { isActive: true }
+                : status === 'INACTIVE' || status === 'REJECT'
+                  ? { isActive: false }
+                  : {}),
             },
           });
 
