@@ -4897,7 +4897,53 @@ export class AdminService {
         },
       });
       if (!user) return { status: false, message: 'User not found', data: null };
-      return { status: true, message: 'Fetched successfully', data: user };
+
+      // Derive Account Hierarchy fields from `addedBy`. The frontend
+      // detail page expects these alongside the raw User columns — without
+      // them, the "Account Hierarchy" card renders "Is Sub-Account: No"
+      // and an em-dash for the master, even when addedBy is populated.
+      //
+      // `addedBy` is a self-FK pointing at the master row (null on master
+      // accounts; non-null on COMPANY/FREELANCER subs that belong to the
+      // master's family). We look up the master in a single extra query
+      // when the link exists.
+      const addedBy = (user as any).addedBy as string | null;
+      let masterAccount:
+        | {
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+            accountName: string | null;
+            companyName: string | null;
+            email: string | null;
+            tradeRole: string | null;
+          }
+        | null = null;
+      if (addedBy) {
+        masterAccount = await this.prisma.user.findUnique({
+          where: { id: addedBy },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            accountName: true,
+            companyName: true,
+            email: true,
+            tradeRole: true,
+          },
+        });
+      }
+
+      return {
+        status: true,
+        message: 'Fetched successfully',
+        data: {
+          ...user,
+          isSubAccount: !!addedBy,
+          masterAccountId: addedBy ?? null,
+          masterAccount,
+        },
+      };
     } catch (error) {
       return { status: false, message: 'Error in getUserFullDetail', error: getErrorMessage(error) };
     }
