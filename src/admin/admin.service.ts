@@ -4822,16 +4822,25 @@ export class AdminService {
         tradeRole: { in: ['COMPANY', 'FREELANCER'] },
         status: status ? status : { in: PENDING_STATUSES },
       };
-      if (searchTerm) {
-        whereCondition.OR = [
-          { firstName: { contains: searchTerm, mode: 'insensitive' } },
-          { lastName: { contains: searchTerm, mode: 'insensitive' } },
-          { email: { contains: searchTerm, mode: 'insensitive' } },
-          { companyName: { contains: searchTerm, mode: 'insensitive' } },
-        ];
+      // Search clause applied to both the paginated list AND the counts
+      // aggregation, so the four header cards reflect the matching subset
+      // when the admin searches. Pulled out so we can reuse it without
+      // including the status filter in the counts query.
+      const searchClause = searchTerm
+        ? {
+            OR: [
+              { firstName: { contains: searchTerm, mode: 'insensitive' as const } },
+              { lastName: { contains: searchTerm, mode: 'insensitive' as const } },
+              { email: { contains: searchTerm, mode: 'insensitive' as const } },
+              { companyName: { contains: searchTerm, mode: 'insensitive' as const } },
+            ],
+          }
+        : null;
+      if (searchClause) {
+        whereCondition.OR = searchClause.OR;
       }
 
-      const [data, total] = await Promise.all([
+      const [data, total, grouped] = await Promise.all([
         this.prisma.user.findMany({
           where: whereCondition,
           include: { userProfile: true, userBranch: true },
@@ -4840,9 +4849,27 @@ export class AdminService {
           take: pageSize,
         }),
         this.prisma.user.count({ where: whereCondition }),
+        // `counts` is keyed by status across ALL org rows (filtered by the
+        // search term but NOT by the user-selected status). This is what
+        // powers the four clickable header cards — they have to remain
+        // stable as the admin clicks between status filters, otherwise the
+        // card you're filtering on would be the only non-zero one.
+        this.prisma.user.groupBy({
+          by: ['status'],
+          where: {
+            tradeRole: { in: ['COMPANY', 'FREELANCER'] },
+            ...(searchClause ? { OR: searchClause.OR } : {}),
+          },
+          _count: { _all: true },
+        }),
       ]);
 
-      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+      const counts: Record<string, number> = {};
+      for (const row of grouped as Array<{ status: string; _count: { _all: number } }>) {
+        counts[row.status] = row._count._all;
+      }
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total, counts };
     } catch (error) {
       return { status: false, message: 'Error in getPendingOrganizations', error: getErrorMessage(error) };
     }
