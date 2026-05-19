@@ -1687,6 +1687,11 @@ export class AdminService {
           firstName: true,
           lastName: true,
           email: true,
+          // Both cc and phoneNumber so the admin list can render the
+          // country code beside the local number — historical rows store
+          // them split (cc='+968', phoneNumber='95180767'), so without
+          // cc the admin only sees the local part.
+          cc: true,
           phoneNumber: true,
           gender: true,
           dateOfBirth: true,
@@ -4817,16 +4822,25 @@ export class AdminService {
         tradeRole: { in: ['COMPANY', 'FREELANCER'] },
         status: status ? status : { in: PENDING_STATUSES },
       };
-      if (searchTerm) {
-        whereCondition.OR = [
-          { firstName: { contains: searchTerm, mode: 'insensitive' } },
-          { lastName: { contains: searchTerm, mode: 'insensitive' } },
-          { email: { contains: searchTerm, mode: 'insensitive' } },
-          { companyName: { contains: searchTerm, mode: 'insensitive' } },
-        ];
+      // Search clause applied to both the paginated list AND the counts
+      // aggregation, so the four header cards reflect the matching subset
+      // when the admin searches. Pulled out so we can reuse it without
+      // including the status filter in the counts query.
+      const searchClause = searchTerm
+        ? {
+            OR: [
+              { firstName: { contains: searchTerm, mode: 'insensitive' as const } },
+              { lastName: { contains: searchTerm, mode: 'insensitive' as const } },
+              { email: { contains: searchTerm, mode: 'insensitive' as const } },
+              { companyName: { contains: searchTerm, mode: 'insensitive' as const } },
+            ],
+          }
+        : null;
+      if (searchClause) {
+        whereCondition.OR = searchClause.OR;
       }
 
-      const [data, total] = await Promise.all([
+      const [data, total, grouped] = await Promise.all([
         this.prisma.user.findMany({
           where: whereCondition,
           include: { userProfile: true, userBranch: true },
@@ -4835,9 +4849,27 @@ export class AdminService {
           take: pageSize,
         }),
         this.prisma.user.count({ where: whereCondition }),
+        // `counts` is keyed by status across ALL org rows (filtered by the
+        // search term but NOT by the user-selected status). This is what
+        // powers the four clickable header cards — they have to remain
+        // stable as the admin clicks between status filters, otherwise the
+        // card you're filtering on would be the only non-zero one.
+        this.prisma.user.groupBy({
+          by: ['status'],
+          where: {
+            tradeRole: { in: ['COMPANY', 'FREELANCER'] },
+            ...(searchClause ? { OR: searchClause.OR } : {}),
+          },
+          _count: { _all: true },
+        }),
       ]);
 
-      return { status: true, message: 'Fetched successfully', data, totalCount: total };
+      const counts: Record<string, number> = {};
+      for (const row of grouped as Array<{ status: string; _count: { _all: number } }>) {
+        counts[row.status] = row._count._all;
+      }
+
+      return { status: true, message: 'Fetched successfully', data, totalCount: total, counts };
     } catch (error) {
       return { status: false, message: 'Error in getPendingOrganizations', error: getErrorMessage(error) };
     }
@@ -4865,7 +4897,53 @@ export class AdminService {
         },
       });
       if (!user) return { status: false, message: 'User not found', data: null };
-      return { status: true, message: 'Fetched successfully', data: user };
+
+      // Derive Account Hierarchy fields from `addedBy`. The frontend
+      // detail page expects these alongside the raw User columns — without
+      // them, the "Account Hierarchy" card renders "Is Sub-Account: No"
+      // and an em-dash for the master, even when addedBy is populated.
+      //
+      // `addedBy` is a self-FK pointing at the master row (null on master
+      // accounts; non-null on COMPANY/FREELANCER subs that belong to the
+      // master's family). We look up the master in a single extra query
+      // when the link exists.
+      const addedBy = (user as any).addedBy as string | null;
+      let masterAccount:
+        | {
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+            accountName: string | null;
+            companyName: string | null;
+            email: string | null;
+            tradeRole: string | null;
+          }
+        | null = null;
+      if (addedBy) {
+        masterAccount = await this.prisma.user.findUnique({
+          where: { id: addedBy },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            accountName: true,
+            companyName: true,
+            email: true,
+            tradeRole: true,
+          },
+        });
+      }
+
+      return {
+        status: true,
+        message: 'Fetched successfully',
+        data: {
+          ...user,
+          isSubAccount: !!addedBy,
+          masterAccountId: addedBy ?? null,
+          masterAccount,
+        },
+      };
     } catch (error) {
       return { status: false, message: 'Error in getUserFullDetail', error: getErrorMessage(error) };
     }

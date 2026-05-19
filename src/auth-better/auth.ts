@@ -139,6 +139,75 @@ function getSignupSimulationCreditAmount(): number {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
+/**
+ * Canonical phone form for uniqueness comparison.
+ *
+ * The registration form stores `cc` as "+968" (with leading +) and
+ * `phoneNumber` as digits only (e.g. "95180767"). Some legacy rows
+ * have the country code embedded in `phoneNumber` ("+96812345678").
+ * Reduce both shapes to digits-only "<cc><local>" so the same number
+ * collides regardless of which historical layout it sits in.
+ *
+ * Returns null when there is no phone to check.
+ */
+function canonicalPhone(
+  cc: string | null | undefined,
+  phoneNumber: string | null | undefined,
+): string | null {
+  if (!phoneNumber) return null;
+  const ccDigits = (cc ?? '').replace(/\D/g, '');
+  const phoneDigits = phoneNumber.replace(/\D/g, '');
+  if (!phoneDigits) return null;
+  if (ccDigits && phoneDigits.startsWith(ccDigits)) {
+    return phoneDigits;
+  }
+  return ccDigits + phoneDigits;
+}
+
+/**
+ * Reject signups whose phone number is already in use by another
+ * master account. Sub-accounts (COMPANY/FREELANCER) intentionally
+ * inherit the master's phoneNumber via UserService.createAccount and
+ * NEVER run through this hook — that path is a raw prisma.user.create
+ * which bypasses Better Auth hooks. So at this layer "phone in use"
+ * always means "two different people are trying to claim the same
+ * phone", which is what we want to block.
+ *
+ * Soft-deleted users (status='DELETE') are excluded so a previously-
+ * deleted account doesn't permanently burn a phone number.
+ */
+async function assertPhoneAvailableForSignup(
+  prisma: PrismaClient,
+  args: { cc: string | null | undefined; phoneNumber: string | null | undefined },
+) {
+  const canonical = canonicalPhone(args.cc, args.phoneNumber);
+  if (!canonical) return;
+
+  // Pull a small candidate set on exact-match (cc, phoneNumber) for cheap.
+  // Then also pull any rows whose phoneNumber digits-only matches, in case
+  // a legacy row stored the country code embedded.
+  const candidates = await prisma.user.findMany({
+    where: {
+      phoneNumber: { not: null },
+      // `status` is a non-null enum (defaults to ACTIVE), so excluding
+      // soft-deleted rows is a single not-DELETE clause — there is no
+      // null variant to OR against.
+      status: { not: 'DELETE' },
+    },
+    select: { id: true, cc: true, phoneNumber: true },
+  });
+  const collision = candidates.find(
+    (u) => canonicalPhone(u.cc, u.phoneNumber) === canonical,
+  );
+  if (collision) {
+    throw new APIError('CONFLICT', {
+      code: 'PHONE_IN_USE',
+      message:
+        'This phone number is already registered. Sign in instead, or use a different phone number.',
+    });
+  }
+}
+
 async function grantSignupSimulationCredit(user: { id?: string; email?: string }) {
   const amount = getSignupSimulationCreditAmount();
   if (!shouldGrantSignupSimulationCredit() || amount <= 0 || !user.id) {
@@ -228,7 +297,19 @@ export const auth = betterAuth({
         // email verification round-trip. Re-enable the verification flow
         // by removing this hook and flipping requireEmailVerification /
         // sendOnSignUp back to true below.
-        before: async (user) => ({ data: { ...user, emailVerified: true } }),
+        //
+        // Also enforce phone-number uniqueness here: two distinct master
+        // accounts may not share a phone. Sub-accounts (COMPANY /
+        // FREELANCER) created via UserService.createAccount bypass this
+        // hook (raw prisma.user.create), which is correct — they
+        // inherit the master's phone by design.
+        before: async (user) => {
+          await assertPhoneAvailableForSignup(prisma, {
+            cc: (user as any).cc,
+            phoneNumber: (user as any).phoneNumber,
+          });
+          return { data: { ...user, emailVerified: true } };
+        },
         after: grantSignupSimulationCredit,
       },
     },
