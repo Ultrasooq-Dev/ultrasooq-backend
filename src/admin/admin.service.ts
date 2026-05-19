@@ -1687,6 +1687,11 @@ export class AdminService {
           firstName: true,
           lastName: true,
           email: true,
+          // Both cc and phoneNumber so the admin list can render the
+          // country code beside the local number — historical rows store
+          // them split (cc='+968', phoneNumber='95180767'), so without
+          // cc the admin only sees the local part.
+          cc: true,
           phoneNumber: true,
           gender: true,
           dateOfBirth: true,
