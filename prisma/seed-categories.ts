@@ -11,7 +11,10 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) } as any);
 // ── Parse category-tree-unified.md ─────────────────────────────────────────
 function parseCategoryTree(mdPath: string): Map<string, Set<string>> {
   const content = fs.readFileSync(mdPath, 'utf-8');
-  const lines = content.split('\n');
+  // Split on either LF or CRLF so Windows checkouts (which carry \r at
+  // end-of-line) parse correctly. The regex `/^- (.+)$/` does not match
+  // when a `\r` sits at the end of a line in non-multiline mode.
+  const lines = content.split(/\r?\n/);
   const tree = new Map<string, Set<string>>();
   tree.set('ROOT', new Set());
 
